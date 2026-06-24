@@ -1,6 +1,6 @@
 name: Match Worker
 
-on:
+on: 
   workflow_dispatch:
     inputs:
       match_id:
