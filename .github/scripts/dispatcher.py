@@ -49,7 +49,7 @@ def trigger_worker(match_id: str):
     resp = requests.post(
         f'{API}/repos/{REPO}/actions/workflows/match_bot.yml/dispatches',
         headers=HEADS,
-        json={'ref': 'main', 'inputs': {'match_id': match_id}},
+        json={'ref': 'master', 'inputs': {'match_id': match_id}},
         timeout=10,
     )
     if resp.status_code == 204:
