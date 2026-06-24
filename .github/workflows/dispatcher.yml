@@ -1,0 +1,28 @@
+name: Match Dispatcher
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # runs every 15 minutes
+  workflow_dispatch:           # also triggerable manually
+
+permissions:
+  actions: write   # needed to trigger match_bot.yml
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dispatcher dependencies
+        run: pip install requests
+
+      - name: Dispatch match workers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 .github/scripts/dispatcher.py

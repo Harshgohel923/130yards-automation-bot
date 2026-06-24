@@ -1,0 +1,38 @@
+name: Match Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      match_id:
+        description: 'match_id from matches.json'
+        required: true
+        type: string
+
+# Run name includes match_id so the dispatcher can detect active workers
+# by scanning run names — no external state needed.
+run-name: match-${{ inputs.match_id }}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180   # 3 hours covers 90-min match + ET + penalties + buffer
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run match worker
+        env:
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python3 match_worker_runner.py ${{ inputs.match_id }}

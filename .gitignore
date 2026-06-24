@@ -1,0 +1,18 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment & secrets
+.env
+
+# Runtime artefacts (auto-created, auto-deleted)
+output/
+data/
+bot.db
+state.json
+
+# macOS
+.DS_Store

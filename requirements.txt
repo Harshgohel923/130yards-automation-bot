@@ -1,0 +1,7 @@
+google-generativeai
+cloudinary
+requests
+python-dotenv
+apscheduler
+Pillow
+opencv-python

@@ -1,0 +1,50 @@
+[
+  {
+    "match_id": "54328044",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Switzerland-vs-Canada/54328044",
+    "sportsdb_event_id": "2391767",
+    "kickoff_utc": "2026-06-24T19:00:00Z",
+    "home_team": "Switzerland",
+    "away_team": "Canada"
+  },
+  {
+    "match_id": "54329986",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Bosnia-Herzegovina-vs-Qatar/54329986",
+    "sportsdb_event_id": "2461115",
+    "kickoff_utc": "2026-06-24T19:00:00Z",
+    "home_team": "Bosnia Herzegovina",
+    "away_team": "Qatar"
+  },
+  {
+    "match_id": "54329932",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Scotland-vs-Brazil/54329932",
+    "sportsdb_event_id": "2391765",
+    "kickoff_utc": "2026-06-24T19:00:00Z",
+    "home_team": "Scotland",
+    "away_team": "Brazil"
+  },
+  {
+    "match_id": "54329989",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Morocco-vs-Haiti/54329989",
+    "sportsdb_event_id": "2391764",
+    "kickoff_utc": "2026-06-24T22:00:00Z",
+    "home_team": "Morocco",
+    "away_team": "Haiti"
+  },
+  {
+    "match_id": "54328041",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Czech-vs-Mexico/54328041",
+    "sportsdb_event_id": "2461116",
+    "kickoff_utc": "2026-06-25T01:00:00Z",
+    "home_team": "Czechia",
+    "away_team": "Mexico"
+  },
+  {
+    "match_id": "54329976",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/South-Africa-vs-South-Korea/54329976",
+    "sportsdb_event_id": "2391766",
+    "kickoff_utc": "2026-06-25T01:00:00Z",
+    "home_team": "Switzerland",
+    "away_team": "Canada"
+  }
+]

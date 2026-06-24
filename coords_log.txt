@@ -1,0 +1,16 @@
+Template: Full time template.jpg  (2448x3264 px)
+------------------------------------------------------------
+GROUP_STAGE_BOX        = (721, 1106, 1697, 1193)   # 976x87px
+HOME_CREST_BOX         = (228, 1588, 707, 2027)   # 479x439px
+AWAY_CREST_BOX         = (1806, 1581, 2266, 2023)   # 460x442px
+AWAY_CREST_BOX         = (1762, 1584, 2241, 2023)   # 479x439px
+HOME_NAME_BOX          = (94, 2074, 884, 2165)   # 790x91px
+AWAY_NAME_BOX          = (1537, 2070, 2342, 2165)   # 805x95px
+AWAY_NAME_BOX          = (1573, 2070, 2368, 2157)   # 795x87px
+HOME_SCORE_BOX         = (776, 1584, 1117, 2023)   # 341x439px
+HOME_SCORE_BOX         = (747, 1584, 1120, 2027)   # 373x443px
+AWAY_SCORE_BOX         = (1320, 1577, 1722, 2023)   # 402x446px
+STADIUM_BOX            = (1722, 2023, 1864, 2382)   # 142x359px
+STADIUM_BOX            = (772, 3147, 1646, 3227)   # 874x80px
+HOME_SCORERS_BOX       = (83, 2212, 1120, 3100)   # 1037x888px
+AWAY_SCORERS_BOX       = (1316, 2197, 2368, 3100)   # 1052x903px
