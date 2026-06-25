@@ -1,4 +1,4 @@
-google-generativeai
+google-genai
 cloudinary
 requests
 python-dotenv
