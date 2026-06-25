@@ -24,7 +24,7 @@ HEADS  = {
     'X-GitHub-Api-Version': '2022-11-28',
 }
 
-PRE_MATCH_WINDOW_SECS = 5 * 60    # start worker 5 min before kickoff
+PRE_MATCH_WINDOW_SECS = 30 * 60   # start worker 30 min before kickoff
 DISPATCH_LOOKAHEAD    = 15 * 60   # how far ahead this dispatcher looks
 
 
