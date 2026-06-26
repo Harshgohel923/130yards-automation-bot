@@ -5,7 +5,20 @@
     "sportsdb_event_id": "2391775",
     "kickoff_utc": "2026-06-26T19:00:00Z",
     "home_team": "Norway",
-    "away_team": "France"
+    "away_team": "France",
+    "records": [
+      "Head to Head - All-time record: France lead 7W–4D–4L across 15 meetings spanning 103 years.",
+      "World Cup record: This is the first-ever men's World Cup meeting between Norway and France.",
+      "Should Guy Stéphan steer France past Norway, it would be only the second time in World Cup history that France have won all three group stage matches — the last time was on home soil in 1998, when they went on to lift the trophy.",
+      "Norway have already won as many matches in this edition as they managed across their three previous appearances combined (W0 in 1938, W1 in 1994, W1 in 1998).",
+      "Norway have never beaten a fellow European nation at the World Cup (P5 D2 L3).",
+      "Haaland golden record: He could become only the third player in World Cup history to score twice or more in each of his first three appearances — after Argentina's Guillermo Stabile in 1930 and Hungary's Sándor Kocsis in 1954.",
+      "Mbappé chasing Messi: Mbappé sits on 16 World Cup goals, level with Miroslav Klose for second-most all-time, with Messi now the outright record holder at 18. Two goals separate Mbappé from Messi's new benchmark.",
+      "Mbappé's record streak: He became the fourth man to score 2+ goals in three or more consecutive World Cup appearances, joining Sándor Kocsis (1954), Guillermo Stabile (1930), and Lionel Messi (2026).",
+      "The heartbeat of Norway's build-up play; every Haaland World Cup goal this tournament has been assisted by Ødegaard.",
+      "If Guy Stéphan wins, he becomes one of the rare interim coaches to win a World Cup group stage match.",
+      ""
+    ]
   },
   {
     "match_id": "54330012",
@@ -14,7 +27,16 @@
     "kickoff_utc": "2026-06-26T19:00:00Z",
     "home_team": "Senegal",
     "away_team": "Iraq",
-    "post_ht": false 
+    "post_ht": false,
+    "records": [
+      "These nations have never met before in any senior competitive or friendly fixture — this is their first-ever encounter.",
+      "Senegal: lost 1–3 to France, lost 2–3 to Norway (0 pts, GD −3, 3 goals scored) in world cup 2026",
+      "Iraq: lost 1–4 to Norway, lost 0–3 to France (0 pts, GD −6, 1 goal scored) in world cup 2026",
+      "Iraq's first-ever World Cup win is on the line — in 1986 they lost all three games, so they have never won a match at a World Cup finals. A victory here would be historic.",
+      "Senegal's all-time leading scorer with 51 goals; the talisman, Champions League and Premier League winner. Needs a big performance to rescue the campaign.",
+      "Appointed May 2025 mid-qualifying and dragged Iraq to the finals. Previously Australia's longest-serving coach (2018–2024), taking the Socceroos to the Round of 16 at Qatar 2022. Knows exactly how to get an underdog out of a World Cup group — and has cheekily said 'the pressure is all on Senegal.'",
+      "Senegal — Pape Thiaw: In charge since December 2024; this is his first World Cup as head coach, and his campaign is on the brink after two defeats."
+    ]
   },
   {
     "match_id": "54329961",
@@ -22,7 +44,14 @@
     "sportsdb_event_id": "2391776",
     "kickoff_utc": "2026-06-27T00:00:00Z",
     "home_team": "Uruguay",
-    "away_team": "Spain"
+    "away_team": "Spain",
+    "records":[
+      "Head to Head - World Cup meetings: 2 — both draws. 1950 group stage finished 2–2; 1990 group stage finished 0–0. Neither side has ever beaten the other at a World Cup.",
+      "So this is a fixture where Uruguay have never beaten Spain in any format, yet have also never lost to them at a World Cup — a quirky split record.",
+      "Tournament so far: Spain: 0–0 vs Cape Verde, 4–0 vs Saudi Arabia → 4 pts, GD +4.",
+      "Tournament so far: Uruguay: 1–1 vs Saudi Arabia, 2–2 vs Cape Verde → 2 pts, GD level (3–3).",
+      "Narrative weight: a clash of footballing royalty — the nation that won the first two World Cups against the side that currently dominates Europe."
+    ]
   },
   {
     "match_id": "54330009",
@@ -31,7 +60,19 @@
     "kickoff_utc": "2026-06-27T00:00:00Z",
     "home_team": "Cabo Verde",
     "away_team": "Saudi Arabia",
-    "post_ht": false 
+    "post_ht": false,
+    "records": [
+      "These two nations have NEVER met before — this is the first fixture in history between Cabo Verde and Saudi Arabia at any level.",
+      "Cabo Verde - Results so far: a shock 0–0 draw with Spain (ranked #2), followed by a dramatic 2–2 draw with Uruguay — Cabo Verde are the first debutant country to go undefeated in their first two World Cup matches since Senegal in 2002, who went on to reach the quarterfinals.",
+      "Saudi Arabia - Best-ever result: Round of 16 at USA 1994, the only time they've reached the knockout stage — they beat Morocco and Belgium before losing 3–1 to Sweden.",
+      "Saudi Arabia - Results so far: 1–1 draw with Uruguay, then a 4–0 thrashing by Spain — Saudi Arabia's worst World Cup defeat since their 5–0 loss to Russia in 2018, and their third-largest defeat in tournament history.",
+      "Win and Cabo Verde are through — a win would give them five points and guarantee a place in the knockouts as a top-two team; even a draw on three points could be enough as one of the eight best third-placed sides.",
+      "Cabo Verde's first World Cup win — if they win, it's the first victory in the nation's entire World Cup history, in only their third-ever match at the tournament.",
+      "Saudi Arabia's last chance — a draw almost certainly eliminates both teams; neither can afford anything but a win. ",
+      "Saudi Arabia last reached the knockout stage in 1994 — a win here, in the USA again 32 years later, would break their longest knockout drought.",
+      "Saudi Arabia captain since 2023, with 112 appearances and 27 goals for his country — the most capped and experienced player on the pitch for Saudi Arabia. Scored the famous goal against Poland in 2022 World Cup and was central to the 2022 Argentina upset. Yet to find the net at this tournament — a must-deliver moment if Saudi Arabia are to survive.",
+      "Cabo Verde is among 50 countries whose citizens face bonds of up to $15,000 to secure a US visa, part of travel restrictions — Vozinha's own mother couldn't attend the Spain"
+    ]
   },
   {
     "match_id": "54329958",
@@ -40,7 +81,42 @@
     "kickoff_utc": "2026-06-27T03:00:00Z",
     "home_team": "New Zealand",
     "away_team": "Belgium",
-    "post_ht": false 
+    "post_ht": false,
+    "records": [
+    "FIRST EVER MEETING: New Zealand and Belgium have never faced each other at any level — no World Cup, no friendly, no competitive fixture of any kind. This is a completely blank historical slate.",
+
+    "NEW ZEALAND WINLESS STREAK: New Zealand have never won a single FIFA World Cup match across all 8 attempts. A win today would be the greatest result in their football history and end a 44-year wait for a World Cup victory.",
+
+    "NEW ZEALAND'S 44-YEAR DROUGHT: Their last World Cup appearance before 2026 was in 2010, where they drew all three group games and exited unbeaten but without a win. Their only previous win attempt before 2010 was in 1982, making this drought the longest active World Cup winless streak of any returning nation.",
+
+    "BELGIUM'S SCORING DROUGHT: Belgian players have had 69 shots at the World Cup since last scoring in open play at Qatar 2022. Their only 2026 goal was an own goal by Egypt. A team that reached FIFA World No. 1 has gone goalless in their last 180 minutes of football.",
+
+    "COURTOIS BELGIAN RECORD IN SIGHT: Thibaut Courtois had 15 World Cup appearances entering 2026. After playing vs Egypt (16) and Iran (17), he already equals Enzo Scifo's all-time Belgium record. If he starts vs New Zealand, he breaks it outright with 18 — becoming Belgium's most-capped World Cup player ever.",
+
+    "LUKAKU CLOSING IN ON 90: Romelu Lukaku holds Belgium's all-time international scoring record at 89–90 goals. A goal today would push him further into Belgian footballing history in what is almost certainly his final World Cup match.",
+
+    "DE BRUYNE'S LAST DANCE — AND BIRTHDAY: Kevin De Bruyne turns 35 on June 28 — two days after this match. He has 0 goals and 0 assists at this World Cup and 13 career WC appearances. This is almost certainly his final World Cup, and he is yet to have a single direct contribution in 2026.",
+
+    "BELGIUM DRAW ALL THREE — 1998 REPEAT: If Belgium fail to win, they could become the first European team since themselves in 1998 to draw all three World Cup group games. In 1998, they went out at the group stage.",
+
+    "BELGIUM'S GOLDEN GENERATION, FINAL EXIT: De Bruyne, Lukaku, Courtois, and Witsel are all expected to retire from international football after 2026. This group reached No. 1 in the FIFA rankings but never won a major trophy. If Belgium go out today, the golden generation ends without silverware.",
+
+    "BELGIUM SENT OFF LAST MATCH: Nathan Ngoy was red-carded in the 65th minute vs Iran, meaning Belgium finished with 10 men and still couldn't score. New Zealand will know Belgium enter this must-win game having been reduced to 10 men just days ago.",
+
+    "NEW ZEALAND UNBEATEN VS EUROPE AT WC: New Zealand are unbeaten in their last two World Cup matches against European opposition — 1–1 draws against Slovakia and Italy in 2010. Belgium will be aiming to end that record.",
+
+    "BELGIUM 15TH WORLD CUP — NZ ONLY 3RD: Belgium are appearing at their 15th World Cup, New Zealand only their 3rd. Belgium have more appearances than New Zealand have years of World Cup history.",
+
+    "NO CLEAN SHEETS IN 13 FOR NEW ZEALAND: New Zealand have not kept a clean sheet in any of their last 13 matches. Belgium, despite their goal drought, have the attacking talent to exploit that vulnerability.",
+
+    "NZ SCORED FIRST, WON NOTHING: New Zealand have taken the lead in three of their eight World Cup matches and won none of them. They led Iran 2–0 before drawing 2–2, and led Egypt 1–0 before losing 3–1 in this tournament.",
+
+    "BC PLACE — CANADA'S ONLY GROUP G MATCH: This is the only Group G game being played in Canada. All previous Group G matches were in Seattle and Los Angeles. The match is being played in front of a home crowd of sorts for Canadian fans who are co-hosting the tournament.",
+
+    "ELIJAH JUST — NZ'S ENTIRE TOURNAMENT: Midfielder Elijah Just has scored both of New Zealand's goals in 2026 across two matches. He is single-handedly responsible for all the points New Zealand have earned so far.",
+
+    "JAW-DROPPER: Belgium were ranked FIFA No. 1 in the world in 2018 — the same year they finished third at the World Cup. Eight years later, ranked 9th and facing the lowest-ranked team in the 2026 tournament, they have still not scored a single open-play goal and their golden generation is 90 minutes from an unceremonious group-stage exit."
+    ]
   }, {
     "match_id": "54330001",
     "scraper_url": "https://m.allfootballapp.com/match/Main/Egypt-vs-Iran/54330001",
@@ -48,6 +124,39 @@
     "kickoff_utc": "2026-06-27T03:00:00Z",
     "home_team": "Egypt",
     "away_team": "Iran",
-    "post_ht": false  
+    "post_ht": false,
+    "records": [
+  "FIRST EVER WORLD CUP MEETING: Egypt and Iran have never met at a World Cup before. Their only historical meetings are two obscure friendlies — a 2000 LG Cup where Egypt won 8–7 on penalties after a 1–1 draw, and a 2003 AFC–OFC Challenge Cup which Iran won 3–0. No knockout history, no tournament context between them.",
+
+  "EGYPT'S FIRST WORLD CUP WIN IN 92 YEARS — AND BACK FOR MORE: Egypt were Africa's very first World Cup representatives, debuting at the 1934 tournament in Italy. They returned in 1990 and 2018 and never won a match across three tournaments and 8 appearances. A 3–1 win over New Zealand on June 21 finally ended that 92-year wait. Now Egypt enter this match already through to the Round of 32 — a first in the nation's entire football history.",
+
+  "IRAN'S LAST CHANCE FOR A HISTORIC FIRST: Iran have appeared at seven World Cups (1978, 1998, 2006, 2014, 2018, 2022, 2026) and have NEVER advanced beyond the group stage. Their best points tally at a single tournament is the 4 points they earned in 2018. A win here, combined with a Belgium result, could finally send them through — the most historic result in Iranian football history.",
+
+  "SALAH ONE GOAL FROM BREAKING HIS OWN COACH'S RECORD: Mohamed Salah has 68 international goals, just one behind the all-time Egypt record of 69 held by his current head coach Hossam Hassan. A goal here breaks the record set by the man standing in the dugout watching him. Salah has scored or assisted in every single World Cup match he has ever played.",
+
+  "SALAH'S BIRTHDAY ASSIST — A WORLD CUP FIRST: In Egypt's 1–1 draw with Belgium on June 15, Salah assisted Emam Ashour's goal on his own 34th birthday, becoming the first African player and only the fourth player in history to provide a World Cup assist on their birthday, joining Luigi Di Biagio, Patrick Vieira, and Ola Toivonen.",
+
+  "SALAH — OLDEST AFRICAN PLAYER TO SCORE AND ASSIST AT A WORLD CUP: At 34 years and 7 days vs New Zealand, Salah became the oldest African player on record to both score and assist in the same World Cup match. He also broke Egypt's own record as oldest scorer at a tournament, surpassing Magdi Abdelghani's mark from 1990 that had stood for 36 years.",
+
+  "SALAH — ALL-TIME AFRICAN WORLD CUP QUALIFYING RECORD HOLDER: With 20 goals in African World Cup qualifying, Salah is the outright all-time top scorer in African WC qualification history, surpassing legends Didier Drogba, Samuel Eto'o, and Islam Slimani. He is the reason Egypt are here at all.",
+
+  "IRAN FIELDED THE OLDEST XI IN WORLD CUP HISTORY: In their 0–0 draw with Belgium, Iran named a starting XI with an average age of 32 years and 181 days — the oldest lineup ever recorded in a World Cup match on record since 1966. They kept a clean sheet against Belgium's golden generation while doing it.",
+
+  "TAREMI'S GHOST GOAL VS BELGIUM: Iran's Mehdi Taremi put the ball in the net against Belgium with a brilliantly worked free-kick routine in the 11th minute, only for VAR to rule it offside. Iran were also reduced to playing against 10 men (Ngoy red-carded) yet still held Belgium scoreless. A fully fit Taremi is Egypt's most dangerous threat here.",
+
+  "IRAN WINLESS IN 3 OF 4 WORLD CUPS SINCE 2006 — PATTERN BROKEN ONLY ONCE: Iran won their opening match in 2018 (vs Morocco) but failed to advance. In 2014 and 2022 they also exited in the group stage. Their only three World Cup wins all-time are: USA 1998, Morocco 2018, Wales 2022. A win here would be only their fourth ever.",
+
+  "IRAN'S QUALIFYING RECORD WAS NEAR-PERFECT: Coach Amir Ghalenoei guided Iran through a near-flawless AFC qualifying campaign, losing just once in 16 matches. This is his second spell as Iran head coach and he now has a 68% win rate across 41 games. A group-stage exit despite that form would be a historic underachievement.",
+
+  "EGYPT'S COACH IS THE RECORD THEY'RE CHASING: Hossam Hassan — Egypt's current head coach — is the all-time top scorer for Egypt with 69 international goals. Salah, at 68, is one goal behind him. If Salah scores against Iran, he equals and potentially surpasses the man in the dugout. There has been reported tension between the two in this tournament.",
+
+  "SALAH HAS SCORED OR ASSISTED IN EVERY WORLD CUP MATCH HE HAS PLAYED: 2018 vs Russia (scored), 2018 vs Saudi Arabia (scored), 2026 vs Belgium (assisted), 2026 vs New Zealand (scored + assisted). Four matches, zero blank games. Egypt's entire World Cup existence runs through him.",
+
+  "THE PRIDE MATCH: Both Egypt and Iran formally objected to Seattle's Pride Match designation for this fixture — two countries where homosexuality is criminalised by law. The Egyptian FA sent a letter to FIFA 'categorically rejecting' the association. Iran's Football Federation called it an 'irrational move'. FIFA overruled both federations and confirmed rainbow flags will be permitted inside Lumen Field.",
+
+  "GROUP G WINNER RETURNS TO SEATTLE: The winner of this match wins Group G and returns to Lumen Field in Seattle for their Round of 32 match on July 1. Egypt are already through; a draw could be enough for Iran as one of the eight best third-placed teams depending on results elsewhere — making this the rare group finale where even the loser might survive.",
+
+  "JAW-DROPPER — AFRICA'S OLDEST WORLD CUP NATION VS ASIA'S MOST EXPERIENCED: Egypt debuted at the World Cup in 1934 — 92 years ago — and went without a single win until four days before this match. Iran appeared at seven World Cups and never once made the knockout stage. This is a match between two nations carrying the longest active records of World Cup underachievement on their respective continents, meeting for the first time on the biggest stage, with both desperate to finally write a new chapter."
+]  
   }
 ]
