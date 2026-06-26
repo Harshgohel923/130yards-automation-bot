@@ -1,50 +1,49 @@
 [
   {
-    "match_id": "54329952",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Ecuador-vs-Germany/54329952",
-    "sportsdb_event_id": "2391769",
-    "kickoff_utc": "2026-06-25T20:00:00Z",
-    "home_team": "Ecuador",
-    "away_team": "Germany"
+    "match_id": "54329964",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Norway-vs-France/54329964",
+    "sportsdb_event_id": "2391775",
+    "kickoff_utc": "2026-06-26T19:00:00Z",
+    "home_team": "Norway",
+    "away_team": "France"
   },
   {
-    "match_id": "54329995",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Curacao-vs-C%C3%B4te-d'Ivoire/54329995",
-    "sportsdb_event_id": "2391768",
-    "kickoff_utc": "2026-06-25T20:00:00Z",
-    "home_team": "Curaçao",
-    "away_team": "Côte d'Ivoire"
+    "match_id": "54330012",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Senegal-vs-Iraq/54330012",
+    "sportsdb_event_id": "2461119",
+    "kickoff_utc": "2026-06-26T19:00:00Z",
+    "home_team": "Senegal",
+    "away_team": "Iraq"
   },
   {
-    "match_id": "54329955",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Tunisia-vs-Netherlands/54329955",
-    "sportsdb_event_id": "2391771",
-    "kickoff_utc": "2026-06-25T23:00:00Z",
-    "home_team": "Tunisia",
-    "away_team": "Netherlands"
+    "match_id": "54329961",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Uruguay-vs-Spain/54329961",
+    "sportsdb_event_id": "2391776",
+    "kickoff_utc": "2026-06-27T00:00:00Z",
+    "home_team": "Uruguay",
+    "away_team": "Spain"
   },
   {
-    "match_id": "54329998",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Japan-vs-Sweden/54329998",
-    "sportsdb_event_id": "2461117",
-    "kickoff_utc": "2026-06-25T23:00:00Z",
-    "home_team": "Japan",
-    "away_team": "Sweden"
+    "match_id": "54330009",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Cape-Verde-vs-Saudi-Arabia/54330009",
+    "sportsdb_event_id": "2391772",
+    "kickoff_utc": "2026-06-27T00:00:00Z",
+    "home_team": "Cabo Verde",
+    "away_team": "Saudi Arabia"
   },
   {
-    "match_id": "54328047",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Turkey-vs-United-States/54328047",
-    "sportsdb_event_id": "2461118",
-    "kickoff_utc": "2026-06-26T02:00:00Z",
-    "home_team": "Turkey",
-    "away_team": "United States"
-  },
-  {
-    "match_id": "54329992",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Paraguay-vs-Australia/54329992",
-    "sportsdb_event_id": "2391770",
-    "kickoff_utc": "2026-06-26T02:00:00Z",
-    "home_team": "Paraguay",
-    "away_team": "Australia"
+    "match_id": "54329958",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/New-Zealand-vs-Belgium/54329958",
+    "sportsdb_event_id": "2391774",
+    "kickoff_utc": "2026-06-27T03:00:00Z",
+    "home_team": "New Zealand",
+    "away_team": "Belgium"
+  }, {
+    "match_id": "54330001",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Egypt-vs-Iran/54330001",
+    "sportsdb_event_id": "2391773",
+    "kickoff_utc": "2026-06-27T03:00:00Z",
+    "home_team": "Egypt",
+    "away_team": "Iran"
   }
 ]
