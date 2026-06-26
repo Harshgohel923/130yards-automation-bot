@@ -169,7 +169,8 @@ def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
         image_path = generate_scorecard(scraper_data, event_type=event_type, match_id_override=match_id)
         public_url = upload_image(image_path)
         os.remove(image_path)
-        caption = generate_caption(scraper_data, event_type=event_type)
+        caption = generate_caption(scraper_data, event_type=event_type,
+                                   records=entry.get('records'))
         ig_id   = post_to_instagram(public_url, caption)
         mark_event_posted(match_id, event_type)
         print(f"[{match_id}] ✅ {event_type} posted — IG ID: {ig_id}")
