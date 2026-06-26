@@ -13,7 +13,8 @@
     "sportsdb_event_id": "2461119",
     "kickoff_utc": "2026-06-26T19:00:00Z",
     "home_team": "Senegal",
-    "away_team": "Iraq"
+    "away_team": "Iraq",
+    "post_ht": false 
   },
   {
     "match_id": "54329961",
@@ -29,7 +30,8 @@
     "sportsdb_event_id": "2391772",
     "kickoff_utc": "2026-06-27T00:00:00Z",
     "home_team": "Cabo Verde",
-    "away_team": "Saudi Arabia"
+    "away_team": "Saudi Arabia",
+    "post_ht": false 
   },
   {
     "match_id": "54329958",
@@ -37,13 +39,15 @@
     "sportsdb_event_id": "2391774",
     "kickoff_utc": "2026-06-27T03:00:00Z",
     "home_team": "New Zealand",
-    "away_team": "Belgium"
+    "away_team": "Belgium",
+    "post_ht": false 
   }, {
     "match_id": "54330001",
     "scraper_url": "https://m.allfootballapp.com/match/Main/Egypt-vs-Iran/54330001",
     "sportsdb_event_id": "2391773",
     "kickoff_utc": "2026-06-27T03:00:00Z",
     "home_team": "Egypt",
-    "away_team": "Iran"
+    "away_team": "Iran",
+    "post_ht": false  
   }
 ]

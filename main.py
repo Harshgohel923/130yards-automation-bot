@@ -237,7 +237,8 @@ def match_worker(entry: dict):
         print(f"[{match_id}] status={raw_status}  ht_posted={ht_posted}  ft_posted={ft_posted}")
 
         # ── HT trigger ───────────────────────────────────────────────────────
-        if new_status == 'ht' and not ht_posted and not is_event_posted(match_id, 'HT'):
+        if new_status == 'ht' and not ht_posted and not is_event_posted(match_id, 'HT') \
+                and entry.get('post_ht', True):
             print(f"[{match_id}] Half-time detected — fetching scraper data…")
             scraper_data = get_match_data(scraper_url)
             if scraper_data:
