@@ -392,12 +392,12 @@ STADIUM_FONT_MIN = 10
 # ── Round-code → display name ─────────────────────────────────────────────────
 ROUND_NAME_MAP = {
     'R':   'GROUP STAGE',
-    'R32': 'ROUND OF 32',
-    'R16': 'ROUND OF 16',
-    'QF':  'QUARTER-FINAL',
-    'SF':  'SEMI-FINAL',
+    '32': 'ROUND OF 32',
+    '16': 'ROUND OF 16',
+    '8':  'QUARTER-FINAL',
+    '4':  'SEMI-FINAL',
     '3RD': 'THIRD PLACE',
-    'F':   'FINAL',
+    '1':   'FINAL',
 }
 
 
