@@ -1,37 +1,98 @@
 [
   {
-    "match_id": "54327932",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/South-Africa-vs-Canada/54327932",
-    "sportsdb_event_id": "2499618",
-    "kickoff_utc": "2026-06-28T19:00:00Z",
-    "home_team": "South Africa",
-    "away_team": "Canada",
- "records": [
-  "BOTH NATIONS IN THEIR FIRST EVER WORLD CUP KNOCKOUT MATCH — SIMULTANEOUSLY: Neither South Africa nor Canada has ever played a World Cup knockout match before today. This is a genuine historical first for both nations at the same time. Whoever wins becomes the first of these two nations to ever win a World Cup knockout match. Whoever loses exits having made history just by being here.",
+    "match_id": "54327935",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Brazil-vs-Japan/54327935",
+    "sportsdb_event_id": "2499835",
+    "kickoff_utc": "2026-06-29T17:00:00Z",
+    "home_team": "Brazil",
+    "away_team": "Japan",
+    "post_ht": true,
+"records": [
+  "VINICIUS JR — 4 GOALS, CHASING BRAZIL'S GOLDEN BOOT RECORD: Vinicius leads Brazil with 4 group stage goals — the first Brazilian to score 4+ at a single World Cup since Neymar in 2014. Brazil's all-time single-tournament record is 8 goals (Ronaldo, 2002). A goal today extends his tally in what could be a historic run.",
 
-  "SOUTH AFRICA'S FULL WORLD CUP KNOCKOUT RECORD BEFORE TODAY: P0 W0 D0 L0. South Africa have played in 4 previous World Cups (1998, 2002, 2010 as hosts, 2026) and have never once made it past the group stage. Today is the first knockout match in their entire 28-year World Cup history.",
+  "VINICIUS JOINED AN ELITE FIVE-MAN LIST — AND EACH TIME BRAZIL WON THE TROPHY: He became only the fifth Brazilian to score against every group stage opponent in a single World Cup, joining Jairzinho (1970), Romário (1994), Ronaldo and Rivaldo (2002). Brazil won the World Cup all four previous times this happened.",
 
-  "CANADA'S FULL WORLD CUP RECORD BEFORE 2026: P7 W0 D0 L7, 0 goals scored. Canada played at the 1986 World Cup (3 losses, 0 goals scored) and the 2022 World Cup (3 losses, 4 goals scored). They entered 2026 having never won or drawn a World Cup match. They have now won one (6–0 vs Qatar) and drawn two — every record Canada has is being broken at this tournament.",
+  "VINICIUS HAS 7 GOALS IN 13 GAMES UNDER ANCELOTTI — VS 6 IN 39 UNDER EVERY OTHER COACH: His entire international career before Ancelotti produced 6 goals in 39 games. Since Ancelotti took charge, 7 in 13. The Ancelotti effect on Vinicius is statistically undeniable.",
 
-  "JONATHAN DAVID — CANADA'S ALL-TIME WORLD CUP TOP SCORER WITH 3 GOALS, IN ONE MATCH: David's hat-trick against Qatar gave him more World Cup goals than any Canadian player in history. Before this tournament, Canada's all-time WC goal record was one (Alphonso Davies, 2022). David scored three in a single game. Any goal today extends that record further.",
+  "CARLO ANCELOTTI — FIRST FOREIGN COACH IN BRAZIL'S 106-YEAR FOOTBALL HISTORY: Brazil appointed a foreign coach for the first time ever when they hired Ancelotti in 2024. He is also attempting to become the first foreign-born manager to ever win the FIFA World Cup. No non-native coach has lifted the trophy in the tournament's 96-year history.",
 
-  "DAVID ENDED A 96-YEAR CONCACAF DROUGHT FOR WORLD CUP HAT-TRICKS: David's treble vs Qatar was the first hat-trick by a CONCACAF men's player at a World Cup since Bert Patenaude scored three for the USA in 1930 — 96 years earlier. He is only the second CONCACAF man ever to do it.",
+  "BRAZIL HAVE LOST EVERY WORLD CUP KNOCKOUT MATCH AGAINST EUROPEAN TEAMS SINCE 2006: Four consecutive knockout exits to European sides — France (2006 QF), Netherlands (2010 QF), Germany (2014 SF, 7–1), Belgium (2018 QF), Croatia (2022 QF on pens). They hired a European coach specifically to break this curse. Japan are not European — but the streak looms over every knockout match.",
 
-  "CANADA 6–0 QATAR — THE MOST GOALS EVER SCORED BY A CONCACAF TEAM IN A SINGLE WORLD CUP MATCH: Canada's six-goal haul against Qatar set the all-time record for goals in a World Cup match by any CONCACAF nation, surpassing the previous best of five. Canada also made a record 97 touches in the attacking penalty box in that match — 26 more than any other team had managed in a single World Cup game on record.",
+  "BRAZIL HAVE ADVANCED FROM THE GROUP STAGE IN 15 CONSECUTIVE WORLD CUPS — SINCE 1966: The last time Brazil failed to get out of the group stage was 1966. No other nation comes close to this record of consecutive knockout appearances. It continues today regardless, but a win extends the knockout streak.",
 
-  "HUGO BROOS — 74 YEARS OLD, RETIRING AFTER THIS TOURNAMENT, MAKING HISTORY IN HIS FAREWELL: Belgium's Hugo Broos has openly stated 2026 will be the end of his nearly four-decade coaching career. At 74, he is the oldest active head coach at the 2026 World Cup. He led South Africa beyond the group stage for the first time in history with a tournament that saw them go from 9-man chaos (red cards vs Mexico) to knockout football. A win today is his greatest achievement as a manager.",
+  "NEYMAR — RETURNED AFTER 981 DAYS AND BECAME THE FOURTH BRAZILIAN TO PLAY FOUR WORLD CUPS: Neymar's substitute appearance against Scotland was his first Brazil cap since October 2023 — 981 days. He joined Djalma Santos, Cafú, and Pelé as the only four Brazilians ever to appear at four different World Cups. He has 79 international goals — Brazil's all-time record.",
 
-  "SOUTH AFRICA REDUCED TO 9 MEN IN THEIR OPENING MATCH — THEN REACHED THE KNOCKOUTS ANYWAY: South Africa's tournament opened with two red cards against Mexico, losing 2–0 with 9 men on the pitch. No team in modern World Cup history has recovered from playing a match with 9 men to still advance from the group stage. They drew vs Czechia, beat South Korea 1–0, and are now in the Round of 32.",
+  "JAPAN BEAT BRAZIL 3–2 IN A FRIENDLY IN OCTOBER 2025 — BRAZIL'S FIRST-EVER LOSS TO JAPAN: Japan beat Brazil for the first time in history just 8 months ago, coming from 2–0 down to win 3–2 in Tokyo. Across 15 all-time meetings, Brazil had won 11 and drawn 3. Japan's first win over the five-time champions is the freshest data point either camp has.",
 
-  "ALL THREE OF SOUTH AFRICA'S WORLD CUP PENALTIES HAVE BEEN EQUALISERS: South Africa's penalty vs Czechia (Teboho Mokoena, 83') was their third-ever World Cup spot-kick — and all three came as equalisers: vs Saudi Arabia in 1998, vs Paraguay in 2002, and vs Czechia in 2026. They have a perfect 3/3 World Cup penalty record, all scored to level the match.",
+  "JAPAN ARE UNBEATEN IN 10 CONSECUTIVE MATCHES HEADING INTO THIS KNOCKOUT TIE: Japan drew with Netherlands (2–2), beat Tunisia (4–0), and drew with Sweden (1–1) in the group stage. Their 10-match unbeaten run is the longest of any team still in the tournament.",
 
-  "THEMBA ZWANE SUSPENDED — SOUTH AFRICA'S VETERAN PLAYMAKER MISSES HIS ONLY KNOCKOUT CHANCE: Zwane, Bafana Bafana's most experienced attacker, was sent off for violent conduct in the opener vs Mexico and is serving a suspension. He returns if South Africa reach the Round of 16, but today's match — potentially his last chance on the World Cup stage — he watches from the stands.",
+  "JAPAN HAVE NEVER BEATEN A SOUTH AMERICAN TEAM AT A WORLD CUP: Japan's World Cup record against South American opposition is W0 D1 L3. Their only non-loss was a draw vs Colombia in 2018. Brazil are the five-time champions of the continent.",
 
-  "ISMAEL KONÉ — CANADA'S MIDFIELD ENGINE LOST FOR THE TOURNAMENT: Koné suffered a serious leg injury (stretchered off) in the 6–0 Qatar win and is out for the rest of the 2026 World Cup. His partner Stephen Eustáquio is facing a race against time to be fit for this match. Canada's entire midfield engine has been ripped out heading into the knockouts.",
+  "RAPHINHA OUT, KUBO OUT — BOTH TEAMS' SET-PIECE TAKERS MISSING: Raphinha (hamstring) — Brazil's primary corner and free-kick taker — is absent. Takefusa Kubo (knee) — Japan's creative spark and set-piece deliverer — is also out. Both absences directly impact the teams' most rehearsed attacking routines.",
 
-  "SOUTH AFRICA HOSTED THE 2010 WORLD CUP AND NEVER REACHED THE KNOCKOUTS AS A HOST — NOW THEY DO IT AS A VISITOR: South Africa became the first African nation to host the World Cup in 2010, but were eliminated in the group stage in front of their own fans — the only host nation to do so until that point. Sixteen years later, as visitors in the USA, they have finally achieved what they couldn't at home.",
+  "BRAZIL TOPPED THEIR GROUP IN EVERY WORLD CUP SINCE 1982 — 44 YEARS STRAIGHT: Brazil have finished first in their group at every World Cup since 1982 — 11 consecutive tournaments. They top Group C again in 2026. No other nation in football history has matched this record of group stage dominance across the same span."
+]
+  },
+  {
+    "match_id": "54327933",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Germany-vs-Paraguay/54327933",
+    "sportsdb_event_id": "2502846",
+    "kickoff_utc": "2026-06-29T20:30:00Z",
+    "home_team": "Germany",
+    "away_team": "Paraguay",
+    "post_ht": true,
+"records": [
+  "MANUEL NEUER — THE GOALKEEPER WITH THE MOST WORLD CUP APPEARANCES IN HISTORY: Neuer broke Hugo Lloris's record of 20 WC appearances against Ivory Coast in the group stage. Every match he plays today extends his own all-time record. He is 40 years old, came out of international retirement specifically for this tournament, and is now the undisputed record holder for any goalkeeper in World Cup history.",
 
-  "JAW-DROPPER — CANADA'S ENTIRE WORLD CUP HISTORY BEFORE 2026 PRODUCED ZERO WINS, ZERO DRAWS, AND ZERO GOALS IN THEIR FIRST THREE GAMES (1986). THEY NOW HAVE A HAT-TRICK SCORER, A 6–0 WIN, AND A ROUND OF 32 PLACE — ALL IN THE SAME TOURNAMENT: In 1986, Canada played three games, scored zero goals, and lost all three. In 2022, they lost all three again. In 2026 in their first home World Cup, they have already won more matches, scored more goals, and gone further than in their entire previous history combined. They face the only team that has equally zero World Cup knockout experience — and one of them writes entirely new history today."
+  "NEUER — OLDEST GERMAN TO EVER FEATURE AT A MAJOR TOURNAMENT: Neuer broke Lothar Matthäus's record on June 14 vs Curaçao, becoming the oldest German player to appear at a major tournament at 40 years and 79 days. Matthäus's record had stood since 2000.",
+
+  "GERMANY HAVEN'T KEPT A CLEAN SHEET IN 9 CONSECUTIVE WORLD CUP MATCHES: Their last clean sheet at a World Cup was the 2014 final — a 1–0 win over Argentina. They have conceded in every match at every World Cup since. A clean sheet today would end a 12-year drought.",
+
+  "GERMANY'S FIRST WORLD CUP KNOCKOUT MATCH SINCE THE 2014 FINAL: Germany were eliminated in the group stage in 2018 and 2022 — back-to-back group stage exits for the first time in their history. This is their first knockout appearance in 12 years. They won that 2014 knockout match (the final itself, 1–0 vs Argentina). They now face a knockout opponent for the first time since lifting the trophy.",
+
+  "PARAGUAY HAVE NEVER SCORED IN A WORLD CUP KNOCKOUT MATCH — ACROSS 5 ATTEMPTS: Paraguay have reached the knockout stage five times (1986, 1998, 2002, 2006, 2010) and failed to score in any of them. Their only knockout win came in a penalty shootout vs Japan in 2010, after a 0–0 draw. A goal today would be their first-ever knockout stage goal in World Cup history.",
+
+  "ONLY THE SECOND MEETING EVER — GERMANY WON THE FIRST 1–0 AT THE SAME STAGE IN 2002: Germany beat Paraguay 1–0 in the Round of 16 at the 2002 World Cup (Oliver Neuville, 88'). Their only other meeting was a 3–3 friendly in 2013. This is a direct rematch of that 2002 knockout tie — 24 years later, at the same round.",
+
+  "PARAGUAY QUALIFIED AS A THIRD-PLACED TEAM — HAVING LOST 4–1 TO THE USA IN THEIR OPENER: Paraguay were thrashed 4–1 by co-hosts USA in game one, making them one of only a handful of nations in World Cup history to recover from a 4-goal opening defeat and still reach the knockout rounds.",
+
+  "MUSIALA & WIRTZ — FIRST TIME BOTH HAVE PLAYED A WORLD CUP KNOCKOUT MATCH: Florian Wirtz is at his debut World Cup. Musiala played at 2022 but Germany were eliminated in the group stage. This is the first World Cup knockout match either has ever played. Combined age: 46.",
+
+  "GERMANY SCORED 10 GOALS IN THE GROUP STAGE — JOINT-HIGHEST WITH NETHERLANDS: Including a 7–1 demolition of Curaçao. Their xG across three matches is the highest of any team at the tournament. Yet they conceded in all three games and lost their final group match to Ecuador — the same tension between elite attack and fragile defence that defined their 2022 exit.",
+
+  "MIGUEL ALMIRON RETURNS FROM SUSPENSION — PARAGUAY'S ONE GENUINE WORLD-CLASS THREAT: Almiron was sent off against Turkey and missed the Australia draw. He comes back for the biggest match of Paraguay's tournament against the strongest opponent they've faced. His direct speed on the counter is the one asset capable of exposing Germany's high defensive line."
+]
+  },
+  {
+    "match_id": "54327934",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Netherlands-vs-Morocco/54327934",
+    "sportsdb_event_id": "2499836",
+    "kickoff_utc": "2026-06-30T01:00:00Z",
+    "home_team": "Netherlands",
+    "away_team": "Morocco",
+    "post_ht": true,
+    "records": [
+  "ISMAEL SAIBARI — 3 GOALS IN 3 GAMES, ONE FROM THE HIGHEST-SCORING AFRICAN EVER: Saibari has scored in every group game. A goal today equals Roger Milla's all-time record of 4 goals for an African player in a single World Cup tournament (Cameroon, 1990). He is 23, joining Bayern Munich this summer, and this is his first World Cup.",
+
+  "MOROCCO ALREADY THE HIGHEST-SCORING AFRICAN NATION IN WORLD CUP HISTORY: Morocco's 4–2 win over Haiti was the first time they ever scored 4 goals in a World Cup match. Their 6 group-stage goals moved them past Nigeria's 23 to reach 26 — the most goals ever scored by an African nation across all World Cup history. A goal today extends that record.",
+
+  "MOROCCO UNBEATEN IN 32 CONSECUTIVE MATCHES: Morocco enter this knockout game on a 32-match unbeaten run across all competitions. This is their first knockout match of that streak against European opposition since defeating Portugal and Spain in Qatar 2022.",
+
+  "MOROCCO HAVE ALREADY SCORED AS MANY GOALS IN 3 GAMES AS THEY DID IN ALL 7 GAMES AT 2022: Six goals in 2026 vs six goals in seven matches at Qatar. Their shots per game have jumped from 9 in 2022 to 16 in 2026 — a complete attacking transformation.",
+
+  "MOROCCO ONLY EVER WON ONE KNOCKOUT MATCH AGAINST EUROPE — AND IT WAS AGAINST PORTUGAL IN 2022: Morocco's knockout record vs European nations is W1 D0 L4. That one win was the quarter-final upset of Ronaldo's Portugal. A win today doubles their all-time European knockout tally.",
+
+  "NETHERLANDS HAVE SCORED 10 GOALS IN 3 GAMES — BUT CONCEDED IN EVERY GROUP MATCH: The Dutch are the joint-highest scorers in the group stage. However, they haven conceded in each of their three games — a defensive fragility Morocco's counter-attacking system is specifically built to exploit.",
+
+  "NETHERLANDS — 3 FINALS, 0 WORLD CUP TITLES: The Netherlands are the most decorated nation never to win the World Cup — finalists in 1974, 1978, and 2010. A deep run here is their first genuine shot at ending that record since 2010.",
+
+  "NETHERLANDS HAVE PROGRESSED FROM 7 OF THEIR LAST 10 WORLD CUP KNOCKOUT GAMES — BUT 3 OF THEIR LAST 5 WENT TO PENALTIES: Their last penalty shootout was a 4–3 loss to Argentina in the 2022 quarter-finals. Morocco knocked out Spain on penalties in the same tournament.",
+
+  "ONLY THE SECOND EVER WORLD CUP MEETING: Their only prior encounter was a 2–1 Dutch win in the 1994 group stage — goals from Bergkamp and Bryan Roy. That match was 32 years ago and means almost nothing given how drastically both squads have changed.",
+
+  "MOROCCO — THIRD AFRICAN NATION TO REACH THE KNOCKOUT STAGE IN CONSECUTIVE WORLD CUPS: After Nigeria (1994, 1998) and Ghana (2006, 2010), Morocco (2022, 2026) are only the third African nation ever to achieve back-to-back knockout appearances.",
+
+  "THREE MOROCCO PLAYERS WERE BORN IN THE NETHERLANDS: A significant portion of Morocco's squad holds Dutch heritage — born or raised in the Netherlands but representing Morocco internationally. This match is a direct consequence of dual-nationality pipelines that Dutch football itself helped create."
 ]
   }
 ]
