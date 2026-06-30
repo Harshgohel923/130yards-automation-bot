@@ -73,3 +73,14 @@ def post_to_instagram(public_image_url: str, caption: str) -> str:
     media_id = pub.json()['id']
     print(f"[instagram] Published: {media_id}")
     return media_id
+
+
+def delete_instagram_post(media_id: str) -> None:
+    """Delete an Instagram post by media_id. Raises on failure."""
+    res = requests.delete(
+        f'{GRAPH_URL}/{media_id}',
+        params={'access_token': ACCESS_TOKEN},
+        timeout=15,
+    )
+    res.raise_for_status()
+    print(f"[instagram] Deleted post: {media_id}")

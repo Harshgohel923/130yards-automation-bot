@@ -111,15 +111,75 @@ def generate_caption(scraper_data: dict, event_type: str = 'FT',
     competition  = match_sample.get('competition_name', 'FIFA World Cup 2026')
 
     if event_type == 'HT':
-        home_score = match_sample.get('hts_A', '0')
-        away_score = match_sample.get('hts_B', '0')
+        home_score = str(match_sample.get('hts_A') or '0')
+        away_score = str(match_sample.get('hts_B') or '0')
         moment     = 'half-time'
         moment_tag = 'HT'
+        score_line = f"{home_team} {home_score}-{away_score} {away_team} (Half-Time)"
+        match_ending = 'half-time'
     else:
-        home_score = match_sample.get('fs_A', '?')
-        away_score = match_sample.get('fs_B', '?')
+        ps_a = str(match_sample.get('ps_A') or '').strip()
+        ps_b = str(match_sample.get('ps_B') or '').strip()
+        fs_a = str(match_sample.get('fs_A') or '0')
+        fs_b = str(match_sample.get('fs_B') or '0')
+        ets_a = str(match_sample.get('ets_A') or '').strip()
+        ets_b = str(match_sample.get('ets_B') or '').strip()
+
+        if ps_a and ps_b:
+            # Match went to penalties — display score is AET score (excl. penalties)
+            try:
+                disp_a = str(int(fs_a) - int(ps_a))
+                disp_b = str(int(fs_b) - int(ps_b))
+            except (ValueError, TypeError):
+                disp_a, disp_b = fs_a, fs_b
+            home_score, away_score = disp_a, disp_b
+            score_line = (
+                f"{home_team} {disp_a}-{disp_b} {away_team} (AET) "
+                f"| Penalties: {home_team} {ps_a}-{ps_b} {away_team}"
+            )
+            match_ending = 'penalties'
+            try:
+                result_context = f"{away_team} win on penalties" if int(ps_b) > int(ps_a) else f"{home_team} win on penalties"
+            except (ValueError, TypeError):
+                result_context = "won on penalties"
+        elif ets_a and ets_b:
+            # Match went to ET but no penalties
+            home_score, away_score = fs_a, fs_b
+            score_line = f"{home_team} {fs_a}-{fs_b} {away_team} (AET)"
+            match_ending = 'extra time'
+            try:
+                result_context = f"{home_team} win (AET)" if int(fs_a) > int(fs_b) else f"{away_team} win (AET)"
+            except (ValueError, TypeError):
+                result_context = "result after extra time"
+        else:
+            home_score, away_score = fs_a, fs_b
+            score_line = f"{home_team} {fs_a}-{fs_b} {away_team} (Full-Time)"
+            match_ending = 'full-time'
+            try:
+                hs, as_ = int(fs_a), int(fs_b)
+                if hs > as_:
+                    result_context = f"{home_team} win"
+                elif as_ > hs:
+                    result_context = f"{away_team} win"
+                else:
+                    result_context = "a draw"
+            except (ValueError, TypeError):
+                result_context = "result unknown"
+
         moment     = 'full-time'
         moment_tag = 'FT'
+
+    if event_type == 'HT':
+        try:
+            hs, as_ = int(home_score), int(away_score)
+            if hs > as_:
+                result_context = f"{home_team} leading"
+            elif as_ > hs:
+                result_context = f"{away_team} leading"
+            else:
+                result_context = "level at half-time"
+        except (ValueError, TypeError):
+            result_context = "result unknown"
 
     goals_str = _summarise_events(scraper_data.get('events', []))
     stats_str = _summarise_stats(scraper_data.get('statistics', {}))
@@ -136,67 +196,93 @@ def generate_caption(scraper_data: dict, event_type: str = 'FT',
     )
     group_table_str = json.dumps(cup_table, ensure_ascii=False) if is_group_stage else ''
 
-    # Determine result context for richer prompt
-    try:
-        hs = int(home_score)
-        as_ = int(away_score)
-        if hs > as_:
-            result_context = f"{home_team} win"
-        elif as_ > hs:
-            result_context = f"{away_team} win"
-        else:
-            result_context = "a draw"
-    except (ValueError, TypeError):
-        result_context = "result unknown"
-
     records_block = ''
     if records:
         records_block = '- Records/Milestones at stake:\n' + '\n'.join(f'  • {r}' for r in records)
 
     prompt = f"""You are a football content writer for an Instagram page covering the FIFA World Cup 2026.
 
-Write an Instagram caption for a match scorecard post. Follow the exact format and style of the example below — including flag emojis, number emojis in the score line, blank lines between paragraphs, and a blank line before hashtags.
+Write a creative, engaging Instagram caption for a match scorecard post. Every caption should feel UNIQUE — vary the structure, length, tone, and opening style. Never repeat the same template twice.
 
-EXAMPLE (for a Bosnia 3-1 Qatar FT post):
-🇧🇦 FULL-TIME: Bosnia & Herzegovina 3️⃣-1️⃣ Qatar 🇶🇦
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+UNICODE FONT STYLES — use ONLY these six, no others:
+  1. Double-struck  (e.g. 𝕋𝕙𝕖 𝕢𝕦𝕚𝕔𝕜 𝕓𝕣𝕠𝕨𝕟 𝕗𝕠𝕩)        → stats callouts, records, standout numbers
+  2. Strikethrough   (e.g. T̶h̶e̶ q̶u̶i̶c̶k̶ b̶r̶o̶w̶n̶ f̶o̶x̶)         → broken records: cross out old holder/mark, write new one beside it
+  3. Bold Italic Sans (e.g. 𝙏𝙝𝙚 𝙦𝙪𝙞𝙘𝙠 𝙗𝙧𝙤𝙬𝙣 𝙛𝙤𝙭)          → punchy secondary lines, achievement callouts
+  4. Script           (e.g. 𝒯𝒽𝑒 𝓆𝓊𝒾𝒸𝓀 𝒷𝓇𝑜𝓌𝓃 𝒻𝑜𝓍)           → emotional/poetic lines, narrative moments
+  5. Slash-through    (e.g. T̸h̸e̸ q̸u̸i̸c̸k̸ b̸r̸o̸w̸n̸ f̸o̸x̸)         → alternate for broken records (vary with style 2 for freshness)
+  6. Bold Serif       (e.g. 𝐓𝐡𝐞 𝐪𝐮𝐢𝐜𝐤 𝐛𝐫𝐨𝐰𝐧 𝐟𝐨𝐱)             → main headlines, team names in openers
+Mix 2–3 styles per caption. Use plain text for regular sentences. PLAIN CAPITALS are also allowed for extra emphasis where styled fonts feel like too much.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-A convincing win, but not enough.
+STYLE REFERENCES (vary between these approaches — don't copy, use as inspiration):
 
-Bosnia finish their group-stage campaign with four points, yet results elsewhere mean they fall short of a guaranteed Round of 32 spot.
+Example A — short & punchy (winner advances):
+𝐌𝐎𝐑𝐎𝐂𝐂𝐎 𝐈𝐍𝐓𝐎 𝐓𝐇𝐄 𝐑𝐎𝐔𝐍𝐃 𝐎𝐅 𝟏𝟔 𝐀𝐅𝐓𝐄𝐑 𝐀 𝐃𝐑𝐀𝐌𝐀𝐓𝐈𝐂 𝐏𝐄𝐍𝐀𝐋𝐓𝐘 𝐒𝐇𝐎𝐎𝐓𝐎𝐔𝐓 🦁🇲🇦
 
-A strong finish, but the future lies in other's hands. 🇧🇦
+Morocco are now 33 games unbeaten 😳
 
-#BosniaAndHerzegovina #Qatar #FIFAWorldCup #TheDragons #MaroonStars
+Example B — upset/shock (with multi-style fonts):
+𝐏𝐀𝐑𝐀𝐆𝐔𝐀𝐘 𝐄𝐋𝐈𝐌𝐈𝐍𝐀𝐓𝐄 𝐆𝐄𝐑𝐌𝐀𝐍𝐘 𝐅𝐑𝐎𝐌 𝐓𝐇𝐄 𝐖𝐎𝐑𝐋𝐃 𝐂𝐔𝐏 🤯🤯🤯
 
----
+𝗔𝗙𝗧𝗘𝗥 𝗣𝗘𝗡𝗔𝗟𝗧𝗜𝗘𝗦, 𝗧𝗛𝗘𝗬 𝗔𝗥𝗘 𝗧𝗛𝗥𝗢𝗨𝗚𝗛 𝗧𝗢 𝗧𝗛𝗘 𝗥𝗢𝗨𝗡𝗗 𝗢𝗙 𝟭𝟲 😲
 
-RULES FOR THE CAPTION BODY:
-- Line 1: [flag emoji] {"HALF-TIME" if event_type == "HT" else "FULL-TIME"}: [Home Team] [score digits as number emojis]-[score digits as number emojis] [Away Team] [flag emoji]
-- Then a blank line
-- Then 2–3 short punchy paragraphs, each separated by a blank line
-- Each paragraph is 1–2 sentences max
-- Mention key goal scorers naturally if available
-- If a record or milestone was broken, weave it into a paragraph naturally
-- If group table data is provided, reference the group standings to add narrative context (e.g. qualification implications, who goes through)
-- Use 1–2 emojis within the body (not forced, feel natural)
+𝙒𝙃𝘼𝙏 𝘼𝙉 𝘼𝘾𝙃𝙄𝙀𝙑𝙀𝙈𝙀𝙉𝙏 👏🇵🇾
+
+Example C — last-second drama with player stats:
+𝐁𝐑𝐀𝐙𝐈𝐋 𝐈𝐍 𝐓𝐇𝐄 𝐕𝐄𝐑𝐘 𝐋𝐀𝐒𝐓 𝐒𝐄𝐂𝐎𝐍𝐃 🫨🫨🫨
+
+𝗧𝗛𝗘𝗬 𝗔𝗗𝗩𝗔𝗡𝗖𝗘 𝗧𝗢 𝗧𝗛𝗘 𝗥𝗢𝗨𝗡𝗗 𝗢𝗙 𝟭𝟲 💪🇧🇷
+
+Casemiro & Martinelli score the goals, with Bruno Guimarães adding another assist 😲
+
+Bruno Guimarães this World Cup:
+🅰️ vs Japan
+🅰️🅰️ vs Scotland
+🅰️ vs Japan
+
+Example D — emotional farewell (losing team):
+🇯🇵 𝐓𝐇𝐄 𝐃𝐑𝐄𝐀𝐌 𝐄𝐍𝐃𝐒.
+
+𝑭𝒓𝒐𝒎 𝒈𝒓𝒐𝒖𝒑-𝒔𝒕𝒂𝒈𝒆 𝒉𝒆𝒓𝒐𝒆𝒔… 𝒕𝒐 𝒌𝒏𝒐𝒄𝒌𝒐𝒖𝒕 𝒉𝒆𝒂𝒓𝒕𝒃𝒓𝒆𝒂𝒌. 💔
+
+Japan's FIFA World Cup 2026 journey comes to an end, falling just one step short of matching their best-ever World Cup finish.
+
+𝐇𝐄𝐀𝐃𝐒 𝐇𝐄𝐋𝐃 𝐇𝐈𝐆𝐇. 💙
+
+👏 ありがとう、日本. Until next time.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CAPTION BODY RULES:
+- Open with a bold styled headline — make it feel like breaking news or a match-defining moment
+- When showing the score, use EXACTLY the "EXACT SCORE LINE" provided — convert digits to number emojis (1️⃣, 2️⃣ etc.) but do not change the structure or recompute anything
+- Vary structure freely: can be short & punchy (2–4 lines), or longer with player stats/legacy context
+- Use flag emojis for both teams naturally
+- Sprinkle emojis throughout to make it visually engaging — but keep it tasteful. A well-placed 😤, 🔥, 💔, 😳, 🫨, 👏, ⚽, 🏆, 💪 at the end of a line lands well. Do NOT stack 3+ emojis in a row, do NOT use emojis that feel forced or unrelated to the moment.
+- Mention key goal scorers, assists, or standout stats if available and relevant
+- If records/milestones provided, weave them in naturally
+- If group table provided, reference qualification implications
 - Tone: passionate football fan — real, emotional, not corporate, not clickbait
+- {"This is a half-time caption — capture the tension and drama of what's happened so far" if event_type == "HT" else "This is a full-time caption — capture the finality and emotion of the result"}
 
-RULES FOR HASHTAGS (exactly 5, on one line after a blank line):
+HASHTAG RULES (exactly 5, on one line after a blank line):
 1. #HomeTeamName (no spaces, e.g. #BosniaAndHerzegovina)
 2. #AwayTeamName (no spaces)
 3. #FIFAWorldCup
-4. #HomeTeamNickname (well-known nickname, e.g. #ThreeLions for England, #LesBleus for France — if no well-known nickname, use a relevant tag for that team, NOT a match abbreviation like #NORFRA)
+4. #HomeTeamNickname (well-known nickname e.g. #ThreeLions, #LesBleus — if none, use a relevant tag, NOT a match abbreviation)
 5. #AwayTeamNickname (same rule)
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Match Details:
 - Full match info: {json.dumps(_clean_match_sample(match_sample), ensure_ascii=False)}
 - Moment: {moment_tag} ({moment})
-- Score at {moment}: {home_team} {home_score} – {away_score} {away_team}
+- EXACT SCORE LINE (use this verbatim when showing the score — do not recompute or reformat it): {score_line}
+- Match ended via: {match_ending}
 - Result: {result_context}
 - Goals: {goals_str}
 {('- Stats: ' + stats_str) if stats_str else ''}{('\n- H2H: ' + h2h_str) if h2h_str else ''}{('\n- Recent form: ' + form_str) if form_str else ''}{('\n- Group table: ' + group_table_str) if group_table_str else ''}{('\n' + records_block) if records_block else ''}
 
-Return ONLY the caption — no labels, no explanations, no markdown formatting."""
+Return ONLY the caption text — no labels, no explanations, no markdown formatting."""
 
     for model in GEMINI_MODELS:
         try:

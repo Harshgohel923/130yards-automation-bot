@@ -41,6 +41,7 @@ ZONES = [
     "8. Stadium name\n   (bottom centre text)",
     "9. Home team scorers\n   (goal lines, left side)",
     "10. Away team scorers\n   (goal lines, right side)",
+    "11. Penalty shootout score\n   e.g. '(4 - 2 pen)'",
 ]
 
 ZONE_COLORS = [
@@ -54,6 +55,7 @@ ZONE_COLORS = [
     (255, 255,  60),   # yellow     — stadium
     (200, 100, 255),   # violet     — home scorers
     (60,  220, 160),   # teal       — away scorers
+    (255,  80,  80),   # red        — penalty score
 ]
 
 SUMMARY_NAMES = [
@@ -67,9 +69,26 @@ SUMMARY_NAMES = [
     "STADIUM_BOX",
     "HOME_SCORERS_BOX",
     "AWAY_SCORERS_BOX",
+    "PENALTY_SCORE_BOX",
 ]
 
 TOTAL_ZONES = len(ZONES)
+
+# ── Pre-filled boxes from scorecard.py (zones 1-10) ─────────────────────────
+# These are displayed as reference only — only zone 11 needs to be picked.
+PREFILLED_BOXES = [
+    (721,  1106, 1697, 1193),   # 1. GROUP_STAGE_BOX
+    (228,  1588,  707, 2027),   # 2. HOME_CREST_BOX
+    (1762, 1584, 2241, 2023),   # 3. AWAY_CREST_BOX
+    (94,   2074,  884, 2165),   # 4. HOME_NAME_BOX
+    (1573, 2070, 2368, 2157),   # 5. AWAY_NAME_BOX
+    (747,  1584, 1120, 2027),   # 6. HOME_SCORE_BOX
+    (1320, 1577, 1722, 2023),   # 7. AWAY_SCORE_BOX
+    (772,  3147, 1646, 3227),   # 8. STADIUM_BOX
+    (83,   2212, 1120, 3100),   # 9. HOME_SCORERS_BOX
+    (1316, 2197, 2368, 3100),   # 10. AWAY_SCORERS_BOX
+]
+PREFILLED_COUNT = len(PREFILLED_BOXES)
 
 # ── State ────────────────────────────────────────────────────────────────────
 
@@ -249,13 +268,14 @@ def main():
     interp = cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR
     disp = cv2.resize(img, (dw, dh), interpolation=interp)
 
-    boxes, cur_pt1 = [], None
+    boxes   = list(PREFILLED_BOXES)
+    cur_pt1 = None
 
     with open(LOG_FILE, 'w') as f:
         f.write(f"Template: {TEMPLATE_PATH}  ({w}x{h} px)\n" + "-" * 60 + "\n")
 
     print(f"\nTemplate loaded ({w}x{h} px, displayed at {scale:.2f}x).")
-    print(f"Define {TOTAL_ZONES} bounding boxes — click TOP-LEFT then BOTTOM-RIGHT.\n")
+    print(f"Zones 1-{PREFILLED_COUNT} pre-filled from scorecard.py — define zone {PREFILLED_COUNT + 1} only.\n")
 
     cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
     cv2.setMouseCallback(WINDOW_NAME, on_mouse, {'w': dw})
@@ -265,7 +285,7 @@ def main():
         key = cv2.waitKey(16) & 0xFF
         if key in (ord('q'), 27):
             break
-        if key == ord('r') and boxes:
+        if key == ord('r') and len(boxes) > PREFILLED_COUNT:
             removed = boxes.pop()
             cur_pt1 = None
             print(f"Removed last box: {removed} — redo it.")

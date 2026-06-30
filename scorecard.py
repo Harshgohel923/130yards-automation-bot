@@ -23,6 +23,7 @@ AWAY_NAME_BOX    = (1573, 2070, 2368, 2157)   # center-aligned text
 STADIUM_BOX      = (772, 3147, 1646, 3227)   # center-aligned text
 HOME_SCORERS_BOX = (83, 2212, 1120, 3100)   # left-aligned scorer lines
 AWAY_SCORERS_BOX = (1316, 2197, 2368, 3100)   # right-aligned scorer lines
+PENALTY_SCORE_BOX = (932, 2063, 1526, 2161)  # center-aligned penalty shootout score
 
 # ── FONT PATHS ────────────────────────────────────────────────────────────────
 FONT_BOLD    = 'assets/fonts/BebasNeue-Regular.ttf'
@@ -50,11 +51,24 @@ SCORER_LINE_GAP  = 50
 SYMBOL_TEXT_GAP  = 50   # pixels between symbol and the minute/name block
 MINUTE_NAME_GAP       = 50   # pixels between minute number and scorer name
 SYMBOL_VERTICAL_OFFSET = 15  # positive = nudge symbol down; tweak until flush
-STADIUM_FONT_MAX = 72
-STADIUM_FONT_MIN = 10
+STADIUM_FONT_MAX  = 72
+STADIUM_FONT_MIN  = 10
+PENALTY_FONT_MAX  = 120
+PENALTY_FONT_MIN  = 18
+COLOR_PENALTY     = (200, 210, 225, 255)
 
 
-# ── Round-code → display name ─────────────────────────────────────────────────
+# ── TheSportsDB intRound → display name ──────────────────────────────────────
+SPORTSDB_ROUND_MAP = {
+    '32': 'ROUND OF 32',
+    '16': 'ROUND OF 16',
+    '8':  'QUARTER-FINAL',
+    '4':  'SEMI-FINAL',
+    '2':  'SEMI-FINAL',
+    '1':  'FINAL',
+}
+
+# ── Scraper round_name fallback map ──────────────────────────────────────────
 ROUND_NAME_MAP = {
     'R':   'GROUP STAGE',
     '32': 'ROUND OF 32',
@@ -311,7 +325,8 @@ def _draw_scorer_lines(img, draw, lines, box, align, font_size):
 
 # ── Main public function ──────────────────────────────────────────────────────
 
-def generate_scorecard(scraper_data: dict, event_type: str = 'FT', match_id_override: str = '') -> str:
+def generate_scorecard(scraper_data: dict, event_type: str = 'FT', match_id_override: str = '',
+                       int_round: str | None = None, str_league: str | None = None) -> str:
     """
     Build a scorecard image from scraper_data (output of get_match_data).
     event_type: 'HT' or 'FT' — controls which template is fetched and which
@@ -328,11 +343,20 @@ def generate_scorecard(scraper_data: dict, event_type: str = 'FT', match_id_over
     events        = scraper_data.get('events', [])
 
     # ── Scores ────────────────────────────────────────────────────────────────
+    ps_home_raw = str(match_sample.get('ps_A') or '').strip()
+    ps_away_raw = str(match_sample.get('ps_B') or '').strip()
+
     if event_type == 'HT':
         home_score = str(match_sample.get('hts_A') or '0')
         away_score = str(match_sample.get('hts_B') or '0')
     else:
         home_score, away_score = _parse_scores(match_sample)
+        if ps_home_raw and ps_away_raw:
+            try:
+                home_score = str(int(home_score) - int(ps_home_raw))
+                away_score = str(int(away_score) - int(ps_away_raw))
+            except ValueError:
+                pass
 
     # ── Template ──────────────────────────────────────────────────────────────
     template_path = None
@@ -353,17 +377,31 @@ def generate_scorecard(scraper_data: dict, event_type: str = 'FT', match_id_over
     draw = ImageDraw.Draw(img)
 
     # ── Group / Stage label — center aligned ──────────────────────────────────
-    group_name = (match_sample.get('group_name') or '').strip()
-    round_code = (match_sample.get('round_name') or '').strip()
-    round_label = ROUND_NAME_MAP.get(round_code, round_code)
-    if group_name and round_label:
-        stage_text = f"{group_name.upper()} | {round_label}"
-    elif group_name:
-        stage_text = group_name.upper()
-    elif round_label:
-        stage_text = round_label
+    if int_round:
+        round_label = SPORTSDB_ROUND_MAP.get(str(int_round))
+        if not round_label:
+            # Small number → group stage matchday
+            try:
+                round_label = f'MATCHDAY {int(int_round)}'
+            except (ValueError, TypeError):
+                round_label = str(int_round).upper()
+        if str_league:
+            stage_text = f'{str_league.upper()} | {round_label}'
+        else:
+            stage_text = round_label
     else:
-        stage_text = ''
+        # Fall back to scraper fields
+        group_name = (match_sample.get('group_name') or '').strip()
+        round_code = (match_sample.get('round_name') or '').strip()
+        round_label = ROUND_NAME_MAP.get(round_code, round_code)
+        if group_name and round_label:
+            stage_text = f'{group_name.upper()} | {round_label}'
+        elif group_name:
+            stage_text = group_name.upper()
+        elif round_label:
+            stage_text = round_label
+        else:
+            stage_text = ''
     if stage_text and GROUP_STAGE_BOX != (0, 0, 0, 0):
         _draw_centered_text(draw, stage_text, GROUP_STAGE_BOX,
                             FONT_BOLD, STAGE_FONT_MAX, STAGE_FONT_MIN, COLOR_STAGE)
@@ -390,10 +428,38 @@ def generate_scorecard(scraper_data: dict, event_type: str = 'FT', match_id_over
             _draw_centered_text(draw, score_val, box,
                                 FONT_BOLD, SCORE_FONT_MAX, SCORE_FONT_MIN, COLOR_SCORE)
 
+    # ── Penalty shootout score — only shown when match went to penalties ───────
+    ps_home = ps_home_raw if event_type != 'HT' else ''
+    ps_away = ps_away_raw if event_type != 'HT' else ''
+    if ps_home and ps_away and PENALTY_SCORE_BOX != (0, 0, 0, 0):
+        penalty_text = f"PENALTIES: {ps_home}-{ps_away}"
+        # Draw semi-transparent black shadow behind the text
+        size = _fit_font_to_box(draw, penalty_text, PENALTY_SCORE_BOX,
+                                FONT_BOLD, PENALTY_FONT_MAX, PENALTY_FONT_MIN)
+        font = _font(FONT_BOLD, size)
+        tw, th = _text_size(draw, penalty_text, font)
+        cx = (PENALTY_SCORE_BOX[0] + PENALTY_SCORE_BOX[2]) // 2
+        cy = (PENALTY_SCORE_BOX[1] + PENALTY_SCORE_BOX[3]) // 2
+        pad = 14
+        shadow = Image.new('RGBA', img.size, (0, 0, 0, 0))
+        ImageDraw.Draw(shadow).rectangle(
+            (cx - tw // 2 - pad, cy - th // 2 - pad,
+             cx + tw // 2 + pad, cy + th // 2 + pad),
+            fill=(0, 0, 0, 180),
+        )
+        img = Image.alpha_composite(img, shadow)
+        draw = ImageDraw.Draw(img)
+        _draw_centered_text(draw, penalty_text, PENALTY_SCORE_BOX,
+                            FONT_BOLD, PENALTY_FONT_MAX, PENALTY_FONT_MIN, COLOR_PENALTY)
+
     # ── Scorer lines ──────────────────────────────────────────────────────────
     # Use raw (un-normalized) names because event['team'] reflects the scraper value
-    home_lines = _extract_scorer_lines(events, raw_home_team)
-    away_lines = _extract_scorer_lines(events, raw_away_team)
+    # When match goes to penalties, exclude 120' shootout events from display
+    filtered_events = events
+    if ps_home_raw and ps_away_raw:
+        filtered_events = [e for e in events if e.get('minute') != "120'"]
+    home_lines = _extract_scorer_lines(filtered_events, raw_home_team)
+    away_lines = _extract_scorer_lines(filtered_events, raw_away_team)
 
     # Find the largest font size where BOTH sides fit
     chosen_size = SCORER_FONT_MIN

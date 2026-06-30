@@ -12,7 +12,7 @@ import requests
 # identifies the event type. Checked against lowercase URL.
 #
 #   goal             →  "cp-_"
-#   penalty_goal     →  "tqm6"
+#   penalty_goal     →  "tqm6" or "kbao"
 #   penalty_missed   →  "emgp"   e.g. ChNLklyPLpuAEmgpAAAJOegKiJs321.png
 #   own_goal         →  "oamr"
 #   assist           →  "qwrv"
@@ -53,7 +53,7 @@ def parse_event_type(img_url: str):
         return "assist",          "🅰️"
     if "oamr" in lurl:
         return "own_goal",        "⚽ OG"
-    if "tqm6" in lurl:
+    if "tqm6" in lurl or "kbao" in lurl:
         return "penalty_goal",    "⚽ P"
     if "emgp" in lurl:
         return "penalty_missed",  "❌"
@@ -341,6 +341,7 @@ def get_match_data(url: str) -> dict | None:
 
 # penalty goal:
 # http://img-sd.allfootballapp.com/fastdfs4/M00/C8/DD/ChNLklyPLpuATqM6AAAJjsueBPk904.png
+# http://img-sd.allfootballapp.com/fastdfs4/M00/C8/7A/ChNLklx1KiiAKBAOAAAHCpKLVGk952.png
 
 # own goal:
 # http://img-sd.allfootballapp.com/fastdfs4/M00/C8/DF/ChMf8FyPLpuAOAmRAAAI9PoZUXw387.png

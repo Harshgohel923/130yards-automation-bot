@@ -14,18 +14,26 @@ cloudinary.config(
 )
 
 
-def upload_image(local_path: str) -> str:
+def upload_image(local_path: str) -> tuple[str, str]:
     """
-    Upload a local image to Cloudinary and return the secure URL.
+    Upload a local image to Cloudinary.
+    Returns (secure_url, public_id).
     Raises on failure so the caller can handle retries.
     """
     if not os.path.exists(local_path):
         raise FileNotFoundError(f"Scorecard not found at: {local_path}")
 
     result = cloudinary.uploader.upload(local_path, folder='scorecards')
-    url    = result['secure_url']
+    url       = result['secure_url']
+    public_id = result['public_id']
     print(f"[cloudinary] Uploaded: {url}")
-    return url
+    return url, public_id
+
+
+def delete_image(public_id: str) -> None:
+    """Delete an image from Cloudinary by its public_id. Raises on failure."""
+    cloudinary.uploader.destroy(public_id)
+    print(f"[cloudinary] Deleted: {public_id}")
 
 
 def upload_match_data(local_path: str) -> str:
