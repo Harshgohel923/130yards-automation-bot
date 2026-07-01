@@ -1,99 +1,107 @@
 [
   {
-    "match_id": "54327937",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/C%C3%B4te-d'Ivoire-vs-Norway/54327937",
-    "sportsdb_event_id": "2502605",
-    "kickoff_utc": "2026-06-30T17:00:00Z",
-    "home_team": "Cote d'Ivoire",
-    "away_team": "Norway",
-    "post_ht": true,
-    "knockout_match": true,
-"records": [
-  "FIRST EVER MEETING: Ivory Coast and Norway have never played each other at any level before today — a genuinely blank historical slate at the knockout stage.",
-
-  "IVORY COAST'S FIRST-EVER WORLD CUP KNOCKOUT MATCH: This is the first time in Ivory Coast's history they have reached the Round of 32. Any result today writes new chapters — a win would be the furthest they have ever gone.",
-
-  "HAALAND CHASING A 73-YEAR-OLD RECORD: A goal today would make Haaland the first player since Hungary's Sándor Kocsis in 1954 to score in each of his first three World Cup appearances. He already has 4 goals in his first two games.",
-
-  "HAALAND ON AN 11-GAME SCORING STREAK: He has scored in 10 consecutive competitive internationals for Norway. A goal vs Ivory Coast extends it to 11 straight — and keeps him in the Golden Boot race.",
-
-  "NORWAY'S FIRST KNOCKOUT MATCH SINCE 1998 — TRYING TO BREAK A 0-2 RECORD: Norway have played only two World Cup knockout matches in history, losing both — to Italy in 1938 (2–1) and 1998 (1–0). A win today would be their first-ever World Cup knockout victory.",
-
-  "ONLY TWO AFRICAN NATIONS HAVE EVER WON THEIR FIRST WORLD CUP KNOCKOUT GAME: Cameroon (1990, inspired by Roger Milla) and Senegal (2002, Henri Camara brace) are the only African debutant knockout winners in history. Ivory Coast can become the third.",
-
-  "IVORY COAST OPENED THE SCORING IN ALL THREE GROUP GAMES — ONLY THE SECOND AFRICAN NATION EVER: A rare feat of consistency; doing it a fourth time today would be unprecedented for an African nation at a single World Cup.",
-
-  "NORWAY CONCEDED IN ALL 5 OF THEIR LAST 5 MATCHES: Their defensive frailty (7 goals conceded in 3 group games, including a 4-1 hammering by France) is the single biggest data point working against them in this knockout tie.",
-
-  "IVORY COAST'S STINGY DEFENCE: They've conceded just twice across three group games — the joint-best defensive record of any team they could have drawn in the Round of 32.",
-
-  "NORWAY VS AFRICAN NATIONS — ALMOST UNBEATEN: Norway have lost only 2 of 19 all-time matches against African opposition (W9 D8 L2), and both losses came in friendlies. Their competitive record against the continent is spotless.",
-
-  "IVORY COAST VS EUROPEAN OPPOSITION AT WORLD CUPS — A STRUGGLE: Just 1 win in their last 5 World Cup matches against European nations (W1 D1 L3), with their two most recent such matches both ending in defeat, including this tournament's 2-1 loss to Germany."
-]
-  },
-  {
-    "match_id": "54327936",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/France-vs-Sweden/54327936",
-    "sportsdb_event_id": "2502847",
-    "kickoff_utc": "2026-06-30T21:00:00Z",
-    "home_team": "France",
-    "away_team": "Sweden",
-    "post_ht": true,
-    "knockout_match": true,
-"records": [
-  "MBAPPÉ LEVEL WITH KLOSE, CHASING MESSI'S NEW RECORD: Mbappé's 4 goals at this tournament took him to 16 all-time World Cup goals — level with Miroslav Klose's old record. He now sits 2 behind Lionel Messi's new all-time mark of 18. A goal or two today closes that gap further.",
-
-  "MBAPPÉ NOW HAS 20+ WORLD CUP GOAL CONTRIBUTIONS — ONLY THE THIRD PLAYER EVER: With 16 goals and assists added, Mbappé became just the third player in World Cup history to reach 20+ combined goal contributions, joining Messi and Klose.",
-
-  "MBAPPÉ SCORES IN 7 OF HIS LAST 8 WORLD CUP MATCHES: A remarkable scoring consistency — he's blanked in just one of his last eight World Cup appearances. Sweden's defense, which has 0 clean sheets in 9 matches, is exactly the kind of opponent this streak feeds on.",
-
-  "DEMBÉLÉ — 4 GOALS INCLUDING A HAT-TRICK VS THE SAME OPPONENT SWEDEN JUST DREW WITH: The reigning Ballon d'Or winner scored a first-half hat-trick against Norway — the team Sweden held to a draw. Dembélé is tied with Mbappé for France's tournament-leading scorer.",
-
-  "FIRST EVER WORLD CUP MEETING BETWEEN FRANCE AND SWEDEN: Despite 23 all-time meetings (France lead 12-6-5), the two nations have never met at a World Cup finals before. This Round of 32 tie is uncharted territory at the game's biggest stage.",
-
-  "FRANCE OUTSCORED OPPONENTS 10-2 IN THE GROUP STAGE: A +8 goal difference and a perfect 9-point group campaign — one of the most dominant group stage performances of the tournament.",
-
-  "SWEDEN HAVE GONE 9 STRAIGHT MATCHES WITHOUT A CLEAN SHEET, CONCEDING 30 IN THEIR LAST 14: Their defensive record is one of the most porous of any team left in the tournament, including a 5-1 mauling by Netherlands in the group stage.",
-
-  "FRANCE HAVE COVERED OVER 2.5 GOALS IN 12 CONSECUTIVE MATCHES: A streak that speaks to their relentless attacking output heading into the knockout rounds.",
-
-  "FRANCE SCORED 2+ GOALS IN 14 OF THEIR LAST 15 MATCHES ACROSS ALL COMPETITIONS: Near-total attacking consistency across club and country form for the squad's key players.",
-
-  "SWEDEN ADVANCED AS ONE OF THE BEST THIRD-PLACED TEAMS — A FIRST FOR SWEDISH WORLD CUP HISTORY: This new 48-team format pathway is uncharted territory; Sweden have never previously qualified for a World Cup knockout stage via a third-place finish.",
-
-  "ISAK HIEN OUT FOR THE REST OF THE TOURNAMENT: Sweden's defense, already shaky, loses centre-back Isak Hien to a hamstring tear — forcing Victor Lindelöf into a reshuffled backline against the tournament's most in-form attack."
-]
-  },
-  {
-    "match_id": "54327939",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Mexico-vs-Ecuador/54327939",
-    "sportsdb_event_id": "2503390",
-    "kickoff_utc": "2026-07-01T01:00:00Z",
-    "home_team": "Mexico",
-    "away_team": "Ecuador",
+    "match_id": "54327940",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/England-vs-Congo-DR/54327940",
+    "sportsdb_event_id": "2503391",
+    "kickoff_utc": "2026-07-01T16:00:00Z",
+    "home_team": "England",
+    "away_team": "Congo DR",
     "post_ht": true,
     "knockout_match": true,
     "records": [
-  "MEXICO CHASING THEIR FIRST WORLD CUP KNOCKOUT WIN IN 40 YEARS: Mexico's last World Cup knockout victory came in 1986 — as hosts. A win today would end one of the longest knockout droughts of any World Cup regular.",
+  "USA'S FIRST WORLD CUP KNOCKOUT WIN SINCE 2002 ON THE LINE: The USA's last World Cup knockout victory was a 2–0 win over Mexico in the Round of 16 at the 2002 World Cup — 24 years ago. Every knockout match since has ended in defeat. A win today on home soil ends the longest knockout drought in US football history.",
 
-  "MEXICO'S GREATEST-EVER GROUP STAGE: Three wins from three, six goals scored, zero conceded — the best group stage in Mexican World Cup history. Only Argentina and France matched their perfect record this tournament.",
+  "USA WINLESS AGAINST EUROPE AT THE WORLD CUP IN THEIR LAST 21 MEETINGS: USA's all-time World Cup record against European nations reads W1 D7 L13, with their only win coming against Portugal in 2002. They are winless in their last 13 European WC fixtures (D6 L7). Bosnia are European. This is the defining challenge Pochettino's side must answer.",
 
-  "MEXICO HAVEN'T CONCEDED A SINGLE GOAL IN 2026 — A FOURTH CLEAN SHEET WOULD EXTEND AN ALREADY HISTORIC RUN: They are the only team in this World Cup to win all three group games to nil. A clean sheet vs Ecuador continues a streak no other nation has matched.",
+  "USA HAVE SCORED IN 20 CONSECUTIVE WORLD CUP MATCHES — ONE OF THE LONGEST ACTIVE STREAKS IN TOURNAMENT HISTORY: An extraordinary run of sustained attacking output. A goal today extends it to 21.",
 
-  "MEXICO'S FORTRESS AT THE AZTECA — 9 WORLD CUP MATCHES, JUST 2 GOALS CONCEDED: Mexico's record at their own national stadium across World Cup history is remarkable defensively. The venue itself is practically a 12th man.",
+  "BOSNIA HAVE NEVER KEPT A CLEAN SHEET IN ANY OF THEIR 6 WORLD CUP MATCHES — THE WORST RECORD OF ANY NATION STILL IN THE TOURNAMENT: Six games, six matches with goals conceded, no shutout in their entire World Cup history. No nation that has played more than five World Cup matches holds a worse clean sheet record.",
 
-  "ECUADOR ONE WIN FROM MATCHING THEIR BEST-EVER WORLD CUP RESULT: Ecuador's best finish remains the Round of 16 at the 2006 World Cup, where they were eliminated by England. Beating Mexico would equal that best-ever knockout step and set up a chance to surpass it.",
+  "BOSNIA'S FIRST-EVER WORLD CUP KNOCKOUT MATCH: Bosnia were eliminated in the group stage at their only previous World Cup in 2014. Reaching the Round of 32 today is already the furthest they have gone in their entire history. A win would be the single greatest result in Bosnian football.",
 
-  "ECUADOR'S BRUTAL FINISHING — 8.81 xG, ONLY 2 GOALS SCORED IN THE GROUP STAGE: Despite generating elite-level scoring chances all tournament, Ecuador converted at a shockingly low rate. If their finishing clicks today, the underlying numbers suggest they're a live threat.",
+  "BOSNIA KNOCKED OUT ITALY IN THE PLAYOFF TO GET HERE — RANKED 13TH IN THE WORLD: Bosnia beat world No. 13 Italy in the European qualification playoff, with Esmir Bajraktarevic scoring the winning penalty. Italy, four-time World Cup winners, were sent home by a team ranked 64th in the world. The USA should not underestimate the team that produced that result.",
 
-  "ECUADOR BEAT GROUP WINNERS GERMANY 2-1 TO SNEAK THROUGH — A COMEBACK WIN ON THE FINAL DAY: Trailing early, Nilson Angulo equalized and Gonzalo Plata struck the 77th-minute winner, the result that defined Ecuador's tournament and secured their spot as a best third-placed finisher.",
+  "ESMIR BAJRAKTAREVIC — BORN IN WISCONSIN, RAISED IN THE US, CHOSE BOSNIA OVER USA: Bajraktarevic grew up in Wisconsin, came through MLS academies, and made one appearance for the US national team before switching allegiance to Bosnia in 2024 — the country of his parents' birth. He then scored the winning penalty that sent Bosnia to this World Cup. He plays his first career World Cup match on American soil today.",
 
-  "ONLY THE SECOND-EVER WORLD CUP MEETING BETWEEN THESE TWO: Mexico beat Ecuador 2-1 in the group stage of the 2002 World Cup — their only previous meeting at the tournament. Of 28 all-time clashes, Mexico lead 17-7-4.",
+  "EDIN DZEKO — 40 YEARS OLD, IN HIS SECOND AND FINAL WORLD CUP: Dzeko, Bosnia's all-time record scorer, is 40 years old and playing in what is certainly his last World Cup. At the 2014 edition he was their standout performer in the group stage. He is Bosnia's reference point, aerially dominant, and the most experienced player on the pitch.",
 
-  "MEXICO HAVE REACHED THE ROUND OF 16 IN 7 OF THEIR LAST 8 WORLD CUPS — BUT NEVER GONE FURTHER SINCE 1986: Mexico's modern World Cup story is consistent group stage survival followed by an immediate knockout exit. Breaking into the quarterfinals for the first time since hosting in 1986 starts with beating Ecuador today.",
+  "BOSNIA ARE THE TALLEST SQUAD AT THE ENTIRE 2026 WORLD CUP — AND HAVE SCORED 3 CORNER GOALS: Average squad height of 1.85m, the highest of all 48 nations. They have already converted three corners into goals in the group stage — more than any other team. USA's set-piece defending will be scrutinised.",
 
-  "GILBERTO MORA — YOUNGEST MEXICO STARTER SINCE 1954: The 17-year-old phenom became the youngest player to start a World Cup match for Mexico in 72 years during the group stage, and is a focal point of El Tri's attacking identity heading into the knockout rounds."
+  "CHRISTIAN PULISIC — NEEDS THIS STAGE TO DEFINE HIS WORLD CUP LEGACY: Pulisic came off injured against Paraguay, returned as substitute vs Turkey, and is now fit to start. He has 0 goals and 0 assists at this tournament. USA's captain and most gifted player has delivered nothing yet on home soil. A knockout match against Bosnia is exactly the kind of moment he has built his reputation for at club level.",
+
+  "FIRST EVER COMPETITIVE MEETING BETWEEN USA AND BOSNIA: All three prior meetings were friendlies (W2 D1 for USA). The World Cup is an entirely different context — every data point from those matches is almost meaningless under knockout pressure.",
+
+  "WESTON MCKENNIE — TOURNAMENT-HIGH xA OF 1.54, ZERO ASSISTS: McKennie leads the entire tournament in expected assists with 1.54 xA from the group stage — meaning he has created more high-quality chances than any midfielder at this World Cup. But he has zero recorded assists. If those chances are converted today, USA's attack reaches a different level."
+]
+  },
+  {
+    "match_id": "54327943",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Belgium-vs-Senegal/54327943",
+    "sportsdb_event_id": "2503392",
+    "kickoff_utc": "2026-07-01T20:00:00Z",
+    "home_team": "Belgium",
+    "away_team": "Senegal",
+    "post_ht": true,
+    "knockout_match": true,
+    "records": [
+  "FIRST EVER MEETING BETWEEN BELGIUM AND SENEGAL: These two nations have never faced each other in any competitive or friendly fixture in recorded international football history. Zero head-to-head data exists. This is genuinely uncharted territory for both nations.",
+
+  "LUKAKU — 6 WORLD CUP GOALS AND 8 GOAL INVOLVEMENTS, MORE THAN ANY BELGIAN SINCE 1966: Lukaku's goal and assist vs New Zealand gave him 6 goals and 8 total WC involvements (6G, 2A) — the most by any Belgian player at the World Cup since records began in 1966. At 33, this is almost certainly his last tournament. A goal today extends that record.",
+
+  "DE BRUYNE — 35 YEARS OLD, 122 CAPS, FINAL WORLD CUP: De Bruyne made his Belgium debut at 17. He is now 35 and on 122 caps. He has 38 international goals. The golden generation has been written off repeatedly — this is likely his last chance to deliver a deep World Cup run. He has 11 set-piece deliveries in the group stage, the most of any player at this tournament.",
+
+  "BELGIUM WERE THE FIRST EUROPEAN TEAM SINCE ENGLAND IN 1990 TO WIN A GROUP AFTER NOT WINNING THEIR FIRST TWO GAMES: Belgium drew with Egypt and Iran before a 5-1 win over New Zealand sealed top spot. England pulled the same feat in Italia '90 before reaching the semi-finals. Belgium will hope the historical parallel holds.",
+
+  "BELGIUM UNBEATEN IN 16 CONSECUTIVE MATCHES ACROSS ALL COMPETITIONS: An extraordinary run of form that includes wins over Croatia, Tunisia, USA and New Zealand, with draws against Mexico, Egypt and Iran. Every match they play extends the streak.",
+
+  "SENEGAL'S LAST THREE WORLD CUP KNOCKOUT MATCHES: Lost 1-0 to Turkey (2002 QF), lost 3-0 to England (2022 R16), and now face Belgium. They have not scored in their last two knockout exits. Their only knockout win ever was beating Sweden 2-1 in the 2002 Round of 16 — 24 years ago.",
+
+  "SENEGAL HAVE LOST THEIR LAST FOUR WORLD CUP MATCHES AGAINST EUROPEAN OPPOSITION: Losses to Netherlands and England in 2022, France and Norway in 2026. Before that streak, they had lost just one of their first five WC matches against European nations. Belgium are the fifth consecutive European test.",
+
+  "ISMAÏLA SARR — 4 GOAL INVOLVEMENTS, MATCHING HENRI CAMARA'S 2002 SENEGAL RECORD IN A SINGLE TOURNAMENT: Sarr's 3 goals and 1 assist at this World Cup equal the most by a Senegalese player in a single World Cup edition, matching Henri Camara's tally from their legendary 2002 run. A further contribution breaks it outright.",
+
+  "SADIO MANÉ — SCORELESS AT THIS WORLD CUP DESPITE SENEGAL'S 8 GOALS: Mané, Senegal's all-time record scorer with 46 international goals, has not scored in any of Senegal's three group games. He was not involved in any of the five against Iraq. His entire World Cup contribution rests on one goal — vs Qatar in 2022. A goal today would be only his second ever World Cup goal.",
+
+  "EDOUARD MENDY OUT WITH A KNEE SPRAIN — SENEGAL'S FIRST-CHOICE GOALKEEPER MISSES THE KNOCKOUT: Mendy, the Chelsea and now Al-Ahli goalkeeper, is absent for the most important match of Senegal's tournament. Backup Mory Diaw starts. Senegal have already conceded 6 goals in 3 games with Mendy — the drop-off is a significant vulnerability.",
+
+  "BELGIUM HAVE NEVER BEATEN AN AFRICAN NATION IN A WORLD CUP KNOCKOUT MATCH — IN FACT THEY'VE NEVER FACED ONE: Belgium's six all-time WC matches against African teams are all group stage encounters (W3 D2 L1, losing 2-0 to Morocco in 2022). This is their first-ever knockout match against an African nation.",
+
+  "SENEGAL'S GROUP STAGE GAMES PRODUCED 14 GOALS — THE SECOND-HIGHEST TOTAL OF ANY TEAM IN THE TOURNAMENT: Only Norway's group games produced more (15). Senegal scored 8 and conceded 6. The highest-scoring African team's games meets Belgium in a knockout — if that open style continues, Seattle is in for a spectacle."
+]
+  },
+  {
+    "match_id": "54327941",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/United-States-vs-Bosnia-Herzegovina/54327941",
+    "sportsdb_event_id": "2499837",
+    "kickoff_utc": "2026-07-02T00:00:00Z",
+    "home_team": "United States",
+    "away_team": "Bosnia and Herzegovina",
+    "post_ht": true,
+    "knockout_match": true,
+    "records": [
+  "FIRST EVER MEETING: England and DR Congo have never faced each other at any level — no World Cup, no friendly, no competitive fixture of any kind in football history.",
+
+  "HARRY KANE — ONE GOAL FROM EQUALLING GARY LINEKER'S ENGLAND WORLD CUP RECORD AGAIN: Kane enters on 10 WC goals — equal with Lineker's record set in 1990. He scored twice to reach that mark vs Croatia. A goal today gives him 11 and makes him England's outright all-time World Cup scorer. He reached this same milestone before Panama, now he has another chance against a different African opponent.",
+
+  "KANE — MOST WORLD CUP PENALTIES EVER: Kane has 5 World Cup penalties scored — an all-time record across the tournament's history. DR Congo have already conceded spot kicks in the group stage. The set-piece threat is real.",
+
+  "ENGLAND UNBEATEN IN 11 COMPETITIVE FIXTURES UNDER TUCHEL — ONE OF THE BEST STARTS BY AN ENGLAND MANAGER IN HISTORY: W10 D1 since Tuchel took charge on January 1, 2025. England conceded zero goals across 8 World Cup qualifying matches, scoring 22. Their defensive machine has not leaked in competitive football for an extraordinary stretch.",
+
+  "ENGLAND HAVE KEPT CLEAN SHEETS IN 12 OF THEIR LAST 13 COMPETITIVE MATCHES: A defensive record that frames this entire tournament run. The only clean sheet they failed to keep was the 4-2 opening win over Croatia — when they conceded twice, but also scored four.",
+
+  "ENGLAND HAVEN'T WON A MAJOR TROPHY SINCE 1966 — 60 YEARS: Every knockout match England play is another step toward ending the longest drought in their football history. The World Cup would be the first major trophy since the home final 60 years ago.",
+
+  "DR CONGO'S FIRST EVER WORLD CUP KNOCKOUT MATCH — 52 YEARS AFTER ZAIRE'S DISASTER: DR Congo's only previous World Cup appearance was as Zaire in 1974: 3 losses, 0 goals, 14 conceded, culminating in the infamous 9-0 defeat to Yugoslavia. This is their first knockout match since the country was founded in its modern footballing identity.",
+
+  "YOANE WISSA — 3 OF DR CONGO'S 4 TOURNAMENT GOALS, AVERAGING ONE EVERY 90 MINUTES: 75% of DR Congo's entire World Cup output runs through one man. He scored against Portugal, twice against Uzbekistan, and is now Newcastle United's most dangerous international asset. Stopping Wissa effectively stops DR Congo.",
+
+  "AARON WAN-BISSAKA STARTS FOR DR CONGO — AGAINST ENGLAND, THE COUNTRY OF HIS BIRTH: Wan-Bissaka, born in Croydon and a former Manchester United right-back who spent years in the English Premier League, represents DR Congo internationally. He starts today against England — the country he grew up in, the football culture that shaped him.",
+
+  "CHANCEL MBEMBA CAPTAINS DR CONGO AT 31 — PORTO AND MARSEILLE VETERAN ON THE BIGGEST STAGE OF HIS CAREER: Mbemba marshals a back three that already held Portugal to a 1-1 draw. He is the defensive cornerstone of a side built to frustrate exactly the kind of deep possession team England can become when they stop being direct.",
+
+  "DECLAN RICE — 17 SET-PIECE DELIVERIES IN THE GROUP STAGE, THE MOST OF ANY PLAYER AT THE TOURNAMENT: Every corner, free kick and dead ball England earn runs through Rice. Against DR Congo's deep block, set pieces are projected to be England's most reliable route to goal. Rice's delivery combined with Kane's movement is the primary equation.",
+
+  "DR CONGO DREW WITH PORTUGAL 1-1 AND HELD COLOMBIA TO A 1-0 LOSS — THE SAME PORTUGAL THAT BEAT UZBEKISTAN 5-0: DR Congo conceded only 2 goals in 3 group games. The side that held Mbappé's Portugal and the tournament's most creative South American side to close scorelines now faces England. The low block is not a fluke — it is a system."
 ]
   }
 ]
