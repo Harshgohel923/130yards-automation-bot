@@ -15,7 +15,7 @@ run-name: match-${{ inputs.match_id }}
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 180   # 3 hours covers 90-min match + ET + penalties + buffer
+    timeout-minutes: 220   # 3h40m covers PRE_MATCH_WINDOW (5m) + MAX_MATCH_DURATION (210m) + buffer
 
     steps:
       - uses: actions/checkout@v4
