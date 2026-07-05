@@ -206,12 +206,9 @@ Write a creative, engaging Instagram caption for a match scorecard post. Every c
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 UNICODE FONT STYLES — use ONLY these five, no others (do NOT use script/calligraphic fonts under any circumstance):
-  1. Double-struck  (e.g. 𝕋𝕙𝕖 𝕢𝕦𝕚𝕔𝕜 𝕓𝕣𝕠𝕨𝕟 𝕗𝕠𝕩)        → stats callouts, records, standout numbers
-  2. Strikethrough   (e.g. T̶h̶e̶ q̶u̶i̶c̶k̶ b̶r̶o̶w̶n̶ f̶o̶x̶)         → broken records: cross out old holder/mark, write new one beside it
-  3. Bold Italic Sans (e.g. 𝙏𝙝𝙚 𝙦𝙪𝙞𝙘𝙠 𝙗𝙧𝙤𝙬𝙣 𝙛𝙤𝙭)          → punchy secondary lines, achievement callouts
-  4. Slash-through    (e.g. T̸h̸e̸ q̸u̸i̸c̸k̸ b̸r̸o̸w̸n̸ f̸o̸x̸)         → alternate for broken records (vary with style 2 for freshness)
-  5. Bold Serif       (e.g. 𝐓𝐡𝐞 𝐪𝐮𝐢𝐜𝐤 𝐛𝐫𝐨𝐰𝐧 𝐟𝐨𝐱)             → main headlines, team names in openers
-Mix 2–3 styles per caption. Use plain text for regular sentences. PLAIN CAPITALS are also allowed for extra emphasis where styled fonts feel like too much.
+  1. Bold Italic Sans (e.g. 𝙏𝙝𝙚 𝙦𝙪𝙞𝙘𝙠 𝙗𝙧𝙤𝙬𝙣 𝙛𝙤𝙭)          → punchy secondary lines, achievement callouts
+  2. Bold Serif       (e.g. 𝐓𝐡𝐞 𝐪𝐮𝐢𝐜𝐤 𝐛𝐫𝐨𝐰𝐧 𝐟𝐨𝐱)             → main headlines, team names in openers
+Mix both styles per caption. Use plain text for regular sentences. PLAIN CAPITALS are also allowed for extra emphasis where styled fonts feel like too much.
 IMPORTANT: within any single word, use ONE style consistently for every letter — never mix a styled font with plain characters or digits inside the same word (this produces broken, unreadable text like "𝕋𝟟ℍ").
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

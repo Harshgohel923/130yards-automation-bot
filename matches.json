@@ -1,71 +1,73 @@
 [
   {
-    "match_id": "54328018",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Canada-vs-Morocco/54328018",
-    "sportsdb_event_id": "2505183",
-    "kickoff_utc": "2026-07-04T17:00:00Z",
-    "home_team": "Canada",
-    "away_team": "Morocco",
+    "match_id": "54328019",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Brazil-vs-Norway/54328019",
+    "sportsdb_event_id": "2505462",
+    "kickoff_utc": "2026-07-05T20:00:00Z",
+    "home_team": "Brazil",
+    "away_team": "Norway",
     "post_ht": true,
     "knockout_match": true,
     "records": [
-  "DIRECT REMATCH OF 2022 GROUP STAGE — MOROCCO ELIMINATED CANADA THEN AND ARE BACK TO DO IT AGAIN: Morocco beat Canada 2-1 in the 2022 World Cup group stage, with goals from Ziyech and En-Nesyri inside 23 minutes. Canada have never beaten Morocco in four all-time meetings (W0 D1 L3). A Canada win today would be their first ever victory over Morocco — in the most important match either nation has played.",
+  "BRAZIL HAVE NEVER BEATEN NORWAY IN HISTORY — THE ONLY NATION WITH THAT DISTINCTION: Norway are the only nation on earth with an unbeaten record against Brazil across all meetings — P4 W2 D2 L0. No other country can claim they have never lost to the five-time world champions. Brazil have beaten 194 nations. Norway is the one they cannot beat.",
 
-  "CANADA'S FIRST-EVER ROUND OF 16 — EVERY MATCH FROM HERE REWRITES HISTORY: Canada have broken records at every stage of this tournament. First point. First win. First knockout win. First Round of 16. A quarterfinal would be so far beyond anything Canadian football has achieved it would enter the realm of the miraculous.",
+  "NORWAY BEAT BRAZIL AT THE 1998 WORLD CUP — THE LAST TIME THEY MET AT THIS TOURNAMENT: In France 1998, Norway came from 1–0 down to beat Brazil 2–1 in the group stage — one of the great World Cup shocks of that era. Tore André Flo equalised and Kjetil Rekdal's penalty won it in the final 12 minutes. Brazil still qualified as group winners but lost to Norway on the day. That result is the last head-to-head data point between these nations.",
 
-  "MOROCCO UNBEATEN IN 33 CONSECUTIVE MATCHES — THE LONGEST ACTIVE UNBEATEN RUN AT THE TOURNAMENT: Morocco's unbeaten run stretches back through the 2025 AFCON title, a perfect qualifying campaign, and now four World Cup matches. Thirty-three matches without defeat is the longest active streak of any nation in international football.",
+  "HAALAND — 5 GOALS IN 4 MATCHES, SCORING EVERY 54 MINUTES: Haaland has scored in every match he has started at this World Cup — braces against Iraq and Senegal, the late winner vs Ivory Coast. He converts at a goal every 54 minutes, with 9 shots on target from 14 attempts and a 35.7% conversion rate. A goal today makes him the highest scorer at the 2026 World Cup outright.",
 
-  "MOROCCO FIRST AFRICAN NATION TO WIN KNOCKOUT MATCHES AT CONSECUTIVE WORLD CUPS: By beating the Netherlands in the Round of 32, Morocco became the first African side ever to win knockout matches at back-to-back World Cups (Spain/Portugal 2022, Netherlands 2026). A win today adds a third consecutive knockout victory — another unprecedented feat for African football.",
+  "HAALAND CHASING SÁNDOR KOCSIS'S 1954 RECORD — MOST GOALS IN A SINGLE WORLD CUP: Kocsis scored 11 goals for Hungary in 1954 — the all-time single-tournament record. Haaland is on 5 with potentially 3 more matches to play if Norway advance. He needs 7 from here to equal it — unlikely but mathematically alive in a way it wasn't before the tournament started.",
 
-  "ISMAEL SAIBARI — 4 GOALS, ONE FROM EQUALLING THE HIGHEST-SCORING AFRICAN IN A SINGLE WORLD CUP: Saibari (3 group stage goals + 1 penalty vs Netherlands) has 4 goals at this tournament. One more draws level with Cameroon's Roger Milla (1990) and Senegal's Ismaila Sarr (2026) as joint-highest scorer by an African player in a single World Cup edition. Two goals breaks it outright.",
+  "BRAZIL CHASING THEIR 9TH CONSECUTIVE WORLD CUP QUARTERFINAL — A RECORD NO NATION CAN MATCH: Brazil have reached the quarterfinals in every World Cup since 1994 — eight in a row. A ninth consecutive last-eight appearance would extend the most consistent record of deep runs in World Cup history. No other nation has come close to that consistency.",
 
-  "MOROCCO COMPLETED 801 PASSES AGAINST NETHERLANDS — ONLY THE SECOND TEAM IN WC HISTORY TO EXCEED 800: Morocco's possession game against the Netherlands produced 801 completed passes — the second-highest total ever recorded in a World Cup match since modern data tracking began, behind only Spain. Their 61.75% average possession across the tournament is the highest of any team remaining.",
+  "NORWAY'S FIRST WORLD CUP QUARTERFINAL EVER — THEIR 1998 CEILING WAS THE ROUND OF 16: Norway's only previous World Cup knockout match was a 1–0 Round of 16 loss to Italy in 1998. They have never in their history reached the last eight. A win today is the single greatest result in Norwegian football — full stop.",
 
-  "YASSINE BOUNOU WAS BORN IN MONTREAL — CANADA'S NEMESIS IS TECHNICALLY CANADIAN-BORN: Morocco's goalkeeper Bounou was born in Montreal, Canada before his family returned to Morocco when he was young. He faces the Canadian national team today as the last line of Morocco's defence — a Canadian-born goalkeeper potentially ending Canada's dream tournament.",
+  "VINICIUS JR — 4 GOALS, 71 SPRINTS, 33.23 KM/H: The fastest player at the tournament by recorded top speed, with more sprints than any other outfield player. His xG of 3.87 across four matches suggests he should have even more goals. He is directly joined by Ødegaard's Norway — the tournament's most creative midfielder vs the tournament's fastest winger.",
 
-  "CANADA RECORDED 100 FINAL-THIRD PRESSURES IN ONE HALF AGAINST SOUTH AFRICA — THE HIGHEST RECORDED IN ANY WC MATCH SINCE 2010: Jesse Marsch's intense pressing system produced a record-breaking first-half pressure count against South Africa. Against Morocco's possession-based structure, that pressure output will be Canada's primary weapon — and its greatest risk.",
+  "RAPHINHA AND PAQUETÁ BOTH OUT — BRAZIL MISSING TWO OF THEIR THREE MOST CREATIVE PLAYERS: Raphinha (hamstring, out for the tournament) and Lucas Paquetá (halftime withdrawal vs Japan, appears tournament-ending) are both unavailable. Brazil's entire right side and their No.10 are gone. Ancelotti won the group stage with this attack at full strength. He now needs to reach the quarterfinal without it.",
 
-  "ALPHONSO DAVIES STARTS FOR THE FIRST TIME THIS TOURNAMENT: Davies missed most of the group stage through injury and has only appeared as a substitute. He is expected to make his first start today. Davies is the most recognisable Canadian footballer on earth — a Champions League winner with Bayern Munich. Canada with a fully fit Davies is measurably a different team.",
+  "ANCELOTTI — FIRST NON-BRAZILIAN COACH IN HISTORY TO LEAD BRAZIL IN A WORLD CUP KNOCKOUT MATCH: In 106 years of Brazilian football, no foreign coach had ever managed Seleção at a World Cup until Ancelotti in 2026. He now leads them in their first knockout match as a non-native coach. The 5-time Champions League winner chases a sixth major title — his first international trophy.",
 
-  "JONATHAN DAVID — 4 WORLD CUP GOALS ALREADY THE MOST BY A CANADIAN IN HISTORY — NEEDS TWO MORE TO REACH A RECORD THAT DIDN'T EXIST BEFORE THIS TOURNAMENT: David's hat-trick against Qatar and goal against Bosnia already made him Canada's all-time leading World Cup scorer. Every goal he scores sets a new Canadian record that was essentially impossible to exist before 2026.",
+  "ØDEGAARD — EVERY HAALAND TOURNAMENT GOAL DIRECTLY ASSISTED OR CREATED BY HIM: Ødegaard has a direct involvement in every single one of Haaland's five goals at this World Cup — either an assist or the key pass that led to the chance. The Ødegaard–Haaland axis for Norway is statistically the most productive two-player partnership at the 2026 tournament.",
 
-  "CANADA HAVE MORE SHOTS ON TARGET THAN ANY OTHER TEAM AT THIS WORLD CUP — YET SCORED ONLY 2 GOALS IN THEIR LAST TWO MATCHES: The most dangerous team in terms of shot volume is also the most wasteful in front of goal across the knockout stage. Against Morocco's goalkeeper Bounou — who saved two Netherlands penalties — Canada's finishing will be the difference between history and heartbreak."
+  "BRAZIL HAVE SCORED BOTH TEAMS TO SCORE IN ALL FOUR MATCHES — NORWAY HAVE TOO: Neither team has kept a clean sheet across their four World Cup games. Both sides have allowed goals in every match. The probability of a 0–0 draw between these two teams is almost historically negligible based on their data at this tournament.",
+
+  "METLIFE STADIUM — THE WORLD CUP FINAL VENUE HOSTS ITS BIGGEST MATCH YET: Both Brazil and Norway played their group stage matches at MetLife Stadium earlier in the tournament. They return for the Round of 16 to the same ground that will host the World Cup Final on July 19. The winner could walk back in here for the last night of the tournament."
 ]
     
   },
   {
-    "match_id": "54328017",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Paraguay-vs-France/54328017",
-    "sportsdb_event_id": "2505624",
-    "kickoff_utc": "2026-07-04T21:00:00Z",
-    "home_team": "Paraguay",
-    "away_team": "France",
+    "match_id": "54328020",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Mexico-vs-England/54328020",
+    "sportsdb_event_id": "2507706",
+    "kickoff_utc": "2026-07-06T00:00:00Z",
+    "home_team": "Mexico",
+    "away_team": "England",
     "post_ht": true,
     "knockout_match": true,
     "records": [
-  "MBAPPÉ — 18 WORLD CUP GOALS, TWO BEHIND MESSI'S NEW ALL-TIME RECORD: Mbappé's brace vs Sweden took him to 18 total World Cup goals — one behind Lionel Messi's new record of 20. Two goal today ties Messi. Three goals surpasses the greatest goalscorer in World Cup history. He is 27 years old with at least one more World Cup ahead of him.",
+  "MEXICO COULD BECOME ONLY THE SECOND TEAM IN WC HISTORY TO KEEP 5 CONSECUTIVE CLEAN SHEETS IN A SINGLE EDITION: Mexico have kept clean sheets in all four matches — against South Africa, South Korea, Czechia, and Ecuador. Only Italy in 1990 kept clean sheets across their opening five World Cup matches in a single edition — and they finished third. A clean sheet today puts Mexico in historically elite defensive company.",
 
-  "MBAPPÉ — MORE WORLD CUP KNOCKOUT GOALS THAN ANY PLAYER IN HISTORY: With 10 knockout stage goals, Mbappé holds the outright all-time record for goals scored in World Cup knockout matches — surpassing Ronaldo, Klose, and Müller. A goal today extends it to 11 in the knockout rounds alone.",
+  "MEXICO HAVE NEVER LOST A WORLD CUP MATCH AT THE AZTECA IN 10 GAMES — AND ARE UNBEATEN IN 22 CONSECUTIVE COMPETITIVE HOME MATCHES: Mexico's World Cup record at the Azteca reads W8 D2 — never lost. Their overall competitive record at the stadium is W87 D ? L2 across 89 games, losing just twice in 56 years of competitive football at this ground. Both losses were in qualifying. England must break one of the most formidable home records in football history.",
 
-  "MICHAEL OLISE — 5 ASSISTS, ONE FROM EQUALLING PELÉ'S SINGLE-TOURNAMENT RECORD: Olise leads the tournament with 5 assists in 4 matches. Pelé's record of 6 assists in a single World Cup, set in 1958, has stood for 68 years. One more today ties it. Two breaks it outright.",
+  "THIS IS THE MOST GAMES PLAYED BY ANY TEAM AT ONE VENUE IN WORLD CUP HISTORY: This is Mexico's 11th World Cup match at the Azteca — the most appearances at a single venue by any nation in World Cup history. The stadium has hosted 23 World Cup matches overall — more than any other ground on earth.",
 
-  "FRANCE FIRST TEAM SINCE BRAZIL 2002 WITH THREE PLAYERS ON 5+ GOAL INVOLVEMENTS: Mbappé (8), Dembélé (6), and Olise (5) have each reached that threshold. The last side to manage it was Brazil's 2002 title-winning team — Ronaldo (8), Rivaldo (6), Ronaldinho (5). France are mirroring the output of arguably the greatest single-tournament attacking performance in World Cup history.",
+  "ENGLAND RETURN TO THE AZTECA FOR THE FIRST TIME IN 40 YEARS — THE SCENE OF THE 'HAND OF GOD': The last time England played at the Azteca was the 1986 quarter-final against Argentina — Maradona's Hand of God goal, his Goal of the Century, and England's elimination. That was 40 years ago to this tournament. England have never won a World Cup match on Mexican soil.",
 
-  "FRANCE COULD BECOME ONLY THE THIRD TEAM TO SCORE 3+ GOALS IN 5 CONSECUTIVE WC MATCHES: France have scored 3+ in all four of their matches at this tournament. Only Germany (1954) and Brazil (1970) have achieved 3+ goals across five consecutive World Cup matches in a single edition — and both those teams won the title.",
+  "HARRY KANE — 12 WORLD CUP GOALS, OUTRIGHT ENGLAND RECORD, CHASING TOP 5 ALL-TIME: Kane broke Gary Lineker's England WC record (10) against DR Congo with goals 11 and 12. He now stands alone as England's greatest World Cup scorer. Miroslav Klose's all-time record of 16 is 4 goals away — achievable if England go deep.",
 
-  "DESCHAMPS — 18 WC WINS AS MANAGER, THE MOST IN HISTORY. A 19TH TODAY WOULD BE UNPRECEDENTED: Deschamps holds the all-time record for World Cup victories as a head coach. A win vs Paraguay gives him 19 — a number no manager has ever reached in the tournament's history. He has also announced this is his final World Cup before stepping down as France coach.",
+  "KANE — 4 HEADED WC GOALS, THIRD MOST IN HISTORY: Three of Kane's four World Cup headers have come at this tournament alone. Only Miroslav Klose (7) and Gerd Müller (5) have scored more headed goals in World Cup history. The Azteca's high altitude affects crossing and delivery — set pieces at altitude behave differently. Kane knows.",
 
-  "FRANCE HAVEN'T LOST A ROUND OF 16 MATCH SINCE 1934 — 92 YEARS: France's last elimination in a 16-team knockout round was a 3-2 loss to Austria in 1934 at the inaugural knockout stage. Since the format was reintroduced in 1986, France have won every single Round of 16 match they have played — 7 in a row.",
+  "MEXICO HAVE WON 4 MATCHES IN 2026 — THE MOST VICTORIES BY MEXICO IN ANY SINGLE WC EDITION: Four wins at a single World Cup is the most Mexico have ever achieved in a single tournament. They are already in record territory. A fifth today would extend it to the most dominant World Cup campaign in Mexican football history.",
 
-  "THIS IS A REMATCH OF THE 1998 WORLD CUP ROUND OF 16 — WITH DESCHAMPS NOW IN THE DUGOUT: The last time these nations met at a World Cup was in the Round of 16 at France 1998, which France won 1-0. Didier Deschamps was the captain of that France team. He is now the manager. He has been involved in both World Cup knockout matches France have ever played against Paraguay — 28 years apart.",
+  "JULIÁN QUIÑONES — ONE GOAL FROM MEXICO'S SINGLE-TOURNAMENT SCORING RECORD: Quiñones has 3 goals and 1 assist — the most goal involvements by a Mexican at a single World Cup since Luis Hernández scored 4 in 1998. One goal today equals that 28-year-old national record. Two goals breaks it.",
 
-  "FRANCE ARE TRYING TO REACH THREE CONSECUTIVE WORLD CUP FINALS — ONLY WEST GERMANY AND BRAZIL HAVE DONE IT: France won in 2018, lost the final in 2022. A run to the final in 2026 would make them only the third nation in history to contest three consecutive World Cup finals, alongside West Germany (1982–1990) and Brazil (1994–2002).",
+  "ROBERTO ALVARADO — 3 ASSISTS, THE MOST BY ANY MEXICAN IN WC HISTORY: Alvarado already holds the all-time record for most assists by a Mexican player in a single World Cup tournament (since 1966). He also leads all Mexicans for chances created (10), possession won (15), and tackles (7).",
 
-  "FRANCE UNBEATEN IN 11 WORLD CUP MATCHES AGAINST SOUTH AMERICAN NATIONS SINCE 1978: France's last World Cup loss to a South American side was a 2-1 group stage defeat to Argentina in 1978 — nearly 50 years ago. Since then: W6 D5 against South American opposition at World Cups. Paraguay are South American.",
+  "ENGLAND HAVE FAILED TO SCORE IN THE FIRST HALF IN THREE CONSECUTIVE WORLD CUP MATCHES: Every England goal at this tournament has come in the second half. At 2,200 metres altitude, where oxygen is roughly 80% of sea level, sustaining pressure across 90 minutes is exponentially harder — England's habit of slow starts is a particular vulnerability here.",
 
-  "PARAGUAY'S ONLY TWO WORLD CUP KNOCKOUT WINS — BOTH CAME IN PENALTY SHOOTOUTS, BOTH AGAINST NON-EUROPEAN OPPONENTS: Paraguay beat Japan 5-3 on penalties in 2010 after a 0-0 draw. They beat Germany 4-3 on penalties in 2026 after a 1-1 draw. Both times they did not win in 90 minutes. Both times they saved at least two penalties. France have not lost a competitive penalty shootout since Euro 2020.",
+  "JUDE BELLINGHAM — 98TH PERCENTILE FOR SPRINTS AT THIS WORLD CUP: Bellingham ranks in the 98th percentile for sprints among all World Cup players, 97th for high-speed distance. Playing at altitude taxes exactly those explosive physical attributes. Whether Bellingham can maintain that output across 90-plus minutes at 2,200 metres is the central physical question of this match.",
 
-  "ORLANDO GILL — FROM UNKNOWN TO NATIONAL HERO IN 120 MINUTES: Paraguay's goalkeeper was barely known outside South America before the Germany match. He saved two penalties in the shootout, was named Man of the Match, and returned home to find Paraguay had declared a national holiday in the team's honour. He now faces Mbappé — arguably the most dangerous penalty taker in world football."
+  "MEXICO ENDED A 40-YEAR KNOCKOUT DROUGHT IN THE ROUND OF 32 — NOW CHASING A QUARTERFINAL ABSENT SINCE 1986: Mexico last reached the World Cup quarterfinal in 1986 — as hosts, at this exact stadium. They have exited at the Round of 16 in seven consecutive World Cup appearances since then — the longest such streak of any nation. A win today ends 40 years of heartbreak at the same ground where the drought began."
 ]
   }
 ]
