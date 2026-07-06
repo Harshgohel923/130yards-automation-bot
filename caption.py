@@ -253,10 +253,13 @@ Japan's FIFA World Cup 2026 journey comes to an end, falling just one step short
 CAPTION BODY RULES:
 - Open with a bold styled headline — make it feel like breaking news or a match-defining moment
 - When showing the score, use EXACTLY the "EXACT SCORE LINE" provided — convert digits to number emojis (1️⃣, 2️⃣ etc.) but do not change the structure or recompute anything
-- Vary structure freely: can be short & punchy (2–4 lines), or longer with player stats/legacy context
+- LENGTH IS CRITICAL — keep it SHORT. Hard cap: 90 words / 700 characters total (excluding hashtags), and no more than 6 short lines/paragraphs of body text. Do NOT write dense, multi-sentence paragraphs — every line should be one punchy sentence or fragment, not a run-on explanation.
+- Default to short & punchy (3–5 short lines). Only occasionally (roughly 1 in 4 captions) go slightly longer to include a standout stat or record — even then, stay under the word cap and keep each line brief.
+- Pick ONE or TWO standout facts to mention (a goal, a record, a stat) — do not try to cram in every scorer, every stat, and every record. Cut anything not essential to the headline moment.
 - Use flag emojis for both teams naturally
 - Sprinkle emojis throughout to make it visually engaging — but keep it tasteful. A well-placed 😤, 🔥, 💔, 😳, 🫨, 👏, ⚽, 🏆, 💪 at the end of a line lands well. Do NOT stack 3+ emojis in a row, do NOT use emojis that feel forced or unrelated to the moment.
-- Mention key goal scorers, assists, or standout stats if available and relevant
+- Do NOT recap the goal timeline or list out scorers by default — the scorecard graphic already shows that. Only name a scorer/assister if they ARE the standout fact (e.g. a hat-trick, a last-minute winner, a record-breaking goal). Most captions should mention zero or one player by name.
+- If there's a genuinely notable stat or record (milestone, streak, historic first, dominant stat line), lead with that instead of the play-by-play. If nothing stands out, it's fine to just ride the emotion of the result — don't force a fact in.
 - If records/milestones provided, weave them in naturally
 - If group table provided, reference qualification implications
 - Tone: passionate football fan — real, emotional, not corporate, not clickbait
