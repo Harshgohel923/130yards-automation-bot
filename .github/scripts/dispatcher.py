@@ -59,6 +59,44 @@ def trigger_worker(match_id: str):
         sys.exit(1)
 
 
+def telegram_bot_running() -> bool:
+    """True if a telegram-bot run is queued or in progress."""
+    for status in ('in_progress', 'queued'):
+        resp = requests.get(
+            f'{API}/repos/{REPO}/actions/workflows/telegram_bot.yml/runs',
+            params={'status': status, 'per_page': 10},
+            headers=HEADS,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        if resp.json().get('workflow_runs'):
+            return True
+    return False
+
+
+def ensure_telegram_bot():
+    """Start the photo-intake Telegram bot if it isn't already running.
+    Best-effort: a bot failure must never block match worker dispatching.
+    The bot's own watchdog shuts it down once no match workers remain."""
+    try:
+        if telegram_bot_running():
+            print('[dispatcher] Telegram bot already running')
+            return
+        resp = requests.post(
+            f'{API}/repos/{REPO}/actions/workflows/telegram_bot.yml/dispatches',
+            headers=HEADS,
+            json={'ref': 'master'},
+            timeout=10,
+        )
+        if resp.status_code == 204:
+            print('[dispatcher] Triggered Telegram bot')
+        else:
+            print(f'[dispatcher] WARNING: could not trigger Telegram bot: '
+                  f'{resp.status_code} {resp.text}')
+    except Exception as e:
+        print(f'[dispatcher] WARNING: Telegram bot check failed: {e}')
+
+
 def main():
     with open('matches.json', encoding='utf-8') as f:
         registry = json.load(f)
@@ -67,6 +105,7 @@ def main():
     running = active_match_ids()
     print(f'[dispatcher] {now.isoformat(timespec="seconds")}  active workers: {running or "none"}')
 
+    fired_any = False
     for entry in registry:
         match_id = entry['match_id']
         home     = entry.get('home_team', '?')
@@ -88,11 +127,17 @@ def main():
         if window_open <= now <= fire_by:
             print(f'[dispatcher] {match_id} ({home} vs {away}) — window open, firing worker')
             trigger_worker(match_id)
+            fired_any = True
         elif now < window_open:
             mins = int((window_open - now).total_seconds() / 60)
             print(f'[dispatcher] {match_id} ({home} vs {away}) — opens in ~{mins} min')
         else:
             print(f'[dispatcher] {match_id} ({home} vs {away}) — window passed, skip')
+
+    # Keep the photo-intake Telegram bot up whenever any worker is active.
+    # Its watchdog shuts it down once the last match worker finishes.
+    if running or fired_any:
+        ensure_telegram_bot()
 
 
 if __name__ == '__main__':

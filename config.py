@@ -248,6 +248,13 @@ LOCAL_SYMBOLS = {
     "penalty_missed": "assets/symbols/penalty_missed.png",
 }
 
+CLOUDINARY_TOURNAMENT_LOGO = {
+    "World Cup": "tournaments_fifa-world-cup-2026--white_3000x3000.football-logos.cc_fgfkp8",
+}
+
+BRAND_LOGO = {
+    "130 Yards": "130yardslogo-transparent_p3rjtr"
+}
 
 
 def get_crest_url(team_name):

@@ -1,0 +1,37 @@
+name: Telegram Photo Bot
+
+on:
+  workflow_dispatch:
+
+# Fixed run name so the dispatcher can detect an already-running bot
+# by scanning run names — same stateless dedup as match workers.
+run-name: telegram-bot
+
+permissions:
+  actions: read   # watchdog lists match_bot.yml runs to know when to stop
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350   # if matches outlast this, the dispatcher relaunches within 15 min
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run bot under watchdog
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.TELEGRAM_ALLOWED_USER_IDS }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 .github/scripts/bot_watchdog.py

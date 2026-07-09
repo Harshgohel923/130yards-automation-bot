@@ -95,6 +95,29 @@ cloudinary.config(
 )
 
 LOCAL_CACHE_DIR = 'assets/templates'
+MATCH_PHOTO_FOLDER = 'match_photos'
+
+
+def photo_public_id(match_id: str, event_type: str) -> str:
+    """Deterministic Cloudinary public_id for a match photo uploaded via the
+    Telegram bot: match_photos/<match_id>_<HT|FT>."""
+    return f"{MATCH_PHOTO_FOLDER}/{match_id}_{event_type.upper()}"
+
+
+def fetch_match_photo(match_id: str, event_type: str, dest_dir: str = 'assets/match_photos') -> str | None:
+    """Download the bot-uploaded photo for a match/event to a local file.
+    Returns the local path, or None if no photo has been uploaded."""
+    os.makedirs(dest_dir, exist_ok=True)
+    local_path = os.path.join(dest_dir, f"{match_id}_{event_type.upper()}.jpg")
+    url = f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/{photo_public_id(match_id, event_type)}"
+    try:
+        response = requests.get(url, timeout=15)
+        response.raise_for_status()
+    except Exception:
+        return None
+    with open(local_path, 'wb') as f:
+        f.write(response.content)
+    return local_path
 
 
 def fetch_template(event_type: str) -> str | None:

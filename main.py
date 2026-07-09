@@ -33,7 +33,9 @@ from caption import generate_caption
 from cloudinary_upload import upload_image, upload_match_data, delete_image
 from database import init_db, is_event_posted, mark_event_posted, upsert_match
 from football_scraper_dom import get_match_data
+from cloudinary_utils import fetch_match_photo
 from instagram import post_to_instagram, delete_instagram_post
+from overlay_scorebar import generate_overlay_scorecard
 from scorecard import generate_scorecard
 
 load_dotenv()
@@ -156,6 +158,30 @@ def _archive_match_data(entry: dict):
 
 # ── Scorecard pipeline ────────────────────────────────────────────────────────
 
+def _generate_card(entry: dict, event_type: str, scraper_data: dict,
+                   int_round, str_league) -> str:
+    """
+    Build the scorecard image, preferring the photo-overlay style when a match
+    photo has been uploaded via the Telegram bot; falls back to the classic
+    template scorecard when there is no photo (or the overlay render fails).
+    Returns the local image path.
+    """
+    match_id = entry['match_id']
+    photo_path = fetch_match_photo(match_id, event_type)
+    if photo_path:
+        try:
+            path = generate_overlay_scorecard(scraper_data, photo_path,
+                                              event_type=event_type,
+                                              match_id_override=match_id)
+            print(f"[{match_id}] Using photo-overlay scorecard ({event_type}).")
+            return path
+        except Exception as e:
+            print(f"[{match_id}] Overlay scorecard failed ({e}) — falling back to template.")
+    return generate_scorecard(scraper_data, event_type=event_type,
+                              match_id_override=match_id,
+                              int_round=int_round, str_league=str_league)
+
+
 def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
     """
     Shared pipeline for both HT and FT:
@@ -171,9 +197,8 @@ def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
         _str_league = _s.get('sportsdb_league')
 
     try:
-        image_path = generate_scorecard(scraper_data, event_type=event_type,
-                                        match_id_override=match_id,
-                                        int_round=_int_round, str_league=_str_league)
+        image_path = _generate_card(entry, event_type, scraper_data,
+                                    _int_round, _str_league)
         public_url, _ = upload_image(image_path)
         os.remove(image_path)
         caption = generate_caption(scraper_data, event_type=event_type,
@@ -207,9 +232,8 @@ def _early_pipeline(entry: dict, event_type: str, scraper_data: dict) -> tuple[s
         _int_round  = _s.get('sportsdb_round')
         _str_league = _s.get('sportsdb_league')
     try:
-        image_path = generate_scorecard(scraper_data, event_type=event_type,
-                                        match_id_override=match_id,
-                                        int_round=_int_round, str_league=_str_league)
+        image_path = _generate_card(entry, event_type, scraper_data,
+                                    _int_round, _str_league)
         public_url, cid = upload_image(image_path)
         os.remove(image_path)
         caption = generate_caption(scraper_data, event_type=event_type,

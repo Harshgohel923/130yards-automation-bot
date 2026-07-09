@@ -5,3 +5,4 @@ python-dotenv
 apscheduler
 Pillow
 opencv-python
+python-telegram-bot
