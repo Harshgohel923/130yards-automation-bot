@@ -33,7 +33,7 @@ COLOR_GOLD = (212, 175, 90, 255)
 COLOR_SCORER = (230, 233, 240, 255)
 COLOR_MINUTE = (255, 200, 60, 255)
 COLOR_LABEL = (212, 175, 90, 255)   # FULL TIME / HALF TIME / PENALTIES
-PANEL_FILL = (8, 10, 14, 140)
+PANEL_FILL = (8, 10, 14, 105)
 PANEL_BORDER = (212, 175, 90, 130)
 
 # Curated primary/secondary colors per team for the partition line under the
@@ -560,10 +560,14 @@ def _render_from_scraper_data(data, image_path, output_path, event_type='FT'):
             except ValueError:
                 pass
 
-    # Exclude 120' shootout events from the scorer list, same as scorecard.py
+    # Exclude 120' shootout events from the scorer list, same as scorecard.py.
+    # Only penalty kicks are shootout events — open-play/own goals at 120'
+    # (e.g. scored in ET injury time) must still be shown.
     filtered = events
     if penalties:
-        filtered = [e for e in events if e.get('minute') != "120'"]
+        filtered = [e for e in events
+                    if not (e.get('minute') == "120'"
+                            and e.get('type') in ('penalty_goal', 'penalty_missed'))]
 
     add_scorecard_overlay(
         image_path, output_path,

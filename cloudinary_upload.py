@@ -32,7 +32,11 @@ def upload_image(local_path: str) -> tuple[str, str]:
 
 def delete_image(public_id: str) -> None:
     """Delete an image from Cloudinary by its public_id. Raises on failure."""
-    cloudinary.uploader.destroy(public_id)
+    result = cloudinary.uploader.destroy(public_id)
+    outcome = result.get('result')
+    if outcome != 'ok':
+        # destroy() doesn't raise on its own — e.g. returns {"result": "not found"}
+        raise RuntimeError(f"Cloudinary delete of {public_id} returned {outcome!r}")
     print(f"[cloudinary] Deleted: {public_id}")
 
 

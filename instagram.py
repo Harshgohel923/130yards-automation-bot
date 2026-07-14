@@ -76,11 +76,23 @@ def post_to_instagram(public_image_url: str, caption: str) -> str:
 
 
 def delete_instagram_post(media_id: str) -> None:
-    """Delete an Instagram post by media_id. Raises on failure."""
+    """
+    Delete an Instagram post by media_id. Raises on failure.
+    NOTE: requires the token to have the `instagram_manage_contents`
+    permission — `instagram_content_publish` alone can post but NOT delete.
+    """
     res = requests.delete(
         f'{GRAPH_URL}/{media_id}',
         params={'access_token': ACCESS_TOKEN},
         timeout=15,
     )
-    res.raise_for_status()
+    try:
+        body = res.json()
+    except ValueError:
+        body = {}
+    if not res.ok or body.get('success') is not True:
+        raise RuntimeError(
+            f"Instagram delete of {media_id} failed "
+            f"(HTTP {res.status_code}): {body or res.text}"
+        )
     print(f"[instagram] Deleted post: {media_id}")

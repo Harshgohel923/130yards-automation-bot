@@ -454,10 +454,14 @@ def generate_scorecard(scraper_data: dict, event_type: str = 'FT', match_id_over
 
     # ── Scorer lines ──────────────────────────────────────────────────────────
     # Use raw (un-normalized) names because event['team'] reflects the scraper value
-    # When match goes to penalties, exclude 120' shootout events from display
+    # When match goes to penalties, exclude 120' shootout events from display.
+    # Only penalty kicks are shootout events — open-play/own goals at 120'
+    # (e.g. scored in ET injury time) must still be shown.
     filtered_events = events
     if ps_home_raw and ps_away_raw:
-        filtered_events = [e for e in events if e.get('minute') != "120'"]
+        filtered_events = [e for e in events
+                           if not (e.get('minute') == "120'"
+                                   and e.get('type') in ('penalty_goal', 'penalty_missed'))]
     home_lines = _extract_scorer_lines(filtered_events, raw_home_team)
     away_lines = _extract_scorer_lines(filtered_events, raw_away_team)
 

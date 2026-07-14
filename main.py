@@ -219,6 +219,15 @@ def _get_score(scraper_data: dict) -> tuple[str, str]:
     return (str(ms.get('fs_A') or '0'), str(ms.get('fs_B') or '0'))
 
 
+def _get_minute(scraper_data: dict) -> int:
+    """Scraper minute as an int; injury-time values like '90+3' → 90."""
+    raw = str(scraper_data.get('matchSample', {}).get('minute') or '0')
+    try:
+        return int(raw.split('+')[0])
+    except ValueError:
+        return 0
+
+
 def _early_pipeline(entry: dict, event_type: str, scraper_data: dict) -> tuple[str | None, str | None]:
     """
     Generate scorecard, upload to Cloudinary, post to Instagram.
@@ -399,7 +408,7 @@ def match_worker(entry: dict):
 
             scraper_data = get_match_data(scraper_url)
             if scraper_data:
-                minute        = int(scraper_data.get('matchSample', {}).get('minute') or 0)
+                minute        = _get_minute(scraper_data)
                 current_score = _get_score(scraper_data)
 
                 if not early_ht_posted and minute >= 45:
@@ -462,7 +471,7 @@ def match_worker(entry: dict):
 
             scraper_data = get_match_data(scraper_url)
             if scraper_data:
-                minute        = int(scraper_data.get('matchSample', {}).get('minute') or 0)
+                minute        = _get_minute(scraper_data)
                 current_score = _get_score(scraper_data)
                 home_s, away_s = current_score
                 is_draw = (home_s == away_s)
@@ -607,16 +616,20 @@ def match_worker(entry: dict):
 
                         elif not is_draw:
                             if not active_ft_ig:
-                                print(f"[{match_id}] Goal in ET score={current_score} — posting early…")
-                                cid, ig_id = _early_pipeline(entry, 'FT', scraper_data)
-                                if cid and ig_id:
-                                    with STATE_LOCK:
-                                        s = MATCH_STATE[match_id]
-                                        s['early_ft_posted']        = True
-                                        s['early_ft_ig_id']         = ig_id
-                                        s['early_ft_cloudinary_id'] = cid
-                                        s['early_ft_score']         = list(current_score)
-                                        _save_state()
+                                if minute < 119:
+                                    print(f"[{match_id}] Goal in ET score={current_score} "
+                                          f"minute={minute} — waiting until 119' to post early…")
+                                else:
+                                    print(f"[{match_id}] Minute={minute}, ET score={current_score} — posting early…")
+                                    cid, ig_id = _early_pipeline(entry, 'FT', scraper_data)
+                                    if cid and ig_id:
+                                        with STATE_LOCK:
+                                            s = MATCH_STATE[match_id]
+                                            s['early_ft_posted']        = True
+                                            s['early_ft_ig_id']         = ig_id
+                                            s['early_ft_cloudinary_id'] = cid
+                                            s['early_ft_score']         = list(current_score)
+                                            _save_state()
                             elif early_ft_score and current_score != early_ft_score:
                                 print(f"[{match_id}] ET score changed {early_ft_score}→{current_score} — correcting…")
                                 _delete_early_post(match_id, 'FT')
