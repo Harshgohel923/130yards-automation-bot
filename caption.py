@@ -98,6 +98,12 @@ def _summarise_recent_form(analysis: dict, home: str, away: str) -> str:
     return ' | '.join(lines)
 
 
+def _space_out_lines(text: str) -> str:
+    """Normalize spacing: exactly one blank line between every non-empty line."""
+    lines = [ln.strip() for ln in text.splitlines()]
+    return '\n\n'.join(ln for ln in lines if ln)
+
+
 def generate_caption(scraper_data: dict, event_type: str = 'FT',
                      records: list | None = None) -> str:
     """
@@ -262,6 +268,7 @@ CAPTION BODY RULES:
 - If there's a genuinely notable stat or record (milestone, streak, historic first, dominant stat line), lead with that instead of the play-by-play. If nothing stands out, it's fine to just ride the emotion of the result — don't force a fact in.
 - If records/milestones provided, weave them in naturally
 - If group table provided, reference qualification implications
+- Write every sentence on its own line and leave a BLANK LINE after each one — never put two sentences in the same paragraph
 - Tone: passionate football fan — real, emotional, not corporate, not clickbait
 - {"This is a half-time caption — capture the tension and drama of what's happened so far" if event_type == "HT" else "This is a full-time caption — capture the finality and emotion of the result"}
 
@@ -291,7 +298,7 @@ Return ONLY the caption text — no labels, no explanations, no markdown formatt
                 contents=prompt
             )
             print(f"[caption] Generated via {model}")
-            return response.text.strip()
+            return _space_out_lines(response.text)
         except Exception as e:
             print(f"[caption] {model} failed: {e} — trying next model...")
 
