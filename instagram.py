@@ -75,6 +75,19 @@ def post_to_instagram(public_image_url: str, caption: str) -> str:
     return media_id
 
 
+def get_post_permalink(media_id: str) -> str | None:
+    """Return the public URL of a post, or None if the lookup fails."""
+    try:
+        res = requests.get(
+            f'{GRAPH_URL}/{media_id}',
+            params={'fields': 'permalink', 'access_token': ACCESS_TOKEN},
+            timeout=15,
+        )
+        return res.json().get('permalink')
+    except Exception:
+        return None
+
+
 def delete_instagram_post(media_id: str) -> None:
     """
     Delete an Instagram post by media_id. Raises on failure.

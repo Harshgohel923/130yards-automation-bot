@@ -22,6 +22,7 @@ import json
 import os
 import threading
 import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 
@@ -34,7 +35,8 @@ from cloudinary_upload import upload_image, upload_match_data, delete_image
 from database import init_db, is_event_posted, mark_event_posted, upsert_match
 from football_scraper_dom import get_match_data
 from cloudinary_utils import fetch_match_photo
-from instagram import post_to_instagram, delete_instagram_post
+from instagram import post_to_instagram, delete_instagram_post, get_post_permalink
+from telegram_notify import send_alert
 from overlay_scorebar import generate_overlay_scorecard
 from scorecard import generate_scorecard
 
@@ -87,6 +89,11 @@ def _load_state():
         print(f"[startup] Restored state for {len(loaded)} match(es) from {STATE_FILE}")
     except Exception as e:
         print(f"[startup] Could not load state file: {e}")
+        send_alert(
+            f"⚠️ Bot startup: could not load {STATE_FILE} ({e}).\n"
+            f"Early-post tracking from previous runs is lost — duplicate "
+            f"posts are possible for matches that were mid-game."
+        )
 
 
 # ── Registry reader ───────────────────────────────────────────────────────────
@@ -101,6 +108,11 @@ def load_registry() -> list[dict]:
         return []
     except json.JSONDecodeError as e:
         print(f"[registry] JSON parse error in {REGISTRY_FILE}: {e}")
+        send_alert(
+            f"❌ {REGISTRY_FILE} is invalid JSON ({e}).\n"
+            f"No matches can be scheduled until the file is fixed.",
+            key='registry:parse', cooldown=1800,
+        )
         return []
 
 
@@ -124,6 +136,12 @@ def fetch_sportsdb_status(sportsdb_event_id: str) -> tuple[str | None, str | Non
             return ev.get('strStatus'), ev.get('intRound'), ev.get('strLeague')
     except Exception as e:
         print(f"[sportsdb] Error fetching event {sportsdb_event_id}: {e}")
+        send_alert(
+            f"⚠️ TheSportsDB fetch failed for event {sportsdb_event_id} ({e}).\n"
+            f"Match status updates are stalled until it recovers — the worker "
+            f"keeps retrying every poll.",
+            key=f'sportsdb:{sportsdb_event_id}', cooldown=900,
+        )
     return None, None, None
 
 
@@ -154,6 +172,11 @@ def _archive_match_data(entry: dict):
         print(f"[{entry['match_id']}] Match data archived to Cloudinary and removed locally.")
     except Exception as e:
         print(f"[{entry['match_id']}] Warning: could not archive match data: {e}")
+        send_alert(
+            f"⚠️ {entry['match_id']}: couldn't archive the match data JSON to "
+            f"Cloudinary ({e}).\nThe local copy is kept at {path} — upload it "
+            f"manually if you want it archived."
+        )
 
 
 # ── Scorecard pipeline ────────────────────────────────────────────────────────
@@ -177,6 +200,11 @@ def _generate_card(entry: dict, event_type: str, scraper_data: dict,
             return path
         except Exception as e:
             print(f"[{match_id}] Overlay scorecard failed ({e}) — falling back to template.")
+            send_alert(
+                f"⚠️ {match_id}: the photo-overlay {event_type} scorecard "
+                f"failed to render ({e}).\nPosting the plain template card "
+                f"instead — check the match photo you uploaded."
+            )
     return generate_scorecard(scraper_data, event_type=event_type,
                               match_id_override=match_id,
                               int_round=int_round, str_league=str_league)
@@ -209,6 +237,12 @@ def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
     except Exception as e:
         print(f"[{match_id}] ❌ Pipeline error ({event_type}): {e}")
         # Do NOT mark as posted — will retry on next poll if status is unchanged
+        send_alert(
+            f"❌ {match_id}: the {event_type} pipeline failed ({e}).\n"
+            f"The scorecard was NOT posted. It retries automatically every "
+            f"{POLL_INTERVAL_SECS}s while the match status is unchanged.",
+            key=f'{match_id}:pipeline:{event_type}', cooldown=600,
+        )
 
 
 # ── Early-posting helpers ─────────────────────────────────────────────────────
@@ -297,6 +331,11 @@ def _early_pipeline(entry: dict, event_type: str, scraper_data: dict) -> tuple[s
         return cid, ig_id
     except Exception as e:
         print(f"[{match_id}] ❌ Early {event_type} pipeline error: {e}")
+        send_alert(
+            f"❌ {match_id}: the early {event_type} pipeline failed ({e}).\n"
+            f"No early scorecard was posted for this attempt — the worker "
+            f"will try again on a later poll or at the official whistle."
+        )
         return None, None
 
 
@@ -315,12 +354,23 @@ def _delete_early_post(match_id: str, event_type: str) -> None:
             delete_image(cid)
         except Exception as e:
             print(f"[{match_id}] Warning: Cloudinary delete failed ({cid}): {e}")
+            send_alert(
+                f"⚠️ {match_id}: couldn't delete the old scorecard image from "
+                f"Cloudinary ({cid}): {e}.\nHarmless for Instagram — it just "
+                f"leaves an orphaned image in the scorecards folder."
+            )
 
     if ig_id:
         try:
             delete_instagram_post(ig_id)
         except Exception as e:
             print(f"[{match_id}] Warning: Instagram delete failed ({ig_id}): {e}")
+            link = get_post_permalink(ig_id) or f"media id {ig_id}"
+            send_alert(
+                f"⚠️ {match_id}: couldn't delete the outdated {event_type} "
+                f"scorecard — delete it manually:\n{link}\n\n"
+                f"(The corrected card is being posted automatically.)"
+            )
 
     with STATE_LOCK:
         s = MATCH_STATE.get(match_id, {})
@@ -713,6 +763,12 @@ def match_worker(entry: dict):
                             print(f"[{match_id}] ET scraper status={scraper_status!r} — still in progress.")
                 else:
                     print(f"[{match_id}] Scraper fetch failed during {raw_status}.")
+                    send_alert(
+                        f"⚠️ {match_id}: the live-score scraper returned no data "
+                        f"during {raw_status}.\nNo scorecard can be built until "
+                        f"it recovers — retrying every {POLL_INTERVAL_SECS}s.",
+                        key=f'{match_id}:scraper', cooldown=600,
+                    )
 
         # Clean exit if FT was already posted in a previous run
         if new_status == 'ft' and (MATCH_STATE[match_id].get('ft_posted')
@@ -724,6 +780,23 @@ def match_worker(entry: dict):
     with WORKERS_LOCK:
         ACTIVE_WORKERS.discard(match_id)
     print(f"[{match_id}] Worker exited.")
+
+
+def _worker_safe(entry: dict):
+    """Run match_worker and alert if it crashes — a dead thread is silent."""
+    match_id = entry['match_id']
+    try:
+        match_worker(entry)
+    except Exception as e:
+        traceback.print_exc()
+        with WORKERS_LOCK:
+            ACTIVE_WORKERS.discard(match_id)
+        send_alert(
+            f"❌ {match_id}: the match worker CRASHED ({e}).\n"
+            f"Live monitoring for {entry['home_team']} vs {entry['away_team']} "
+            f"stopped — it will be respawned on the next registry check if the "
+            f"match window is still open."
+        )
 
 
 # ── Registry checker (runs on APScheduler interval) ──────────────────────────
@@ -757,6 +830,12 @@ def check_registry():
             )
         except (KeyError, ValueError) as e:
             print(f"[registry] Bad kickoff_utc for match {match_id}: {e}")
+            send_alert(
+                f"❌ matches.json: match {match_id} has a bad/missing "
+                f"kickoff_utc ({e}).\nThis match will never get a worker "
+                f"until the entry is fixed.",
+                key=f'registry:kickoff:{match_id}', cooldown=1800,
+            )
             continue
 
         window_open  = kickoff - timedelta(seconds=PRE_MATCH_WINDOW)
@@ -767,7 +846,7 @@ def check_registry():
                   f"({entry['home_team']} vs {entry['away_team']})")
             with WORKERS_LOCK:
                 ACTIVE_WORKERS.add(match_id)
-            executor.submit(match_worker, entry)
+            executor.submit(_worker_safe, entry)
         elif now < window_open:
             mins = int((window_open - now).total_seconds() / 60)
             print(f"[registry] Match {match_id} starts in ~{mins} min — waiting.")
