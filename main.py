@@ -182,6 +182,17 @@ def _archive_match_data(entry: dict):
 
 # ── Scorecard pipeline ────────────────────────────────────────────────────────
 
+def _competition_of(entry: dict, scraper_data: dict, str_league) -> str | None:
+    """
+    Competition for this match: matches.json is authoritative; the scraper,
+    then TheSportsDB, fill in when the field is absent. Drives the competition
+    logo, the template choice and the first hashtag.
+    """
+    return (entry.get('competition')
+            or scraper_data.get('matchSample', {}).get('competition_name')
+            or str_league)
+
+
 def _generate_card(entry: dict, event_type: str, scraper_data: dict,
                    int_round, str_league) -> str:
     """
@@ -191,11 +202,7 @@ def _generate_card(entry: dict, event_type: str, scraper_data: dict,
     Returns the local image path.
     """
     match_id = entry['match_id']
-    # Competition: matches.json is authoritative; scraper, then TheSportsDB,
-    # fill in when the field is absent.
-    competition = (entry.get('competition')
-                   or scraper_data.get('matchSample', {}).get('competition_name')
-                   or str_league)
+    competition = _competition_of(entry, scraper_data, str_league)
     photo_path = fetch_match_photo(match_id, event_type)
     if photo_path:
         try:
@@ -244,7 +251,9 @@ def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
         caption = generate_caption(scraper_data, event_type=event_type,
                                    records=entry.get('records'),
                                    home_name=entry['home_team'],
-                                   away_name=entry['away_team'])
+                                   away_name=entry['away_team'],
+                                   competition=_competition_of(entry, scraper_data,
+                                                               _str_league))
         ig_id   = post_to_instagram(public_url, caption)
         mark_event_posted(match_id, event_type)
         print(f"[{match_id}] ✅ {event_type} posted — IG ID: {ig_id}")
@@ -341,7 +350,9 @@ def _early_pipeline(entry: dict, event_type: str, scraper_data: dict) -> tuple[s
         caption = generate_caption(scraper_data, event_type=event_type,
                                    records=entry.get('records'),
                                    home_name=entry['home_team'],
-                                   away_name=entry['away_team'])
+                                   away_name=entry['away_team'],
+                                   competition=_competition_of(entry, scraper_data,
+                                                               _str_league))
         ig_id = post_to_instagram(public_url, caption)
         print(f"[{match_id}] ✅ Early {event_type} posted — IG ID: {ig_id}")
         return cid, ig_id

@@ -4,6 +4,8 @@ import os
 from dotenv import load_dotenv
 from google import genai
 
+from hashtags import build_hashtags, competition_label
+
 load_dotenv()
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -98,6 +100,21 @@ def _summarise_recent_form(analysis: dict, home: str, away: str) -> str:
     return ' | '.join(lines)
 
 
+def _ensure_hashtags(text: str, hashtag_line: str) -> str:
+    """
+    Guarantee the caption ends with our exact hashtag line.
+
+    Gemini follows the instruction most of the time, but not always — it
+    occasionally drops a tag or invents its own. Strip whatever hashtag-only
+    lines it produced at the end and append ours.
+    """
+    lines = [ln.strip() for ln in (text or '').splitlines()]
+    while lines and (not lines[-1]
+                     or all(w.startswith('#') for w in lines[-1].split())):
+        lines.pop()
+    return '\n'.join(lines + ['', hashtag_line])
+
+
 def _space_out_lines(text: str) -> str:
     """Normalize spacing: exactly one blank line between every non-empty line."""
     lines = [ln.strip() for ln in text.splitlines()]
@@ -107,18 +124,24 @@ def _space_out_lines(text: str) -> str:
 def generate_caption(scraper_data: dict, event_type: str = 'FT',
                      records: list | None = None,
                      home_name: str | None = None,
-                     away_name: str | None = None) -> str:
+                     away_name: str | None = None,
+                     competition: str | None = None) -> str:
     """
     Generate an Instagram caption from scraper_data.
     event_type: 'HT' → half-time caption, 'FT' → full-time caption.
     home_name/away_name: validated matches.json names — they win over the
     scraper's spelling in the caption text.
+    competition: matches.json value; falls back to the scraper's. Drives the
+    competition hashtag and the tone of the prompt.
     Tries gemini-2.5-flash first, then gemini-2.0-flash, then plain fallback.
     """
     match_sample = scraper_data.get('matchSample', {})
     home_team    = home_name or match_sample.get('team_A_name', 'Home')
     away_team    = away_name or match_sample.get('team_B_name', 'Away')
-    competition  = match_sample.get('competition_name', 'FIFA World Cup 2026')
+    competition  = competition or match_sample.get('competition_name', '')
+    comp_label   = competition_label(competition)
+    # Built in code, not by the model — see hashtags.py.
+    hashtag_line = build_hashtags(home_team, away_team, competition)
 
     if event_type == 'HT':
         home_score = str(match_sample.get('hts_A') or '0')
@@ -210,7 +233,7 @@ def generate_caption(scraper_data: dict, event_type: str = 'FT',
     if records:
         records_block = '- Records/Milestones at stake:\n' + '\n'.join(f'  • {r}' for r in records)
 
-    prompt = f"""You are a football content writer for an Instagram page covering the FIFA World Cup 2026.
+    prompt = f"""You are a football content writer for an Instagram page covering {comp_label}.
 
 Write a creative, engaging Instagram caption for a match scorecard post. Every caption should feel UNIQUE — vary the structure, length, tone, and opening style. Never repeat the same template twice.
 
@@ -266,7 +289,7 @@ CAPTION BODY RULES:
 - LENGTH IS CRITICAL — keep it SHORT. Hard cap: 90 words / 700 characters total (excluding hashtags), and no more than 6 short lines/paragraphs of body text. Do NOT write dense, multi-sentence paragraphs — every line should be one punchy sentence or fragment, not a run-on explanation.
 - Default to short & punchy (3–5 short lines). Only occasionally (roughly 1 in 4 captions) go slightly longer to include a standout stat or record — even then, stay under the word cap and keep each line brief.
 - Pick ONE or TWO standout facts to mention (a goal, a record, a stat) — do not try to cram in every scorer, every stat, and every record. Cut anything not essential to the headline moment.
-- Use flag emojis for both teams naturally
+- Refer to the teams the way fans do; for national teams a flag emoji reads well, for clubs use emojis tied to their colours or nickname instead of flags
 - Sprinkle emojis throughout to make it visually engaging — but keep it tasteful. A well-placed 😤, 🔥, 💔, 😳, 🫨, 👏, ⚽, 🏆, 💪 at the end of a line lands well. Do NOT stack 3+ emojis in a row, do NOT use emojis that feel forced or unrelated to the moment.
 - Do NOT recap the goal timeline or list out scorers by default — the scorecard graphic already shows that. Only name a scorer/assister if they ARE the standout fact (e.g. a hat-trick, a last-minute winner, a record-breaking goal). Most captions should mention zero or one player by name.
 - If there's a genuinely notable stat or record (milestone, streak, historic first, dominant stat line), lead with that instead of the play-by-play. If nothing stands out, it's fine to just ride the emotion of the result — don't force a fact in.
@@ -276,12 +299,8 @@ CAPTION BODY RULES:
 - Tone: passionate football fan — real, emotional, not corporate, not clickbait
 - {"This is a half-time caption — capture the tension and drama of what's happened so far" if event_type == "HT" else "This is a full-time caption — capture the finality and emotion of the result"}
 
-HASHTAG RULES (exactly 5, on one line after a blank line):
-1. #HomeTeamName (no spaces, e.g. #BosniaAndHerzegovina)
-2. #AwayTeamName (no spaces)
-3. #FIFAWorldCup
-4. #HomeTeamNickname (well-known nickname e.g. #ThreeLions, #LesBleus — if none, use a relevant tag, NOT a match abbreviation)
-5. #AwayTeamNickname (same rule)
+HASHTAGS — end the caption with a blank line, then this line copied EXACTLY as written, character for character. Do not reorder, restyle, translate, add or remove tags:
+{hashtag_line}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Match Details:
@@ -302,16 +321,17 @@ Return ONLY the caption text — no labels, no explanations, no markdown formatt
                 contents=prompt
             )
             print(f"[caption] Generated via {model}")
-            return _space_out_lines(response.text)
+            return _space_out_lines(
+                _ensure_hashtags(response.text, hashtag_line))
         except Exception as e:
             print(f"[caption] {model} failed: {e} — trying next model...")
 
     print("[caption] All Gemini models failed — using fallback caption")
     return _fallback_caption(home_team, away_team, home_score, away_score,
-                             competition, event_type)
+                             event_type, hashtag_line)
 
 
-def _fallback_caption(home, away, hs, as_, comp, event_type):
+def _fallback_caption(home, away, hs, as_, event_type, hashtag_line):
     moment = "HALF-TIME" if event_type == "HT" else "FULL-TIME"
 
     try:
@@ -325,13 +345,10 @@ def _fallback_caption(home, away, hs, as_, comp, event_type):
     except (ValueError, TypeError):
         result = "What a match!"
 
-    home_tag = home.replace(' ', '')
-    away_tag = away.replace(' ', '')
-
     return (
         f"{moment}: {home} {hs}-{as_} {away}\n"
         f"\n"
         f"{result}\n"
         f"\n"
-        f"#{home_tag} #{away_tag} #FIFAWorldCup #WorldCup2026 #Football"
+        f"{hashtag_line}"
     )

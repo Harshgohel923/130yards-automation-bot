@@ -6,11 +6,10 @@
     "kickoff_utc": "2026-08-04T11:00:00Z",
     "home_team": "Jeju SK",
     "away_team": "Bayern Munich",
+    "competition": "Club Friendly",
     "post_ht": false,
     "knockout_match": true,
-"records": [
- 
-]
+    "records": []
   },
   {
     "match_id": "54538552",
@@ -19,11 +18,9 @@
     "kickoff_utc": "2026-08-04T18:00:00Z",
     "home_team": "Newport County",
     "away_team": "Roma",
+    "competition": "Club Friendly",
     "post_ht": false,
     "knockout_match": true,
-"records": [
-
-]
+    "records": []
   }
-  
 ]
