@@ -120,21 +120,25 @@ def fetch_match_photo(match_id: str, event_type: str, dest_dir: str = 'assets/ma
     return local_path
 
 
-def fetch_template(event_type: str) -> str | None:
+def fetch_template(template_key: str) -> str | None:
     """
-    Download the HT or FT template from Cloudinary and cache it locally.
+    Download a scorecard template from Cloudinary and cache it locally.
 
-    event_type: 'HT' or 'FT'
+    template_key: a key of CLOUDINARY_TEMPLATES ('UCL', 'random-3', …), as
+                  chosen by config.select_template_key().
 
     Returns the local cached file path on success, None on failure.
     """
-    public_id = CLOUDINARY_TEMPLATES.get(event_type.upper())
+    public_id = CLOUDINARY_TEMPLATES.get(template_key)
     if not public_id:
-        print(f"[cloudinary] No template configured for event_type '{event_type}'")
+        print(f"[cloudinary] No template configured for key '{template_key}'")
         return None
 
     os.makedirs(LOCAL_CACHE_DIR, exist_ok=True)
-    local_path = os.path.join(LOCAL_CACHE_DIR, f'{event_type.lower()}_template.png')
+    # The public_id is part of the cache key, so pointing CLOUDINARY_TEMPLATES
+    # at a new template invalidates every stale cached copy automatically.
+    safe_id = public_id.replace('/', '_')
+    local_path = os.path.join(LOCAL_CACHE_DIR, f'{safe_id}.png')
 
     # Return cached copy if already downloaded
     if os.path.exists(local_path):
@@ -146,9 +150,9 @@ def fetch_template(event_type: str) -> str | None:
         response.raise_for_status()
         with open(local_path, 'wb') as f:
             f.write(response.content)
-        print(f"[cloudinary] Template downloaded: {event_type} → {local_path}")
+        print(f"[cloudinary] Template downloaded: {template_key} → {local_path}")
         return local_path
 
     except Exception as e:
-        print(f"[cloudinary] Error fetching template '{event_type}': {e}")
+        print(f"[cloudinary] Error fetching template '{template_key}': {e}")
         return None

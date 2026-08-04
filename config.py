@@ -183,9 +183,51 @@ STADIUM_NAME_ALIASES = {
 
 # Cloudinary resources (public IDs)
 CLOUDINARY_TEMPLATES = {
-    "HT": "Half_time_template_ujqiub",
-    "FT": "Full_time_template_hckszk",
+    "UCL": "scorecard-template-UCL_lc32n3",
+    "random-1": "scorecard-template-1_s4duju",
+    "random-2": "scorecard-template-2_kpwltr",
+    "random-3": "scorecard-template-3_mpir3j",
+    "random-4": "scorecard-template-4_go9nva",
+    "random-5": "scorecard-template-5_evmehr",
+    "random-6": "scorecard-template-6_ixggep",
 }
+
+# Competitions that get their own dedicated template instead of a random one.
+# Keys are canonical competition keys from logo_fetch.COMPETITIONS.
+COMPETITION_TEMPLATES = {
+    'uefa-champions-league': 'UCL',
+}
+
+
+def select_template_key(competition=None, match_id=None):
+    """
+    Pick which template a card uses.
+
+    Champions League matches get the dedicated 'UCL' template; everything else
+    gets one of the 'random-N' designs.
+
+    The choice is *seeded by match_id*, so it is stable: the HT card, the FT
+    card, and any corrected repost of the same match all land on the same
+    design. Without the seed, a corrected repost would silently switch
+    templates mid-match.
+    """
+    import random
+
+    from logo_fetch import resolve_competition
+
+    key = resolve_competition(competition)
+    if key in COMPETITION_TEMPLATES:
+        dedicated = COMPETITION_TEMPLATES[key]
+        if dedicated in CLOUDINARY_TEMPLATES:
+            return dedicated
+
+    pool = sorted(k for k in CLOUDINARY_TEMPLATES if k.startswith('random-'))
+    if not pool:
+        # No random designs configured — fall back to any template at all.
+        return next(iter(CLOUDINARY_TEMPLATES), None)
+
+    return random.Random(str(match_id)).choice(pool) if match_id else random.choice(pool)
+
 
 CLOUDINARY_TEAM_CRESTS = {
     "Panama": "panama_panama-national-team_3000x3000.football-logos.cc_ourbmw",
@@ -257,18 +299,129 @@ BRAND_LOGO = {
 }
 
 
-def get_crest_url(team_name):
+# Deterministic crest URLs are resolved once per team per run.
+_CREST_URL_CACHE = {}
+_COMP_URL_CACHE = {}
+
+
+def get_brand_logo_url():
+    return f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/{BRAND_LOGO['130 Yards']}"
+
+
+def get_competition_logo_url(competition, alert=True):
     """
-    Fetch crest from Cloudinary, handling team name variations.
+    Cloudinary logo URL for a competition name from any source (matches.json,
+    scraper, TheSportsDB). Friendlies use the dedicated friendly logo
+    (assets/competition/friendly); unknown competitions and missing logos
+    fall back to the 130 Yards brand logo — never an empty slot.
     """
-    # Normalize the incoming name
+    import requests
+    from logo_fetch import COMPETITIONS, COMPETITION_FOLDER, resolve_competition
+    from telegram_notify import send_alert
+
+    name = (competition or '').strip()
+
+    # Legacy hand-mapped tournament logos (the white WC 2026 mark).
+    if name in CLOUDINARY_TOURNAMENT_LOGO:
+        return f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/{CLOUDINARY_TOURNAMENT_LOGO[name]}"
+
+    key = resolve_competition(name)
+    if key is None:
+        if name and alert:
+            send_alert(
+                f"⚠️ Unknown competition '{name}' — the card will show the "
+                f"130 Yards brand logo instead of a competition logo. If it "
+                f"should have one, add it to COMPETITIONS/COMPETITION_ALIASES "
+                f"in logo_fetch.py.",
+                key=f'comp:{name}', cooldown=1800,
+            )
+        return get_brand_logo_url()
+
+    if key in _COMP_URL_CACHE:
+        return _COMP_URL_CACHE[key]
+
+    url = f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/{COMPETITION_FOLDER}/{key}.png"
+    for attempt in (1, 2):
+        try:
+            if requests.head(url, timeout=10).status_code == 200:
+                _COMP_URL_CACHE[key] = url
+                return url
+            break   # definitive miss
+        except requests.RequestException:
+            if attempt == 2:
+                return url   # Cloudinary unreachable — optimistic, uncached
+
+    if alert:
+        # Site-sourced logos can be re-fetched; site-less ones (friendly)
+        # need a manual --local upload.
+        fix = (f"python logo_fetch.py --competition \"{name}\"" if COMPETITIONS[key]
+               else f"python logo_fetch.py --local <file.png> --competition \"{name}\"")
+        send_alert(
+            f"⚠️ No logo on Cloudinary for competition '{name}'. Using the "
+            f"130 Yards brand logo on the card. Fix: run '{fix}' locally — "
+            f"it takes effect immediately, no push needed.",
+            key=f'comp:{key}', cooldown=1800,
+        )
+    return get_brand_logo_url()
+
+
+def get_crest_url(team_name, alert=True):
+    """
+    Cloudinary crest URL for any spelling of a team name.
+
+    Legacy WC crests come from CLOUDINARY_TEAM_CRESTS; everything newer lives
+    at the deterministic paths logo_fetch uploads to (assets/club/<name>,
+    assets/national/<name>), which validate_matches.py guarantees exist
+    before kickoff.
+
+    Only hits are cached — a miss is re-checked on every call, so a crest
+    uploaded mid-match is picked up by the next render. alert=False lets a
+    caller do its own reporting (the match worker's pre-kickoff check).
+    """
+    import requests
+    from logo_fetch import crest_candidates
+    from telegram_notify import send_alert
+
+    # Legacy hand-mapped crests (WC 2026 national teams).
     normalized = TEAM_NAME_ALIASES.get(team_name, team_name)
-    
-    # Look up in config
     crest_id = CLOUDINARY_TEAM_CRESTS.get(normalized)
-    
-    if not crest_id:
-        print(f"[warning] No crest found for '{team_name}' (normalized: '{normalized}')")
-        return None
-    
-    return f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/{crest_id}"
+    if crest_id:
+        return f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/{crest_id}"
+
+    if team_name in _CREST_URL_CACHE:
+        return _CREST_URL_CACHE[team_name]
+
+    candidates = crest_candidates(team_name)
+    network_error = False
+    for public_id in candidates:
+        url = f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/{public_id}.png"
+        for attempt in (1, 2):
+            try:
+                if requests.head(url, timeout=10).status_code == 200:
+                    _CREST_URL_CACHE[team_name] = url
+                    return url
+                break   # definitive miss for this candidate — try the next
+            except requests.RequestException:
+                if attempt == 2:
+                    network_error = True
+
+    if network_error:
+        # Cloudinary was unreachable, so "missing" can't be distinguished from
+        # a blip. Assume the crest exists at the likeliest path instead of
+        # false-alarming; if Cloudinary really is down, the image download
+        # fails anyway. Not cached, so the next call re-checks properly.
+        url = f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/{candidates[-1]}.png"
+        print(f"[warning] Cloudinary unreachable while checking crest for "
+              f"'{team_name}' — assuming {candidates[-1]}")
+        return url
+
+    print(f"[warning] No crest found for '{team_name}' (normalized: '{normalized}')")
+    if alert:
+        send_alert(
+            f"⚠️ No crest on Cloudinary for '{team_name}'. The scorecard will "
+            f"render without this team's logo. Fix: run "
+            f"'python validate_matches.py' (or 'python logo_fetch.py "
+            f"\"{team_name}\"') and check the name spelling.",
+            key=f'crest:{team_name}', cooldown=1800,
+        )
+    return None

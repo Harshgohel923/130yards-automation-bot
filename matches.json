@@ -1,87 +1,28 @@
 [
   {
-    "match_id": "54328032",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/France-vs-England/54328032",
-    "sportsdb_event_id": "2533360",
-    "kickoff_utc": "2026-07-18T21:00:00Z",
-    "home_team": "France",
-    "away_team": "England",
-    "post_ht": true,
+    "match_id": "54457615",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Jeju-SK-vs-Bayern/54457615",
+    "sportsdb_event_id": "2467933",
+    "kickoff_utc": "2026-08-04T11:00:00Z",
+    "home_team": "Jeju SK",
+    "away_team": "Bayern Munich",
+    "post_ht": false,
     "knockout_match": true,
 "records": [
-  "MBAPPÉ TOPS THE GOLDEN BOOT ON TIEBREAKER — LAST CHANCE TO OVERTAKE MESSI OUTRIGHT: Mbappé is tied with Messi on 8 goals apiece, leading on assists (3 to Messi's 1). With Messi playing the final instead, this is Mbappé's last opportunity to score and seal the Golden Boot outright rather than relying on a tiebreaker.",
-
-  "MBAPPÉ — 20 ALL-TIME WORLD CUP GOALS, ONE BEHIND MESSI'S NEW RECORD OF 21: Messi moved to 21 all-time World Cup goals in the semi-final. Mbappé sits on 20. A brace today ties the all-time record; a hat-trick breaks it. This is Mbappé's final chance this tournament to close the gap.",
-
-  "MBAPPÉ — 21 WORLD CUP APPEARANCES, THE MOST BY ANY FRENCH PLAYER IN HISTORY: Mbappé's semi-final appearance made him France's most-capped World Cup player ever, surpassing Hugo Lloris's 20. Every additional minute today extends a record that is entirely his own.",
-
-  "DESCHAMPS' FINAL MATCH — 14 YEARS IN CHARGE, ENDING ON THE BIGGEST STAGE HE'S EVER COACHED ON: Deschamps announced before the tournament he would step down after 2026. Today's third-place match is officially his last game as France manager, closing a tenure that delivered the 2018 World Cup, the 2022 final, and now three consecutive World Cup semi-finals.",
-
-  "DESCHAMPS EQUALLED HELMUT SCHÖN'S ALL-TIME RECORD FOR MOST MATCHES MANAGED AT A WORLD CUP: Deschamps has now managed 25 World Cup matches, level with West Germany's Helmut Schön (1966-1978) for the most in tournament history. One more match today gives him the record outright in his final game in charge.",
-
-  "FRANCE — THIRD CONSECUTIVE WORLD CUP SEMI-FINAL, ONLY THE THIRD NATION EVER TO DO IT: After 2018, 2022, and 2026, France join Germany (2002-2014, and again 1982-1990) and Brazil (1994-2002) as the only nations to reach three-plus consecutive World Cup semi-finals. This is also France's 8th all-time WC semi-final, tying Brazil for second-most in history behind only Germany's 12.",
-
-  "FRANCE HAVE WON 8 OF THEIR LAST 9 COMPETITIVE MATCHES — THE SEMI-FINAL WAS THEIR ONLY DEFEAT AND FIRST GAME AT THIS WORLD CUP WITHOUT SCORING: Spain's 2-0 win was the first time all tournament France failed to both win and score. Their overall run remains one of the most dominant of any team in the competition.",
-
-  "A WIN TODAY WOULD GIVE FRANCE THEIR THIRD WORLD CUP BRONZE MEDAL FROM FOUR THIRD-PLACE APPEARANCES: France have contested the third-place playoff four times in their history and won two of the previous three. A win today makes it three bronze medals — more third-place finishes than almost any other nation.",
-
-  "ENGLAND'S ONLY TWO PREVIOUS THIRD-PLACE PLAYOFFS BOTH ENDED IN DEFEAT: England have never won a World Cup bronze medal. A win today would give them their best World Cup finish since 1966 aside from an outright trophy, and their first-ever third-place playoff victory.",
-
-  "ENGLAND HAVE WON JUST 1 OF THEIR LAST 9 MEETINGS WITH FRANCE — THAT WIN CAME OUTSIDE A MAJOR TOURNAMENT: The overwhelming head-to-head trend favors France. The two nations last met at a World Cup in the 2022 quarter-final, which France won 2-1 en route to the final. This is the first meeting since.",
-
-  "KANE — 6 GOALS, POSSIBLY HIS FINAL EVER WORLD CUP MATCH: Kane and Bellingham are both on 6 goals, giving England an outside shot at the Golden Boot if either has a big game. For Kane, England's all-time leading scorer, this may be the last World Cup appearance of his career — a fitting stage to add to his own record tally.",
-
-  "HARD ROCK STADIUM — SET TO HOST ITS FINAL 2026 WORLD CUP MATCH BEFORE METLIFE TAKES THE FINAL: This is the bronze-medal decider, played the day before the Spain vs Argentina final at MetLife Stadium. Two of the tournament's most talented squads — assembled around Mbappé, Dembélé, Kane and Bellingham — play for pride, history, and individual milestones rather than the trophy itself.",
-
-  "N'GOLO KANTÉ COULD FEATURE FOR THE FIRST TIME AT THIS WORLD CUP: The 2018 World Cup winner has not played a single minute in the 2026 tournament. Deschamps has hinted he may give Kanté game time in his own farewell match — a symbolic passing of the torch in his final game as France coach.",
-
-  "FRANCE HAVE WON 6 WORLD CUP MATCHES OFFICIATED BY ARGENTINIAN REFEREES — THE MOST OF ANY NATION IN HISTORY: An unusual but notable statistical footnote from this tournament, reflecting the depth and breadth of France's officiating history at the competition."
+ 
 ]
-    
   },
   {
-    "match_id": "54328033",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Spain-vs-Argentina/54328033",
-    "sportsdb_event_id": "2533361",
-    "kickoff_utc": "2026-07-19T19:00:00Z",
-    "home_team": "Spain",
-    "away_team": "Argentina",
-    "post_ht": true,
+    "match_id": "54538552",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Newport-County-vs-Roma/54538552",
+    "sportsdb_event_id": "2527460",
+    "kickoff_utc": "2026-08-04T18:00:00Z",
+    "home_team": "Newport County",
+    "away_team": "Roma",
+    "post_ht": false,
     "knockout_match": true,
 "records": [
-  "MESSI'S LAST DANCE — THE OLDEST OUTFIELD PLAYER EVER TO PLAY IN A WORLD CUP FINAL: At 39 years and 25 days, Messi becomes the oldest outfield player in history to appear in a World Cup final. This is almost certainly the final World Cup match of the greatest international career ever recorded — 8 goals at this tournament, 21 all-time WC goals, and one last trophy to defend.",
 
-  "ARGENTINA CHASING THE FIRST BACK-TO-BACK WORLD CUP TITLES SINCE BRAZIL 1958-1962: Only Italy (1934, 1938) and Brazil (1958, 1962) have ever successfully defended the World Cup. No nation has done it in 64 years. Argentina are 90 minutes away from joining the most exclusive club in football.",
-
-  "ARGENTINA COULD BECOME THE FIRST TEAM SINCE BRAZIL 2002 WITH A 100% RECORD AT A WORLD CUP: Argentina have won all seven matches at this tournament. Victory today makes them the first team in 24 years to win every game at a single World Cup. It would also extend their WC winning run to 9 — the outright second-longest in history behind Brazil's 11 (2002-2006).",
-
-  "SPAIN HAVE CONCEDED ONE GOAL IN SEVEN MATCHES — OPPONENTS' xG OF 0.31 PER GAME IS THE JOINT-LOWEST SINCE 1966: Spain's defensive record equals Uruguay 1990 as the most impenetrable in modern World Cup history. They have never trailed for a single minute this entire tournament. Now they face the tournament's highest scorers (Argentina, 19 goals).",
-
-  "SPAIN'S 39-MATCH UNBEATEN RUN MEETS ARGENTINA'S PERFECT TOURNAMENT — SOMETHING BREAKS TODAY: Spain haven't lost a competitive match since March 2023. Argentina haven't dropped a point all tournament. The reigning European champions vs the reigning World and Copa América champions — the first time in history the holders of both continental crowns meet in a World Cup final.",
-
-  "MESSI vs YAMAL — THE FIRST TIME THEY HAVE EVER SHARED A PITCH: Born 1987 and 2007, Messi and Yamal meet for the first time in any match — the first World Cup final in history with opposing starters separated by more than 20 years of age. They are also the only two players with 20+ completed dribbles at this tournament (Messi 25, Yamal 22). The photo of baby Yamal being bathed by Messi in a 2007 charity shoot becomes the most-shared image on the internet this weekend.",
-
-  "YAMAL — THIRD-YOUNGEST PLAYER EVER IN A WORLD CUP FINAL: At 19 years and 6 days, only Pelé (1958) and Giuseppe Bergomi (1982) have played a World Cup final younger. Pelé won his. Yamal leads all teenagers of the last 60 years in shots, shots on target, and touches in the box at a World Cup.",
-
-  "MESSI CHASING RONALDO'S (R9) RECORD — MOST GOALS FOR A WORLD CUP-WINNING TEAM: Ronaldo scored 8 for champions Brazil in 2002 — the record for a title-winning player. Messi has 8 now. One goal today plus an Argentina win breaks a 24-year-old record and gives Messi his second consecutive Golden Boot-level final performance.",
-
-  "THE GOLDEN BOOT IS DECIDED TODAY: Messi and Mbappé are tied on 8 goals. Mbappé finished his tournament in the third-place game. Messi kicks off the final knowing exactly what he needs — one goal wins the Golden Boot outright at age 39, in what would be the final act of his World Cup career.",
-
-  "RODRI — 655 COMPLETED PASSES, THE MOST IN A SINGLE WORLD CUP SINCE RECORDS BEGAN IN 1966: The Ballon d'Or holder has completed more passes than any player at any World Cup on record, including 371 in the opposition half — only Dunga (1994) and Xavi (2010) managed more. His 106 line-breaking passes are the most since Xabi Alonso and Kroos. The Rodri vs Enzo Fernández midfield battle decides the tempo of the final.",
-
-  "OYARZABAL — 5 GOALS, EQUAL WITH SPAIN'S ALL-TIME SINGLE-TOURNAMENT RECORD: Oyarzabal's 5 goals match Emilio Butragueño (1986) and David Villa (2010) for the most by a Spaniard at one World Cup. A goal in the final breaks the record outright — and Villa's 5-goal tournament ended with Spain lifting the trophy. He also scored the winner in the Euro 2024 final. The man for finals.",
-
-  "SPAIN'S FIRST WORLD CUP FINAL SINCE 2010 — AND A SHOT AT AN UNPRECEDENTED TREBLE: Spain won their only previous final in 2010 (Iniesta, 116th minute). Victory today makes Spain the reigning European and World champions simultaneously and completes a Euro 2024 + World Cup 2026 double under de la Fuente — whose major tournament record with Spain stands at W13 D1 with zero defeats.",
-
-  "ARGENTINA'S 7TH WORLD CUP FINAL — ONLY GERMANY HAVE PLAYED MORE: Argentina appear in their seventh final (1930, 1978, 1986, 1990, 2014, 2022, 2026) — second only to Germany's eight. They've won three (1978, 1986, 2022). Spain are in just their second. Argentina also carry a perfect 6-0 record in World Cup semi-finals into a final they reached by beating England 2-1 in extra time.",
-
-  "THE ALL-TIME HEAD-TO-HEAD IS DEADLOCKED AT 6-6 — AND THIS IS THEIR FIRST EVER WORLD CUP KNOCKOUT MEETING: Spain and Argentina have met 13 times with 6 wins each. Their only World Cup meeting was a group game in 1966 (Argentina won 2-1) — so long ago that neither manager had been born (Scaloni) or was older than five (de la Fuente). The final settles a rivalry that has never had a decisive chapter.",
-
-  "SCALONI CHASING BILARDO — ONLY THE SECOND ARGENTINE MANAGER TO REACH TWO WORLD CUP FINALS: Scaloni joins Carlos Bilardo (1986, 1990) as the only Argentina coaches to manage in two finals. Bilardo won one and lost one. Scaloni won 2022 — a win today makes him the first Argentine manager ever to win two World Cups, and only the third manager in history to do so after Vittorio Pozzo (Italy).",
-
-  "MESSI WALKS 64% OF HIS DISTANCE — THE HIGHEST OF ANY ATTACKER — AND IT'S BY DESIGN: Data analysis shows Messi walks 64% of his total distance covered, far more than Mbappé or Haaland (~45%). It is not fatigue — it is energy conservation for decisive moments. Against England he was quiet for 84 minutes, then assisted both goals in the 85th and 92nd. Spain must defend a player who does nothing until he does everything.",
-
-  "METLIFE STADIUM — 82,500 FANS, THE LARGEST WORLD CUP FINAL CROWD SINCE 1994: The final returns to the New York area for the first time since the 1994 World Cup at the Rose Bowl era. MetLife is the biggest venue of the tournament. A day after France vs England for bronze, the stadium hosts either the coronation of a dynasty or the completion of Spain's golden cycle — with the greatest player of all time playing his last World Cup match either way."
 ]
   }
   

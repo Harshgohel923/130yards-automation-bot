@@ -105,15 +105,19 @@ def _space_out_lines(text: str) -> str:
 
 
 def generate_caption(scraper_data: dict, event_type: str = 'FT',
-                     records: list | None = None) -> str:
+                     records: list | None = None,
+                     home_name: str | None = None,
+                     away_name: str | None = None) -> str:
     """
     Generate an Instagram caption from scraper_data.
     event_type: 'HT' → half-time caption, 'FT' → full-time caption.
+    home_name/away_name: validated matches.json names — they win over the
+    scraper's spelling in the caption text.
     Tries gemini-2.5-flash first, then gemini-2.0-flash, then plain fallback.
     """
     match_sample = scraper_data.get('matchSample', {})
-    home_team    = match_sample.get('team_A_name', 'Home')
-    away_team    = match_sample.get('team_B_name', 'Away')
+    home_team    = home_name or match_sample.get('team_A_name', 'Home')
+    away_team    = away_name or match_sample.get('team_B_name', 'Away')
     competition  = match_sample.get('competition_name', 'FIFA World Cup 2026')
 
     if event_type == 'HT':

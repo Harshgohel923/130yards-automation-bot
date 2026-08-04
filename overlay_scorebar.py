@@ -20,9 +20,9 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from config import (
     BRAND_LOGO,
     CLOUD_NAME,
-    CLOUDINARY_TOURNAMENT_LOGO,
     LOCAL_SYMBOLS,
     TEAM_NAME_ALIASES,
+    get_competition_logo_url,
     get_crest_url,
 )
 
@@ -96,16 +96,22 @@ def _fetch_cloudinary_image(public_id):
     return Image.open(io.BytesIO(r.content)).convert('RGBA')
 
 
-def _load_wc_logo(height):
-    """Tournament logo, cropped to drop the black 'FIFA' wordmark row (illegible
-    on the dark panel) and trimmed tight to content."""
+def _load_competition_logo(height, competition=None):
+    """Competition logo (brand logo for friendlies/unknowns), trimmed tight
+    to content and scaled to height."""
+    url = get_competition_logo_url(competition)
     try:
-        logo = _fetch_cloudinary_image(CLOUDINARY_TOURNAMENT_LOGO['World Cup'])
+        r = requests.get(url, timeout=15)
+        r.raise_for_status()
+        logo = Image.open(io.BytesIO(r.content)).convert('RGBA')
     except Exception as e:
-        print(f"[overlay] Could not fetch World Cup logo: {e}")
+        print(f"[overlay] Could not fetch competition logo: {e}")
         return None
-    w, h = logo.size
-    logo = logo.crop((0, 0, w, int(h * 0.81)))
+    if 'fifa-world-cup-2026--white' in url:
+        # Legacy WC mark: drop the black 'FIFA' wordmark row (illegible on
+        # the dark panel).
+        w, h = logo.size
+        logo = logo.crop((0, 0, w, int(h * 0.81)))
     bbox = logo.getbbox()
     if bbox:
         logo = logo.crop(bbox)
@@ -390,7 +396,8 @@ def _draw_scorer_lines(img, draw, lines, box, align, font_size, step):
 
 def add_scorecard_overlay(image_path, output_path, home_team, away_team,
                            home_score, away_score, event_type='FT',
-                           penalties=None, home_events=None, away_events=None):
+                           penalties=None, home_events=None, away_events=None,
+                           competition=None):
     """
     penalties: optional (home_pen, away_pen) strings shown as
                'PENALTIES: h - a' below the final score.
@@ -431,7 +438,7 @@ def add_scorecard_overlay(image_path, output_path, home_team, away_team,
     draw = ImageDraw.Draw(img)
 
     # ── Tournament logo centered ON the top border line ──────────────────
-    wc_logo = _load_wc_logo(int(h * 0.058))
+    wc_logo = _load_competition_logo(int(h * 0.058), competition)
     if wc_logo:
         img.alpha_composite(_drop_shadow(wc_logo, blur=8, alpha=140),
                             (cx - wc_logo.width // 2, py1 - wc_logo.height // 2))
@@ -519,14 +526,18 @@ def add_scorecard_overlay(image_path, output_path, home_team, away_team,
 # ── Pipeline entry points (scraper_data format, like scorecard.py) ────────────
 
 def generate_overlay_scorecard(scraper_data, photo_path, event_type='FT',
-                                match_id_override=''):
+                                match_id_override='',
+                                home_name=None, away_name=None,
+                                competition=None):
     """Photo-based counterpart of scorecard.generate_scorecard: renders the
     overlay onto photo_path and returns the saved output path."""
     sample = scraper_data.get('matchSample', {})
     match_id = str(sample.get('match_id') or match_id_override or 'unknown')
     os.makedirs('output', exist_ok=True)
     output_path = f"output/scorecard_{match_id}_{event_type}_overlay.png"
-    _render_from_scraper_data(scraper_data, photo_path, output_path, event_type)
+    _render_from_scraper_data(scraper_data, photo_path, output_path, event_type,
+                              home_name=home_name, away_name=away_name,
+                              competition=competition)
     return output_path
 
 
@@ -534,12 +545,15 @@ def add_scorecard_overlay_from_json(image_path, output_path, data_path, event_ty
     _render_from_scraper_data(json.load(open(data_path)), image_path, output_path, event_type)
 
 
-def _render_from_scraper_data(data, image_path, output_path, event_type='FT'):
+def _render_from_scraper_data(data, image_path, output_path, event_type='FT',
+                              home_name=None, away_name=None, competition=None):
     sample = data['matchSample']
     raw_home = sample.get('team_A_name', 'Home')
     raw_away = sample.get('team_B_name', 'Away')
-    home_team = TEAM_NAME_ALIASES.get(raw_home, raw_home)
-    away_team = TEAM_NAME_ALIASES.get(raw_away, raw_away)
+    # Validated matches.json names win over the scraper's spelling for
+    # display and crests; raw names stay for event matching only.
+    home_team = home_name or TEAM_NAME_ALIASES.get(raw_home, raw_home)
+    away_team = away_name or TEAM_NAME_ALIASES.get(raw_away, raw_away)
     events = data.get('events', [])
 
     ps_home = str(sample.get('ps_A') or '').strip()
@@ -576,6 +590,7 @@ def _render_from_scraper_data(data, image_path, output_path, event_type='FT'):
         event_type=event_type, penalties=penalties,
         home_events=_extract_scorer_lines(filtered, raw_home),
         away_events=_extract_scorer_lines(filtered, raw_away),
+        competition=competition or sample.get('competition_name'),
     )
 
 

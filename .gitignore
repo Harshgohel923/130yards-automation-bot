@@ -16,3 +16,7 @@ state.json
 
 # macOS
 .DS_Store
+
+# Logo/template download caches (Cloudinary is the source of truth)
+assets/logos/
+assets/templates/

@@ -31,6 +31,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from dotenv import load_dotenv
 
 from caption import generate_caption
+from config import get_crest_url
 from cloudinary_upload import upload_image, upload_match_data, delete_image
 from database import init_db, is_event_posted, mark_event_posted, upsert_match
 from football_scraper_dom import get_match_data
@@ -190,12 +191,20 @@ def _generate_card(entry: dict, event_type: str, scraper_data: dict,
     Returns the local image path.
     """
     match_id = entry['match_id']
+    # Competition: matches.json is authoritative; scraper, then TheSportsDB,
+    # fill in when the field is absent.
+    competition = (entry.get('competition')
+                   or scraper_data.get('matchSample', {}).get('competition_name')
+                   or str_league)
     photo_path = fetch_match_photo(match_id, event_type)
     if photo_path:
         try:
             path = generate_overlay_scorecard(scraper_data, photo_path,
                                               event_type=event_type,
-                                              match_id_override=match_id)
+                                              match_id_override=match_id,
+                                              home_name=entry['home_team'],
+                                              away_name=entry['away_team'],
+                                              competition=competition)
             print(f"[{match_id}] Using photo-overlay scorecard ({event_type}).")
             return path
         except Exception as e:
@@ -207,7 +216,10 @@ def _generate_card(entry: dict, event_type: str, scraper_data: dict,
             )
     return generate_scorecard(scraper_data, event_type=event_type,
                               match_id_override=match_id,
-                              int_round=int_round, str_league=str_league)
+                              int_round=int_round, str_league=str_league,
+                              home_name=entry['home_team'],
+                              away_name=entry['away_team'],
+                              competition=competition)
 
 
 def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
@@ -230,7 +242,9 @@ def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
         public_url, _ = upload_image(image_path)
         os.remove(image_path)
         caption = generate_caption(scraper_data, event_type=event_type,
-                                   records=entry.get('records'))
+                                   records=entry.get('records'),
+                                   home_name=entry['home_team'],
+                                   away_name=entry['away_team'])
         ig_id   = post_to_instagram(public_url, caption)
         mark_event_posted(match_id, event_type)
         print(f"[{match_id}] ✅ {event_type} posted — IG ID: {ig_id}")
@@ -325,7 +339,9 @@ def _early_pipeline(entry: dict, event_type: str, scraper_data: dict) -> tuple[s
         public_url, cid = upload_image(image_path)
         os.remove(image_path)
         caption = generate_caption(scraper_data, event_type=event_type,
-                                   records=entry.get('records'))
+                                   records=entry.get('records'),
+                                   home_name=entry['home_team'],
+                                   away_name=entry['away_team'])
         ig_id = post_to_instagram(public_url, caption)
         print(f"[{match_id}] ✅ Early {event_type} posted — IG ID: {ig_id}")
         return cid, ig_id
@@ -394,6 +410,22 @@ def match_worker(entry: dict):
 
     print(f"[{match_id}] Worker started — {entry['home_team']} vs {entry['away_team']}"
           f"  (knockout={is_knockout})")
+
+    # Pre-kickoff crest check: warn now, while there is still time to fix it,
+    # instead of discovering a logo-less card at HT.
+    missing_crests = [t for t in (entry['home_team'], entry['away_team'])
+                      if get_crest_url(t, alert=False) is None]
+    if missing_crests:
+        send_alert(
+            f"⚠️ {match_id}: worker started for {entry['home_team']} vs "
+            f"{entry['away_team']}, but no crest on Cloudinary for: "
+            f"{', '.join(missing_crests)}. Scorecards will render without "
+            f"the logo(s) unless fixed before HT.\n\n"
+            f"Fix: check the spelling in matches.json, then run "
+            f"'python validate_matches.py' locally — the upload takes effect "
+            f"immediately, no push needed.",
+            key=f'{match_id}:crest-precheck', cooldown=3600,
+        )
 
     upsert_match(entry)
 
