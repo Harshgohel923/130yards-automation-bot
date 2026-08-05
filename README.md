@@ -104,7 +104,8 @@ Each worker thread handles one match end-to-end:
 | File | Role |
 |---|---|
 | `matches.json` | The fixture registry — the **single source of truth** for team names, competition, and kickoff. Hand-edited, then validated. |
-| `football_scraper_dom.py` | Scrapes allfootballapp match pages: match phase, teams, scores (HT/FT/pens), event timeline (goals, assists, cards, subs), statistics, formations. **The single source of truth** — status, live data and competition name all come from here. |
+| `football_scraper_dom.py` | Scrapes allfootballapp's **mobile** match pages: match phase, teams, scores (HT/FT/pens), event timeline (goals, assists, cards, subs), statistics, formations. **The single source of truth** — status, live data and competition name all come from here. Only the `m.` host carries the data blob; `www.` returns nothing. |
+| `allfootball_desktop.py` | **Secondary, strictly additive.** Reads the desktop match page for two things mobile lacks: `minute_extra` (stoppage-time offset — mobile reports both a 90th-minute and a 90+3 booking as `90'`) and the `tendencies` momentum series, archived with the match data. Its `format_minute()` is what both renderers use to draw scorer minutes, so a stoppage-time goal reads `90+3'` instead of `90'`; events without an offset are returned unchanged, so it is safe to call unconditionally. Best-effort throughout: every failure path leaves the match data untouched, so it can never affect posting. Fetched only once a post is in prospect (HT/FT/ET/AP, or minute ≥ 43), to avoid doubling request volume against the same site. |
 | `telegram_bot.py` | Photo intake: you send a match photo via Telegram, it lands in Cloudinary keyed by match id, and the pipeline switches to the photo-overlay card style. |
 
 ### Rendering
@@ -309,8 +310,13 @@ logo is skipped).
   outdated post's permalink to delete manually.
 - The scraper depends on allfootballapp's mobile DOM; a redesign there would
   need `football_scraper_dom.py` updated (you'd get scraper-failure alerts).
-  It is now the only live data source, so an outage stalls tracking — the
+  It is the only live data source, so an outage stalls tracking — the
   stale-cache FT fallback exists to keep a long one from costing you the post.
+- The desktop page **cannot** replace the mobile one: it carries no penalty
+  shootout scoreline (nor half-time / extra-time scores), which the knockout
+  path depends on. It is enrichment only. Its payload is a Nuxt `__NUXT__`
+  JavaScript IIFE rather than JSON — `allfootball_desktop.decode_nuxt()`
+  resolves it with the standard library, so no JS runtime is needed.
 - Team A in the scraper is assumed to be the home team (the same assumption
   the scraper URL and scores already rely on).
 

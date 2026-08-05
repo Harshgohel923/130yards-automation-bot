@@ -30,6 +30,7 @@ from datetime import datetime, timezone, timedelta
 from apscheduler.schedulers.blocking import BlockingScheduler
 from dotenv import load_dotenv
 
+from allfootball_desktop import enrich as enrich_with_desktop
 from caption import generate_caption
 from config import get_crest_url
 from cloudinary_upload import upload_image, upload_match_data, delete_image
@@ -560,6 +561,13 @@ def match_worker(entry: dict):
         minute        = _get_minute(scraper_data)
         current_score = _get_score(scraper_data)
         lagging       = not _events_match_score(scraper_data)
+
+        # ── Desktop enrichment (best-effort) ─────────────────────────────────
+        # Adds stoppage-time offsets to events and the tendencies series. Only
+        # fetched once a post is in prospect: it is a second request against the
+        # same site, and there is nothing to enrich during a quiet first half.
+        if raw_status in ('HT', 'FT', 'ET', 'AP') or minute >= 43:
+            enrich_with_desktop(scraper_data, match_id)
 
         # ── Normalise status ──────────────────────────────────────────────────
         if raw_status == 'FT':

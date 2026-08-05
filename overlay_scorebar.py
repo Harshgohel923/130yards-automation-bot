@@ -17,6 +17,7 @@ import numpy as np
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+from allfootball_desktop import format_minute
 from config import (
     BRAND_LOGO,
     CLOUD_NAME,
@@ -246,7 +247,7 @@ def _extract_scorer_lines(events, team_name):
             continue
         lines.append({
             'type': ev['type'],
-            'minute': ev.get('minute', '?'),
+            'minute': format_minute(ev),
             'name': _format_player_name(ev.get('player', '?')),
         })
     return lines

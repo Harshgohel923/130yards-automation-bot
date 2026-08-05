@@ -13,6 +13,7 @@ import os
 from config import (get_crest_url, get_competition_logo_url, get_brand_logo_url,
                     select_template_key,
                     STADIUM_NAME_ALIASES, LOCAL_SYMBOLS, TEAM_NAME_ALIASES)
+from allfootball_desktop import format_minute
 from cloudinary_utils import LOCAL_CACHE_DIR as TEMPLATE_CACHE_DIR, fetch_template
 # Read-only reuse of the overlay card's colour logic so both styles agree.
 from overlay_scorebar import TEAM_COLORS, FALLBACK_COLORS, _dominant_colors
@@ -269,7 +270,7 @@ def _extract_scorer_lines(events: list, team_name: str) -> list[dict]:
             continue
 
         player = ev.get('player', '') or '?'
-        minute = ev.get('minute', '?')
+        minute = format_minute(ev)
 
         lines.append({
             'display_name': player,
