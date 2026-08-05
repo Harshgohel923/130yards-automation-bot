@@ -31,5 +31,16 @@
     "post_ht": false,
     "knockout_match": true,
     "records": []
+  },
+  {
+    "match_id": "54416381",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Inter-Miami-vs-Atletico-San-Luis/54416381",
+    "kickoff_utc": "2026-08-05T23:30:00Z",
+    "home_team": "Inter Miami",
+    "away_team": "Atlético de San Luis",
+    "competition": "Leagues Cup",
+    "post_ht": false,
+    "knockout_match": true,
+    "records": []
   }
 ]

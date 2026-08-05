@@ -158,6 +158,11 @@ NICKNAMES = {
     'bilbao': 'athletic-club',
     'betis': 'real-betis',
     'sociedad': 'real-sociedad',
+    'rcd-mallorca': 'mallorca',
+    'rcd-espanyol': 'espanyol',
+    # ── clubs: Mexico / MLS ──
+    'atletico-san-luis': 'atletico-de-san-luis',
+    'inter-miami-cf': 'inter-miami',
     # ── clubs: Italy ──
     'inter': 'inter-milan',
     'internazionale': 'inter-milan',
@@ -213,6 +218,7 @@ DISPLAY_NAMES = {
     'bosnia-and-herzegovina': 'Bosnia and Herzegovina',
     'ac-milan': 'AC Milan',
     'as-monaco': 'AS Monaco',
+    'atletico-de-san-luis': 'Atlético de San Luis',
     'psv': 'PSV',
     'rb-leipzig': 'RB Leipzig',
     'fc-porto': 'FC Porto',
@@ -409,6 +415,10 @@ COMPETITIONS = {
     'uefa-super-cup':         ('tournaments', 'uefa-super-cup', 'white'),
     'fifa-club-world-cup':    ('tournaments', 'fifa-club-world-cup', None),
     'fifa-world-cup':         ('tournaments', 'fifa-world-cup-2026', 'white'),
+    'concacaf-champions-cup': ('tournaments', 'concacaf-champions-cup', None),
+    # Not on football-logos.cc — the logo has to be uploaded by hand:
+    #   python logo_fetch.py --local <file.png> --competition "Leagues Cup"
+    'leagues-cup':            None,
     'friendly':               None,
 }
 
@@ -451,6 +461,9 @@ COMPETITION_ALIASES = {
     'cwc': 'fifa-club-world-cup',
     'world-cup': 'fifa-world-cup',
     'fifa-world-cup-2026': 'fifa-world-cup',
+    'leagues-cup-2026': 'leagues-cup',
+    'concacaf-champions-league': 'concacaf-champions-cup',
+    'ccc': 'concacaf-champions-cup',
     'friendlies': 'friendly',
     'club-friendly': 'friendly',
     'club-friendlies': 'friendly',
@@ -481,6 +494,8 @@ COMPETITION_DISPLAY = {
     'uefa-super-cup': 'UEFA Super Cup',
     'fifa-club-world-cup': 'FIFA Club World Cup',
     'fifa-world-cup': 'FIFA World Cup',
+    'concacaf-champions-cup': 'CONCACAF Champions Cup',
+    'leagues-cup': 'Leagues Cup',
     'friendly': 'Club Friendly',
 }
 

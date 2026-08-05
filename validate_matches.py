@@ -2,7 +2,14 @@
 """
 Pre-flight check for matches.json — run it after adding fixtures.
 
-First it checks the file's structure — the mistakes that are easy to make when
+Adding a fixture only takes its scraper_url: match_id, kickoff_utc, home_team,
+away_team and competition are read off the match page and written back for you
+to check. Anything you did fill in is left alone — this fills blanks, it does
+not overwrite. So a new entry can be as short as:
+
+    { "scraper_url": "https://m.allfootballapp.com/match/Main/x/54457613" }
+
+Then it checks the file's structure — the mistakes that are easy to make when
 hand-editing fixtures and that no amount of name-checking would catch:
     * required fields present
     * match_id unique across entries (it is the database primary key and the
@@ -40,6 +47,7 @@ from urllib.parse import urlparse
 import requests
 
 from config import get_crest_url
+from football_scraper_dom import get_match_data
 from logo_fetch import (COMPETITION_DISPLAY, COMPETITIONS, _scrape_hash,
                         fetch_competition_logo, fetch_logo,
                         normalize_team_name, resolve_competition, resolve_team)
@@ -48,6 +56,101 @@ MATCHES_FILE = 'matches.json'
 
 REQUIRED_FIELDS = ('match_id', 'scraper_url', 'kickoff_utc', 'home_team', 'away_team')
 SCRAPER_HOST = 'm.allfootballapp.com'
+
+# Fields derivable from the match page, so only scraper_url has to be typed.
+AUTO_FIELDS = ('match_id', 'kickoff_utc', 'home_team', 'away_team', 'competition')
+
+# Key order for entries this script fills in, so a generated entry reads the
+# same way as a hand-written one. Anything unlisted keeps its position at the
+# end. Only reordered when a fixture is actually filled, to keep diffs quiet.
+FIELD_ORDER = ('match_id', 'scraper_url', 'kickoff_utc', 'home_team', 'away_team',
+               'competition', 'post_ht', 'knockout_match', 'records')
+
+
+def _reorder(entry: dict) -> dict:
+    """Same entry, keys in FIELD_ORDER, extras preserved after them."""
+    ordered = {k: entry[k] for k in FIELD_ORDER if k in entry}
+    ordered.update({k: v for k, v in entry.items() if k not in ordered})
+    return ordered
+
+
+def _kickoff_from(match_sample: dict) -> str | None:
+    """
+    kickoff_utc from the scraper's date_utc + time_utc.
+
+    Those two fields are genuinely UTC — verified against hand-entered
+    fixtures, which they reproduce exactly. The trailing 'Z' is what makes
+    the timestamp timezone-aware downstream, so it is never omitted.
+    """
+    date = str(match_sample.get('date_utc') or '').strip()
+    time = str(match_sample.get('time_utc') or '').strip()
+    if not date or not time:
+        return None
+    if len(time.split(':')) == 2:      # HH:MM → HH:MM:SS
+        time += ':00'
+    return f'{date}T{time}Z'
+
+
+def _autofill(matches: list, write: bool) -> tuple[list[str], list[str], bool]:
+    """
+    Fill any AUTO_FIELDS left blank from the match page, so a new fixture only
+    needs its scraper_url pasted in.
+
+    Existing values are never overwritten — this fills gaps, it does not
+    correct what you typed. Filled names go through the same normalization as
+    hand-written ones, so 'Betis' still becomes 'Real Betis'.
+
+    Returns (filled, problems, changed). Values are always applied in memory so
+    the checks that follow see a complete entry; `write` decides whether the
+    change is meant to reach disk.
+    """
+    filled: list[str] = []
+    problems: list[str] = []
+    changed = False
+
+    for i, entry in enumerate(matches):
+        if not isinstance(entry, dict):
+            continue
+        url = entry.get('scraper_url')
+        if not url:
+            continue                     # reported by the structure check
+        missing = [f for f in AUTO_FIELDS if not entry.get(f)]
+        if not missing:
+            continue
+
+        label = entry.get('match_id') or f'entry #{i + 1}'
+        print(f'… {label}: looking up {", ".join(missing)} from the match page')
+        try:
+            data = get_match_data(url)
+        except Exception as e:
+            data = None
+            print(f'[autofill] {url} failed: {e}')
+        if not data:
+            problems.append(f"{label}: could not read {url} to fill "
+                            f"{', '.join(missing)} — check the URL, then re-run")
+            continue
+
+        ms = data.get('matchSample') or {}
+        available = {
+            'match_id':    str(ms.get('match_id') or '').strip() or None,
+            'kickoff_utc': _kickoff_from(ms),
+            'home_team':   (ms.get('team_A_name') or '').strip() or None,
+            'away_team':   (ms.get('team_B_name') or '').strip() or None,
+            'competition': (ms.get('competition_name') or '').strip() or None,
+        }
+        for field in missing:
+            value = available.get(field)
+            if not value:
+                problems.append(f'{label}: the match page carries no {field} — '
+                                f'fill it in by hand')
+                continue
+            entry[field] = value
+            filled.append(f'{label}: {field} = {value!r}')
+            changed = changed or write
+
+        matches[i] = _reorder(entry)
+
+    return filled, problems, changed
 
 
 def _check_structure(matches: list) -> list[str]:
@@ -156,10 +259,13 @@ def main() -> int:
         print(f'✖ {MATCHES_FILE} could not be read: {e}')
         return 1
 
-    problems: list[str] = _check_structure(matches)
+    # Fill blank fields from the match page first, so the checks below see a
+    # complete entry and a new fixture only needs its scraper_url.
+    filled, fill_problems, changed = _autofill(matches, write=not args.check)
+
+    problems: list[str] = fill_problems + _check_structure(matches)
     renames: list[str] = []
     crest_cache: dict[str, str | None] = {}
-    changed = False
 
     # Structural faults make the per-entry checks unreliable (and a malformed
     # entry can't be name-checked at all), so report them on their own.
@@ -240,6 +346,13 @@ def main() -> int:
                     problems.append(f"match {match_id}: no logo for competition "
                                     f"'{official}' — {e}")
 
+    if filled:
+        print('\nFilled from the match page:' if not args.check
+              else '\nWould fill from the match page:')
+        for f in filled:
+            print(f'  {f}')
+        print('  ↳ verify these before pushing.')
+
     if renames:
         print('\nNormalized names:' if not args.check else '\nWould normalize:')
         for r in renames:
@@ -252,7 +365,7 @@ def main() -> int:
             json.dump(matches, f, indent=2, ensure_ascii=False)
             f.write('\n')
         os.replace(tmp, MATCHES_FILE)
-        print(f'\nUpdated {MATCHES_FILE} with normalized names.')
+        print(f'\nUpdated {MATCHES_FILE}.')
 
     if problems:
         print(f'\n✖ {len(problems)} problem(s):')
