@@ -98,17 +98,7 @@ SHADOW_OFFSET   = (0, 3)
 SHADOW_STRENGTH = 1.9   # alpha multiplier before blurring; >1 = denser shadow
 
 
-# ── TheSportsDB intRound → display name ──────────────────────────────────────
-SPORTSDB_ROUND_MAP = {
-    '32': 'ROUND OF 32',
-    '16': 'ROUND OF 16',
-    '8':  'QUARTER-FINAL',
-    '4':  'SEMI-FINAL',
-    '2':  'SEMI-FINAL',
-    '1':  'FINAL',
-}
-
-# ── Scraper round_name fallback map ──────────────────────────────────────────
+# ── Scraper round_name → display name ───────────────────────────────────────
 ROUND_NAME_MAP = {
     'R':   'GROUP STAGE',
     '32': 'ROUND OF 32',
@@ -482,7 +472,6 @@ def _draw_scorer_lines(img, draw, lines, box, align, font_size, gap=None):
 # ── Main public function ──────────────────────────────────────────────────────
 
 def generate_scorecard(scraper_data: dict, event_type: str = 'FT', match_id_override: str = '',
-                       int_round: str | None = None, str_league: str | None = None,
                        home_name: str | None = None, away_name: str | None = None,
                        competition: str | None = None) -> str:
     """
@@ -550,8 +539,7 @@ def generate_scorecard(scraper_data: dict, event_type: str = 'FT', match_id_over
     # ── Competition label — center aligned ────────────────────────────────────
     # Competition name only, never the round: matches.json / the scraper always
     # carry a competition, whereas round data is patchy and reads as clutter.
-    comp_raw = (competition or match_sample.get('competition_name')
-                or str_league or '')
+    comp_raw = (competition or match_sample.get('competition_name') or '')
     comp_key = resolve_competition(comp_raw)
     stage_text = COMPETITION_DISPLAY.get(comp_key) or comp_raw.strip()
     if stage_text and GROUP_STAGE_BOX != (0, 0, 0, 0):

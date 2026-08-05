@@ -13,17 +13,16 @@ Europe's top-5 leagues, the UEFA Champions League, and pre-season friendlies.
 
 ## How a match gets posted (the short version)
 
-1. You add a fixture to `matches.json` (team names, scraper URL, TheSportsDB
-   event id, kickoff time).
+1. You add a fixture to `matches.json` (team names, scraper URL, kickoff time).
 2. You run `python validate_matches.py` — it normalizes team/competition
    names, verifies every crest exists, and uploads them to Cloudinary before
    match day.
 3. You commit and push. Production runs from `master` on GitHub Actions.
 4. An external cron fires the **dispatcher** workflow every 15 minutes. When
    a match window opens, the dispatcher spawns a **match worker** run for it.
-5. The worker polls TheSportsDB for status and the scraper for live data.
-   At HT and FT it renders a scorecard, uploads it to Cloudinary, generates a
-   caption with Gemini, and posts to Instagram.
+5. The worker polls the scraper for match phase and live data. At HT and FT it
+   renders a scorecard, uploads it to Cloudinary, generates a caption with
+   Gemini, and posts to Instagram.
 6. If you sent a match photo to the Telegram bot, the card is rendered as a
    photo overlay; otherwise the classic template card is used.
 7. Any failure anywhere sends you a descriptive Telegram alert.
@@ -62,8 +61,23 @@ curl -X POST -H "Authorization: token <PAT>" \
 
 Each worker thread handles one match end-to-end:
 
-- Polls TheSportsDB for official status (HT / FT) and the scraper
-  (allfootballapp) for live events, scores, and statistics.
+- Polls the scraper (allfootballapp) once per minute for everything: match
+  phase, live events, scores, and statistics. One fetch drives the whole
+  iteration.
+- **Phase comes from the scraper**, via `derive_status()`. The scraper's own
+  `status` (`Fixture` / `Playing` / `Played`) plus the live minute map onto
+  `NS / 1H / HT / 2H / ET / AP / FT`. A penalty scoreline (`ps_A`/`ps_B`)
+  means a shootout regardless of minute.
+- **Half-time detection** is the one place the minute isn't enough: it does
+  **not** count stoppage time, sitting at 45 through first-half injury time
+  *and* the interval alike (likewise 90 in the second half). So at minute 45,
+  `_at_half_time()` looks for either of two signals, whichever the scraper
+  publishes first:
+  - a `half_time` entry in the event timeline (the explicit marker), or
+  - the half-time scoreline `hts_A`/`hts_B`, filled in at the whistle.
+
+  Both persist for the rest of the match, so they only count while the minute
+  reads 45 — otherwise they would read as HT long after the interval.
 - **Pre-kickoff crest check**: the moment the worker starts, it verifies both
   teams' crests exist on Cloudinary and alerts you if not — while there is
   still time to fix it.
@@ -76,6 +90,10 @@ Each worker thread handles one match end-to-end:
   the FT score; 120' shootout events are excluded from scorer lines).
 - Worker crashes are caught, alerted, and the worker is respawned on the next
   registry check if the match window is still open.
+- **Scraper outage fallback**: if the scraper stays unreachable for 15 min and
+  the match cannot still be running (kickoff + 115 min, or + 165 for a
+  knockout), the FT card is posted from the last cached scrape with a Telegram
+  warning, rather than letting the outage swallow the post entirely.
 
 ---
 
@@ -86,8 +104,7 @@ Each worker thread handles one match end-to-end:
 | File | Role |
 |---|---|
 | `matches.json` | The fixture registry — the **single source of truth** for team names, competition, and kickoff. Hand-edited, then validated. |
-| `football_scraper_dom.py` | Scrapes allfootballapp match pages: teams, scores (HT/FT/pens), event timeline (goals, assists, cards, subs), statistics, formations. |
-| `main.py` (TheSportsDB calls) | Official match status, round number, league name. |
+| `football_scraper_dom.py` | Scrapes allfootballapp match pages: match phase, teams, scores (HT/FT/pens), event timeline (goals, assists, cards, subs), statistics, formations. **The single source of truth** — status, live data and competition name all come from here. |
 | `telegram_bot.py` | Photo intake: you send a match photo via Telegram, it lands in Cloudinary keyed by match id, and the pipeline switches to the photo-overlay card style. |
 
 ### Rendering
@@ -220,7 +237,8 @@ Every failure point alerts you with a plain-language description and its
 consequence. Emoji convention: **❌** = a post did not go out / a match is
 uncovered; **⚠️** = degraded but self-healing or cosmetic.
 
-Covered: state-file load, registry parse errors, TheSportsDB fetch failures,
+Covered: state-file load, registry parse errors, scraper outages (and the
+stale-cache FT fallback that follows a long one),
 pipeline failures (HT/FT and early posts), overlay-render fallback, worker
 crashes, scraper failures mid-match, bad kickoff dates, Cloudinary/IG delete
 failures (with a tappable permalink so you can delete manually), missing
@@ -256,7 +274,6 @@ aliases, and the `get_crest_url` / `get_competition_logo_url` lookups.
 {
   "match_id": "54457604",
   "scraper_url": "https://m.allfootballapp.com/match/Main/Liverpool-vs-Leeds-United/54457604",
-  "sportsdb_event_id": "2533360",
   "kickoff_utc": "2026-08-02T23:00:00Z",
   "home_team": "Liverpool",
   "away_team": "Leeds United",
@@ -292,6 +309,8 @@ logo is skipped).
   outdated post's permalink to delete manually.
 - The scraper depends on allfootballapp's mobile DOM; a redesign there would
   need `football_scraper_dom.py` updated (you'd get scraper-failure alerts).
+  It is now the only live data source, so an outage stalls tracking — the
+  stale-cache FT fallback exists to keep a long one from costing you the post.
 - Team A in the scraper is assumed to be the home team (the same assumption
   the scraper URL and scores already rely on).
 

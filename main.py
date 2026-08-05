@@ -9,7 +9,8 @@ picked up automatically without a restart.
 Per-match flow
 ──────────────
   scheduled  →  (kickoff window opens)
-  →  live      →  poll TheSportsDB every POLL_INTERVAL_SECS
+  →  live      →  poll the scraper every POLL_INTERVAL_SECS; derive_status()
+                  turns each scrape into a match phase
   →  ht        →  generate + post HT scorecard, keep polling
   →  ft        →  generate + post FT scorecard, worker exits
 
@@ -26,7 +27,6 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 
-import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
 from dotenv import load_dotenv
 
@@ -46,15 +46,17 @@ load_dotenv()
 # ── Tunables ──────────────────────────────────────────────────────────────────
 REGISTRY_FILE       = 'matches.json'
 STATE_FILE          = 'state.json'
-POLL_INTERVAL_SECS  = 60       # how often to hit TheSportsDB during a live match
+POLL_INTERVAL_SECS  = 60       # how often to hit the scraper during a live match
 REGISTRY_POLL_SECS  = 300      # how often to re-read matches.json for new entries
 # Start monitoring this many seconds before kickoff
 PRE_MATCH_WINDOW    = 5 * 60
 # Stop polling this many seconds after scheduled kickoff (safety ceiling; FT
 # detection will stop it sooner in practice — 210 min covers ET + full penalty shootout)
 MAX_MATCH_DURATION  = 210 * 60
-
-SPORTSDB_BASE = 'https://www.thesportsdb.com/api/v1/json/123/lookupevent.php'
+# Once the scraper has been unreachable for this long AND the match should be
+# over by the clock, fall back to the last cached scrape to post FT rather than
+# letting an outage swallow the post entirely.
+SCRAPER_STALE_SECS  = 15 * 60
 
 # ── Global state ──────────────────────────────────────────────────────────────
 # { match_id: { "status": str, "ht_posted": bool, "ft_posted": bool,
@@ -117,33 +119,72 @@ def load_registry() -> list[dict]:
         return []
 
 
-# ── TheSportsDB helper ────────────────────────────────────────────────────────
+# ── Match phase derivation ────────────────────────────────────────────────────
+# The scraper is the single source of truth for match phase. It reports
+# status ('Fixture' / 'Playing' / 'Played') plus the live minute, which
+# together pin down the phase more precisely — and far more reliably — than
+# any external status feed. Phase names are kept short ('1H', 'HT', '2H',
+# 'ET', 'AP', 'FT', 'NS') because every posting gate downstream reads them.
 
-def fetch_sportsdb_status(sportsdb_event_id: str) -> tuple[str | None, str | None, str | None]:
+def _has_penalties(match_sample: dict) -> bool:
+    """True once a penalty shootout scoreline exists on the scoreboard."""
+    return bool(str(match_sample.get('ps_A') or '').strip()
+                and str(match_sample.get('ps_B') or '').strip())
+
+
+def _at_half_time(scraper_data: dict) -> bool:
     """
-    Returns (strStatus, intRound, strLeague) from TheSportsDB.
-    All three are None on network / parse errors.
+    True when the interval has actually started, as opposed to the clock
+    sitting on 45 through first-half stoppage time.
+
+    Two independent signals, either of which is sufficient:
+      * a 'half_time' entry in the event timeline — the scraper's own explicit
+        interval marker, and the more direct of the two;
+      * the half-time scoreline, which is only filled in at the whistle.
+
+    Callers must already have established that the minute is 45. Both signals
+    persist for the rest of the match, so on their own they would read as HT
+    long after the interval ended.
     """
-    try:
-        r = requests.get(
-            SPORTSDB_BASE,
-            params={'id': sportsdb_event_id},
-            timeout=10
-        )
-        r.raise_for_status()
-        events = r.json().get('events')
-        if events:
-            ev = events[0]
-            return ev.get('strStatus'), ev.get('intRound'), ev.get('strLeague')
-    except Exception as e:
-        print(f"[sportsdb] Error fetching event {sportsdb_event_id}: {e}")
-        send_alert(
-            f"⚠️ TheSportsDB fetch failed for event {sportsdb_event_id} ({e}).\n"
-            f"Match status updates are stalled until it recovers — the worker "
-            f"keeps retrying every poll.",
-            key=f'sportsdb:{sportsdb_event_id}', cooldown=900,
-        )
-    return None, None, None
+    events = scraper_data.get('events')
+    if isinstance(events, list):
+        if any(e.get('type') == 'half_time' for e in events):
+            return True
+    ms = scraper_data.get('matchSample', {})
+    return (str(ms.get('hts_A') or '').strip() != ''
+            and str(ms.get('hts_B') or '').strip() != '')
+
+
+def derive_status(scraper_data: dict) -> str:
+    """
+    Map the scraper's status + minute onto a match phase.
+
+    'Played' is the scraper's own end-of-match flag and always wins. While
+    'Playing', the minute decides — but it does NOT count stoppage time: it
+    sits at 45 through first-half injury time and the interval alike, and at
+    90 through second-half injury time. So the minute alone cannot separate
+    'first-half stoppage' from 'half-time'; see _at_half_time for what does.
+
+    A shootout scoreline overrides the minute, since the clock stops at 120
+    once penalties begin.
+    """
+    ms     = scraper_data.get('matchSample', {})
+    status = (scraper_data.get('status') or ms.get('status') or '').strip()
+
+    if status == 'Played':
+        return 'FT'
+    if status != 'Playing':
+        return 'NS'
+
+    if _has_penalties(ms):
+        return 'AP'
+
+    minute = _get_minute(scraper_data)
+    if minute > 90:
+        return 'ET'
+    if minute == 45:
+        return 'HT' if _at_half_time(scraper_data) else '1H'
+    return '2H' if minute > 45 else '1H'
 
 
 # ── Match data helpers ────────────────────────────────────────────────────────
@@ -160,6 +201,19 @@ def _save_match_data(entry: dict, scraper_data: dict):
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(scraper_data, f, indent=2)
     print(f"[{entry['match_id']}] Match data cached → {path}")
+
+
+def _load_cached_data(entry: dict) -> dict | None:
+    """Last scrape saved to disk, or None if there is none / it is unreadable."""
+    path = _data_path(entry)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[{entry['match_id']}] Could not read cached match data: {e}")
+        return None
 
 
 def _archive_match_data(entry: dict):
@@ -182,19 +236,17 @@ def _archive_match_data(entry: dict):
 
 # ── Scorecard pipeline ────────────────────────────────────────────────────────
 
-def _competition_of(entry: dict, scraper_data: dict, str_league) -> str | None:
+def _competition_of(entry: dict, scraper_data: dict) -> str | None:
     """
-    Competition for this match: matches.json is authoritative; the scraper,
-    then TheSportsDB, fill in when the field is absent. Drives the competition
-    logo, the template choice and the first hashtag.
+    Competition for this match: matches.json is authoritative, the scraper
+    fills in when the field is absent. Drives the competition logo, the
+    template choice and the first hashtag.
     """
     return (entry.get('competition')
-            or scraper_data.get('matchSample', {}).get('competition_name')
-            or str_league)
+            or scraper_data.get('matchSample', {}).get('competition_name'))
 
 
-def _generate_card(entry: dict, event_type: str, scraper_data: dict,
-                   int_round, str_league) -> str:
+def _generate_card(entry: dict, event_type: str, scraper_data: dict) -> str:
     """
     Build the scorecard image, preferring the photo-overlay style when a match
     photo has been uploaded via the Telegram bot; falls back to the classic
@@ -202,7 +254,7 @@ def _generate_card(entry: dict, event_type: str, scraper_data: dict,
     Returns the local image path.
     """
     match_id = entry['match_id']
-    competition = _competition_of(entry, scraper_data, str_league)
+    competition = _competition_of(entry, scraper_data)
     photo_path = fetch_match_photo(match_id, event_type)
     if photo_path:
         try:
@@ -223,7 +275,6 @@ def _generate_card(entry: dict, event_type: str, scraper_data: dict,
             )
     return generate_scorecard(scraper_data, event_type=event_type,
                               match_id_override=match_id,
-                              int_round=int_round, str_league=str_league,
                               home_name=entry['home_team'],
                               away_name=entry['away_team'],
                               competition=competition)
@@ -238,22 +289,15 @@ def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
     match_id = entry['match_id']
     print(f"[{match_id}] Running {event_type} pipeline…")
 
-    with STATE_LOCK:
-        _s = MATCH_STATE.get(match_id, {})
-        _int_round  = _s.get('sportsdb_round')
-        _str_league = _s.get('sportsdb_league')
-
     try:
-        image_path = _generate_card(entry, event_type, scraper_data,
-                                    _int_round, _str_league)
+        image_path = _generate_card(entry, event_type, scraper_data)
         public_url, _ = upload_image(image_path)
         os.remove(image_path)
         caption = generate_caption(scraper_data, event_type=event_type,
                                    records=entry.get('records'),
                                    home_name=entry['home_team'],
                                    away_name=entry['away_team'],
-                                   competition=_competition_of(entry, scraper_data,
-                                                               _str_league))
+                                   competition=_competition_of(entry, scraper_data))
         ig_id   = post_to_instagram(public_url, caption)
         mark_event_posted(match_id, event_type)
         print(f"[{match_id}] ✅ {event_type} posted — IG ID: {ig_id}")
@@ -338,21 +382,15 @@ def _early_pipeline(entry: dict, event_type: str, scraper_data: dict) -> tuple[s
     """
     match_id = entry['match_id']
     print(f"[{match_id}] Running early {event_type} pipeline…")
-    with STATE_LOCK:
-        _s = MATCH_STATE.get(match_id, {})
-        _int_round  = _s.get('sportsdb_round')
-        _str_league = _s.get('sportsdb_league')
     try:
-        image_path = _generate_card(entry, event_type, scraper_data,
-                                    _int_round, _str_league)
+        image_path = _generate_card(entry, event_type, scraper_data)
         public_url, cid = upload_image(image_path)
         os.remove(image_path)
         caption = generate_caption(scraper_data, event_type=event_type,
                                    records=entry.get('records'),
                                    home_name=entry['home_team'],
                                    away_name=entry['away_team'],
-                                   competition=_competition_of(entry, scraper_data,
-                                                               _str_league))
+                                   competition=_competition_of(entry, scraper_data))
         ig_id = post_to_instagram(public_url, caption)
         print(f"[{match_id}] ✅ Early {event_type} posted — IG ID: {ig_id}")
         return cid, ig_id
@@ -410,14 +448,13 @@ def _delete_early_post(match_id: str, event_type: str) -> None:
 
 def match_worker(entry: dict):
     """
-    Runs in its own thread. Polls TheSportsDB until FT, firing pipelines at
+    Runs in its own thread. Polls the scraper until FT, firing pipelines at
     HT and FT. Posts early scorecards at scraper minute 45/90 and corrects
     them if the score changes before the official whistle.
     """
-    match_id          = entry['match_id']
-    sportsdb_event_id = entry['sportsdb_event_id']
-    scraper_url       = entry['scraper_url']
-    is_knockout       = entry.get('knockout_match', False)
+    match_id    = entry['match_id']
+    scraper_url = entry['scraper_url']
+    is_knockout = entry.get('knockout_match', False)
 
     print(f"[{match_id}] Worker started — {entry['home_team']} vs {entry['away_team']}"
           f"  (knockout={is_knockout})")
@@ -458,9 +495,7 @@ def match_worker(entry: dict):
             'early_ft_ig_id':         None,
             'early_ft_cloudinary_id': None,
             'early_ft_score':         None,
-            '1h_started_at':          None,
-            '2h_started_at':          None,
-            'et_started_at':          None,
+            'scraper_failing_since':  None,
         }.items():
             s.setdefault(k, v)
         _save_state()
@@ -472,43 +507,66 @@ def match_worker(entry: dict):
             print(f"[{match_id}] Safety ceiling reached — stopping worker.")
             break
 
-        # ── Poll TheSportsDB ──────────────────────────────────────────────────
-        raw_status, sdb_round, sdb_league = fetch_sportsdb_status(sportsdb_event_id)
-        if raw_status is None:
-            time.sleep(POLL_INTERVAL_SECS)
-            continue
+        # ── Poll the scraper — one fetch drives the whole iteration ───────────
+        scraper_data = get_match_data(scraper_url)
 
-        # ── Record phase start times + round meta (once; persisted) ──────────
-        with STATE_LOCK:
-            s = MATCH_STATE[match_id]
-            changed = False
-            if raw_status == '1H' and not s.get('1h_started_at'):
-                s['1h_started_at'] = now.isoformat()
-                changed = True
-                print(f"[{match_id}] 1H started — early HT monitoring begins in 43 min.")
-            if raw_status == '2H' and not s.get('2h_started_at'):
-                s['2h_started_at'] = now.isoformat()
-                changed = True
-                print(f"[{match_id}] 2H started — early FT monitoring begins in 43 min.")
-            if raw_status == 'ET' and not s.get('et_started_at'):
-                s['et_started_at'] = now.isoformat()
-                changed = True
-                print(f"[{match_id}] ET started — scraper checks begin in 29 min.")
-            if sdb_round and not s.get('sportsdb_round'):
-                s['sportsdb_round'] = str(sdb_round)
-                changed = True
-            if sdb_league and not s.get('sportsdb_league'):
-                s['sportsdb_league'] = str(sdb_league)
-                changed = True
-            if changed:
-                _save_state()
+        if scraper_data is None:
+            with STATE_LOCK:
+                s = MATCH_STATE[match_id]
+                if not s.get('scraper_failing_since'):
+                    s['scraper_failing_since'] = now.isoformat()
+                    _save_state()
+                failing_since = datetime.fromisoformat(s['scraper_failing_since'])
+            outage_secs = (now - failing_since).total_seconds()
+            print(f"[{match_id}] Scraper fetch failed "
+                  f"({outage_secs / 60:.0f} min into the outage).")
+            send_alert(
+                f"⚠️ {match_id}: the live-score scraper returned no data.\n"
+                f"Match tracking is stalled until it recovers — retrying every "
+                f"{POLL_INTERVAL_SECS}s.",
+                key=f'{match_id}:scraper', cooldown=600,
+            )
+
+            # A sustained outage past the end of the match would otherwise
+            # swallow the FT post entirely. Once the match cannot still be
+            # running, fall back to the last good scrape so something goes out.
+            latest_end = kickoff_utc + timedelta(minutes=165 if is_knockout else 115)
+            cached = (_load_cached_data(entry)
+                      if outage_secs >= SCRAPER_STALE_SECS and now >= latest_end
+                      else None)
+            if cached is None:
+                time.sleep(POLL_INTERVAL_SECS)
+                continue
+
+            print(f"[{match_id}] Scraper down since {failing_since:%H:%M}Z — "
+                  f"posting FT from the last cached scrape.")
+            send_alert(
+                f"⚠️ {match_id}: the scraper has been down for "
+                f"{outage_secs / 60:.0f} min and the match should be over.\n"
+                f"Posting the FT card from the last cached scrape — check the "
+                f"final score is correct.",
+                key=f'{match_id}:stale-ft', cooldown=3600,
+            )
+            scraper_data = cached
+            raw_status   = 'FT'
+        else:
+            with STATE_LOCK:
+                s = MATCH_STATE[match_id]
+                if s.get('scraper_failing_since'):
+                    s['scraper_failing_since'] = None
+                    _save_state()
+            raw_status = derive_status(scraper_data)
+
+        minute        = _get_minute(scraper_data)
+        current_score = _get_score(scraper_data)
+        lagging       = not _events_match_score(scraper_data)
 
         # ── Normalise status ──────────────────────────────────────────────────
-        if raw_status in ('FT', 'AET'):
+        if raw_status == 'FT':
             new_status = 'ft'
         elif raw_status == 'HT':
             new_status = 'ht'
-        elif raw_status in ('1H', '2H', 'BT', 'ET', 'PEN', 'AP'):
+        elif raw_status in ('1H', '2H', 'ET', 'AP'):
             new_status = 'live'
         else:
             new_status = 'scheduled'
@@ -528,57 +586,48 @@ def match_worker(entry: dict):
             early_ft_ig_id  = s.get('early_ft_ig_id')
             early_ht_score  = tuple(s['early_ht_score']) if s.get('early_ht_score') else None
             early_ft_score  = tuple(s['early_ft_score']) if s.get('early_ft_score') else None
-            h1_ts           = s.get('1h_started_at')
-            h2_ts           = s.get('2h_started_at')
-            et_ts           = s.get('et_started_at')
 
-        print(f"[{match_id}] status={raw_status}  ht_posted={ht_posted}  ft_posted={ft_posted}"
+        print(f"[{match_id}] status={raw_status} minute={minute} score={current_score[0]}-{current_score[1]}"
+              f"  ht_posted={ht_posted}  ft_posted={ft_posted}"
               f"  early_ht={early_ht_posted}  early_ft={early_ft_posted}")
 
         # ══════════════════════════════════════════════════════════════════════
-        # EARLY HT MONITORING  (raw_status == '1H', 43 min elapsed)
+        # EARLY HT MONITORING  (first half, scraper minute 45+)
         # ══════════════════════════════════════════════════════════════════════
         if (raw_status == '1H'
+                and minute >= 45
                 and entry.get('post_ht', True)
-                and not is_event_posted(match_id, 'HT')
-                and h1_ts
-                and (now - datetime.fromisoformat(h1_ts)).total_seconds() >= 43 * 60):
+                and not is_event_posted(match_id, 'HT')):
 
-            scraper_data = get_match_data(scraper_url)
-            if scraper_data:
-                minute        = _get_minute(scraper_data)
-                current_score = _get_score(scraper_data)
-                lagging       = not _events_match_score(scraper_data)
+            if (not early_ht_posted
+                    and not _wait_for_scorers(match_id, lagging)):
+                print(f"[{match_id}] Scraper minute={minute} — posting early HT scorecard…")
+                cid, ig_id = _early_pipeline(entry, 'HT', scraper_data)
+                if cid and ig_id:
+                    with STATE_LOCK:
+                        s = MATCH_STATE[match_id]
+                        s['early_ht_posted']        = True
+                        s['early_ht_ig_id']         = ig_id
+                        s['early_ht_cloudinary_id'] = cid
+                        s['early_ht_score']         = list(current_score)
+                        _save_state()
 
-                if (not early_ht_posted and minute >= 45
+            elif early_ht_posted and early_ht_ig_id and early_ht_score:
+                if (current_score != early_ht_score
                         and not _wait_for_scorers(match_id, lagging)):
-                    print(f"[{match_id}] Scraper minute={minute} — posting early HT scorecard…")
+                    print(f"[{match_id}] HT score changed {early_ht_score}→{current_score} — correcting…")
+                    _delete_early_post(match_id, 'HT')
                     cid, ig_id = _early_pipeline(entry, 'HT', scraper_data)
                     if cid and ig_id:
                         with STATE_LOCK:
                             s = MATCH_STATE[match_id]
-                            s['early_ht_posted']        = True
                             s['early_ht_ig_id']         = ig_id
                             s['early_ht_cloudinary_id'] = cid
                             s['early_ht_score']         = list(current_score)
                             _save_state()
 
-                elif early_ht_posted and early_ht_ig_id and early_ht_score:
-                    if (current_score != early_ht_score
-                            and not _wait_for_scorers(match_id, lagging)):
-                        print(f"[{match_id}] HT score changed {early_ht_score}→{current_score} — correcting…")
-                        _delete_early_post(match_id, 'HT')
-                        cid, ig_id = _early_pipeline(entry, 'HT', scraper_data)
-                        if cid and ig_id:
-                            with STATE_LOCK:
-                                s = MATCH_STATE[match_id]
-                                s['early_ht_ig_id']         = ig_id
-                                s['early_ht_cloudinary_id'] = cid
-                                s['early_ht_score']         = list(current_score)
-                                _save_state()
-
         # ══════════════════════════════════════════════════════════════════════
-        # HT TRIGGER  (TheSportsDB confirms HT)
+        # HT TRIGGER  (scraper reports the interval)
         # ══════════════════════════════════════════════════════════════════════
         if new_status == 'ht' and not ht_posted and not is_event_posted(match_id, 'HT'):
             with STATE_LOCK:
@@ -593,75 +642,66 @@ def match_worker(entry: dict):
                     _save_state()
             elif entry.get('post_ht', True):
                 print(f"[{match_id}] HT confirmed — running fallback HT pipeline…")
-                scraper_data = get_match_data(scraper_url)
-                if scraper_data:
-                    if _wait_for_scorers(match_id, not _events_match_score(scraper_data)):
-                        print(f"[{match_id}] HT confirmed but scorer list lagging — retrying next poll.")
-                    else:
-                        _save_match_data(entry, scraper_data)
-                        _run_pipeline(entry, 'HT', scraper_data)
-                        with STATE_LOCK:
-                            MATCH_STATE[match_id]['ht_posted'] = True
-                            _save_state()
+                if _wait_for_scorers(match_id, lagging):
+                    print(f"[{match_id}] HT confirmed but scorer list lagging — retrying next poll.")
+                else:
+                    _save_match_data(entry, scraper_data)
+                    _run_pipeline(entry, 'HT', scraper_data)
+                    with STATE_LOCK:
+                        MATCH_STATE[match_id]['ht_posted'] = True
+                        _save_state()
 
         # ══════════════════════════════════════════════════════════════════════
-        # EARLY FT MONITORING  (raw_status == '2H', 43 min elapsed)
+        # EARLY FT MONITORING  (second half, scraper minute 90+)
         # ══════════════════════════════════════════════════════════════════════
         elif (raw_status == '2H'
+                and minute >= 90
                 and not ft_posted
-                and not is_event_posted(match_id, 'FT')
-                and h2_ts
-                and (now - datetime.fromisoformat(h2_ts)).total_seconds() >= 43 * 60):
+                and not is_event_posted(match_id, 'FT')):
 
-            scraper_data = get_match_data(scraper_url)
-            if scraper_data:
-                minute        = _get_minute(scraper_data)
-                current_score = _get_score(scraper_data)
-                home_s, away_s = current_score
-                is_draw = (home_s == away_s)
-                lagging = not _events_match_score(scraper_data)
+            home_s, away_s = current_score
+            is_draw = (home_s == away_s)
 
-                if not early_ft_posted and minute >= 90:
+            if not early_ft_posted:
+                if is_knockout and is_draw:
+                    print(f"[{match_id}] Minute={minute} — draw in knockout, waiting for injury time goal…")
+                elif not _wait_for_scorers(match_id, lagging):
+                    print(f"[{match_id}] Minute={minute} — posting early FT scorecard…")
+                    cid, ig_id = _early_pipeline(entry, 'FT', scraper_data)
+                    if cid and ig_id:
+                        with STATE_LOCK:
+                            s = MATCH_STATE[match_id]
+                            s['early_ft_posted']        = True
+                            s['early_ft_ig_id']         = ig_id
+                            s['early_ft_cloudinary_id'] = cid
+                            s['early_ft_score']         = list(current_score)
+                            _save_state()
+
+            elif early_ft_ig_id and early_ft_score:
+                if current_score != early_ft_score:
                     if is_knockout and is_draw:
-                        print(f"[{match_id}] Minute={minute} — draw in knockout, waiting for injury time goal…")
+                        # Equalized — delete, don't repost; ET flow takes over.
+                        # No scorer-lag guard: removing a wrong card needs no events.
+                        print(f"[{match_id}] Score equalized {early_ft_score}→{current_score}"
+                              f" in knockout — deleting early FT post.")
+                        _delete_early_post(match_id, 'FT')
+                        with STATE_LOCK:
+                            MATCH_STATE[match_id]['early_ft_score'] = list(current_score)
+                            _save_state()
                     elif not _wait_for_scorers(match_id, lagging):
-                        print(f"[{match_id}] Minute={minute} — posting early FT scorecard…")
+                        print(f"[{match_id}] FT score changed {early_ft_score}→{current_score} — correcting…")
+                        _delete_early_post(match_id, 'FT')
                         cid, ig_id = _early_pipeline(entry, 'FT', scraper_data)
                         if cid and ig_id:
                             with STATE_LOCK:
                                 s = MATCH_STATE[match_id]
-                                s['early_ft_posted']        = True
                                 s['early_ft_ig_id']         = ig_id
                                 s['early_ft_cloudinary_id'] = cid
                                 s['early_ft_score']         = list(current_score)
                                 _save_state()
 
-                elif early_ft_posted and early_ft_ig_id and early_ft_score:
-                    if current_score != early_ft_score:
-                        new_is_draw = (home_s == away_s)
-                        if is_knockout and new_is_draw:
-                            # Equalized — delete, don't repost; ET flow takes over.
-                            # No scorer-lag guard: removing a wrong card needs no events.
-                            print(f"[{match_id}] Score equalized {early_ft_score}→{current_score}"
-                                  f" in knockout — deleting early FT post.")
-                            _delete_early_post(match_id, 'FT')
-                            with STATE_LOCK:
-                                MATCH_STATE[match_id]['early_ft_score'] = list(current_score)
-                                _save_state()
-                        elif not _wait_for_scorers(match_id, lagging):
-                            print(f"[{match_id}] FT score changed {early_ft_score}→{current_score} — correcting…")
-                            _delete_early_post(match_id, 'FT')
-                            cid, ig_id = _early_pipeline(entry, 'FT', scraper_data)
-                            if cid and ig_id:
-                                with STATE_LOCK:
-                                    s = MATCH_STATE[match_id]
-                                    s['early_ft_ig_id']         = ig_id
-                                    s['early_ft_cloudinary_id'] = cid
-                                    s['early_ft_score']         = list(current_score)
-                                    _save_state()
-
         # ══════════════════════════════════════════════════════════════════════
-        # FT TRIGGER  (TheSportsDB confirms FT / AET)
+        # FT TRIGGER  (scraper reports the match finished)
         # ══════════════════════════════════════════════════════════════════════
         elif new_status == 'ft' and not ft_posted and not is_event_posted(match_id, 'FT'):
             with STATE_LOCK:
@@ -679,139 +719,72 @@ def match_worker(entry: dict):
             else:
                 # Early post never made, or was deleted (e.g. equalization → ET)
                 print(f"[{match_id}] FT confirmed — running fallback FT pipeline…")
-                scraper_data = get_match_data(scraper_url)
-                if scraper_data is None:
-                    cached_path = _data_path(entry)
-                    if os.path.exists(cached_path):
-                        print(f"[{match_id}] Using cached data from {cached_path}")
-                        with open(cached_path, encoding='utf-8') as _f:
-                            scraper_data = json.load(_f)
-                if scraper_data:
-                    if _wait_for_scorers(match_id, not _events_match_score(scraper_data)):
-                        print(f"[{match_id}] FT confirmed but scorer list lagging — retrying next poll.")
-                    else:
-                        _save_match_data(entry, scraper_data)
-                        _run_pipeline(entry, 'FT', scraper_data)
-                        with STATE_LOCK:
-                            MATCH_STATE[match_id]['ft_posted'] = True
-                            _save_state()
-                        _archive_match_data(entry)
-                        break
+                if _wait_for_scorers(match_id, lagging):
+                    print(f"[{match_id}] FT confirmed but scorer list lagging — retrying next poll.")
                 else:
-                    print(f"[{match_id}] No FT data available — will retry next poll.")
-
-        # ══════════════════════════════════════════════════════════════════════
-        # ET / AP SCRAPER CHECK
-        # ══════════════════════════════════════════════════════════════════════
-        elif not ft_posted and not is_event_posted(match_id, 'FT'):
-            et_elapsed   = (now - datetime.fromisoformat(et_ts)).total_seconds() if et_ts else 0
-            should_check = (
-                raw_status == 'AP' or
-                (raw_status == 'ET' and et_elapsed >= 29 * 60)
-            )
-            if should_check:
-                print(f"[{match_id}] [{raw_status}] Pinging scraper…")
-                scraper_data = get_match_data(scraper_url)
-                if scraper_data:
-                    scraper_status = scraper_data.get('status', '')
-                    current_score  = _get_score(scraper_data)
-                    home_s, away_s = current_score
-                    is_draw        = (home_s == away_s)
-                    minute         = _get_minute(scraper_data)
-                    lagging        = not _events_match_score(scraper_data)
-                    ms             = scraper_data.get('matchSample', {})
-                    has_penalties  = bool(
-                        str(ms.get('ps_A') or '').strip() and
-                        str(ms.get('ps_B') or '').strip()
-                    )
+                    _save_match_data(entry, scraper_data)
+                    _run_pipeline(entry, 'FT', scraper_data)
                     with STATE_LOCK:
-                        active_ft_ig   = MATCH_STATE[match_id].get('early_ft_ig_id')
-                        early_ft_score = (tuple(MATCH_STATE[match_id]['early_ft_score'])
-                                          if MATCH_STATE[match_id].get('early_ft_score') else None)
+                        MATCH_STATE[match_id]['ft_posted'] = True
+                        _save_state()
+                    _archive_match_data(entry)
+                    break
 
-                    if raw_status == 'AP' and scraper_status == 'Played':
-                        if _wait_for_scorers(match_id, lagging):
-                            print(f"[{match_id}] Penalties finished but scorer list lagging — retrying next poll.")
-                        else:
-                            if active_ft_ig:
-                                _delete_early_post(match_id, 'FT')
-                            print(f"[{match_id}] Penalties finished — posting final scorecard…")
-                            _save_match_data(entry, scraper_data)
-                            _run_pipeline(entry, 'FT', scraper_data)
-                            with STATE_LOCK:
-                                MATCH_STATE[match_id]['ft_posted'] = True
-                                _save_state()
-                            _archive_match_data(entry)
-                            break
+        # ══════════════════════════════════════════════════════════════════════
+        # ET / AP HANDLING  (extra time and penalty shootouts)
+        # ══════════════════════════════════════════════════════════════════════
+        elif (raw_status in ('ET', 'AP')
+                and not ft_posted
+                and not is_event_posted(match_id, 'FT')):
+            print(f"[{match_id}] [{raw_status}] minute={minute} — evaluating…")
+            home_s, away_s = current_score
+            is_draw        = (home_s == away_s)
+            with STATE_LOCK:
+                active_ft_ig   = MATCH_STATE[match_id].get('early_ft_ig_id')
+                early_ft_score = (tuple(MATCH_STATE[match_id]['early_ft_score'])
+                                  if MATCH_STATE[match_id].get('early_ft_score') else None)
 
-                    elif raw_status == 'ET':
-                        if has_penalties:
-                            if active_ft_ig:
-                                print(f"[{match_id}] Going to penalties — deleting ET early post…")
-                                _delete_early_post(match_id, 'FT')
-                                active_ft_ig = None
-                            print(f"[{match_id}] Penalty shootout in progress — waiting for AP/Played…")
+            if raw_status == 'AP':
+                # A shootout is under way. Any early ET card is now wrong — drop
+                # it and wait; 'Played' arrives as FT and reposts with the
+                # shootout result. Clearing the IG id (not the posted flag) is
+                # what routes the FT trigger to a full repost.
+                if active_ft_ig:
+                    print(f"[{match_id}] Going to penalties — deleting ET early post…")
+                    _delete_early_post(match_id, 'FT')
+                print(f"[{match_id}] Penalty shootout in progress — waiting for the final result…")
 
-                        elif scraper_status == 'Played':
-                            score_unchanged = (active_ft_ig and early_ft_score
-                                               and current_score == early_ft_score)
-                            if (not score_unchanged
-                                    and _wait_for_scorers(match_id, lagging)):
-                                print(f"[{match_id}] ET finished but scorer list lagging — retrying next poll.")
-                            else:
-                                if score_unchanged:
-                                    print(f"[{match_id}] ET finished, score unchanged — marking done.")
-                                    mark_event_posted(match_id, 'FT')
-                                else:
-                                    if active_ft_ig:
-                                        _delete_early_post(match_id, 'FT')
-                                    print(f"[{match_id}] ET finished — posting final scorecard…")
-                                    _save_match_data(entry, scraper_data)
-                                    _run_pipeline(entry, 'FT', scraper_data)
+            elif raw_status == 'ET':
+                if not is_draw:
+                    if not active_ft_ig:
+                        if minute < 119:
+                            print(f"[{match_id}] Goal in ET score={current_score} "
+                                  f"minute={minute} — waiting until 119' to post early…")
+                        elif not _wait_for_scorers(match_id, lagging):
+                            print(f"[{match_id}] Minute={minute}, ET score={current_score} — posting early…")
+                            cid, ig_id = _early_pipeline(entry, 'FT', scraper_data)
+                            if cid and ig_id:
                                 with STATE_LOCK:
-                                    MATCH_STATE[match_id]['ft_posted'] = True
+                                    s = MATCH_STATE[match_id]
+                                    s['early_ft_posted']        = True
+                                    s['early_ft_ig_id']         = ig_id
+                                    s['early_ft_cloudinary_id'] = cid
+                                    s['early_ft_score']         = list(current_score)
                                     _save_state()
-                                _archive_match_data(entry)
-                                break
-
-                        elif not is_draw:
-                            if not active_ft_ig:
-                                if minute < 119:
-                                    print(f"[{match_id}] Goal in ET score={current_score} "
-                                          f"minute={minute} — waiting until 119' to post early…")
-                                elif not _wait_for_scorers(match_id, lagging):
-                                    print(f"[{match_id}] Minute={minute}, ET score={current_score} — posting early…")
-                                    cid, ig_id = _early_pipeline(entry, 'FT', scraper_data)
-                                    if cid and ig_id:
-                                        with STATE_LOCK:
-                                            s = MATCH_STATE[match_id]
-                                            s['early_ft_posted']        = True
-                                            s['early_ft_ig_id']         = ig_id
-                                            s['early_ft_cloudinary_id'] = cid
-                                            s['early_ft_score']         = list(current_score)
-                                            _save_state()
-                            elif (early_ft_score and current_score != early_ft_score
-                                    and not _wait_for_scorers(match_id, lagging)):
-                                print(f"[{match_id}] ET score changed {early_ft_score}→{current_score} — correcting…")
-                                _delete_early_post(match_id, 'FT')
-                                cid, ig_id = _early_pipeline(entry, 'FT', scraper_data)
-                                if cid and ig_id:
-                                    with STATE_LOCK:
-                                        s = MATCH_STATE[match_id]
-                                        s['early_ft_ig_id']         = ig_id
-                                        s['early_ft_cloudinary_id'] = cid
-                                        s['early_ft_score']         = list(current_score)
-                                        _save_state()
-                        else:
-                            print(f"[{match_id}] ET scraper status={scraper_status!r} — still in progress.")
+                    elif (early_ft_score and current_score != early_ft_score
+                            and not _wait_for_scorers(match_id, lagging)):
+                        print(f"[{match_id}] ET score changed {early_ft_score}→{current_score} — correcting…")
+                        _delete_early_post(match_id, 'FT')
+                        cid, ig_id = _early_pipeline(entry, 'FT', scraper_data)
+                        if cid and ig_id:
+                            with STATE_LOCK:
+                                s = MATCH_STATE[match_id]
+                                s['early_ft_ig_id']         = ig_id
+                                s['early_ft_cloudinary_id'] = cid
+                                s['early_ft_score']         = list(current_score)
+                                _save_state()
                 else:
-                    print(f"[{match_id}] Scraper fetch failed during {raw_status}.")
-                    send_alert(
-                        f"⚠️ {match_id}: the live-score scraper returned no data "
-                        f"during {raw_status}.\nNo scorecard can be built until "
-                        f"it recovers — retrying every {POLL_INTERVAL_SECS}s.",
-                        key=f'{match_id}:scraper', cooldown=600,
-                    )
+                    print(f"[{match_id}] ET still level at minute={minute} — waiting.")
 
         # Clean exit if FT was already posted in a previous run
         if new_status == 'ft' and (MATCH_STATE[match_id].get('ft_posted')

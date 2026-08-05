@@ -38,7 +38,6 @@ def init_db():
                 away_team       TEXT,
                 kickoff_utc     TEXT,
                 scraper_url     TEXT,
-                sportsdb_event_id TEXT,
                 created_at      TEXT DEFAULT (datetime('now'))
             );
 
@@ -57,15 +56,15 @@ def upsert_match(entry: dict):
     with _conn() as conn:
         conn.execute('''
             INSERT INTO match_registry
-                (match_id, home_team, away_team, kickoff_utc, scraper_url, sportsdb_event_id)
-            VALUES (:match_id, :home_team, :away_team, :kickoff_utc, :scraper_url, :sportsdb_event_id)
+                (match_id, home_team, away_team, kickoff_utc, scraper_url)
+            VALUES (:match_id, :home_team, :away_team, :kickoff_utc, :scraper_url)
             ON CONFLICT(match_id) DO UPDATE SET
-                home_team         = excluded.home_team,
-                away_team         = excluded.away_team,
-                kickoff_utc       = excluded.kickoff_utc,
-                scraper_url       = excluded.scraper_url,
-                sportsdb_event_id = excluded.sportsdb_event_id
-        ''', entry)
+                home_team   = excluded.home_team,
+                away_team   = excluded.away_team,
+                kickoff_utc = excluded.kickoff_utc,
+                scraper_url = excluded.scraper_url
+        ''', {k: entry[k] for k in
+              ('match_id', 'home_team', 'away_team', 'kickoff_utc', 'scraper_url')})
 
 
 def is_event_posted(match_id: str, event_type: str) -> bool:

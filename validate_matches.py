@@ -2,17 +2,26 @@
 """
 Pre-flight check for matches.json — run it after adding fixtures.
 
-For every match entry it:
+First it checks the file's structure — the mistakes that are easy to make when
+hand-editing fixtures and that no amount of name-checking would catch:
+    * required fields present
+    * match_id unique across entries (it is the database primary key and the
+      worker-registry key; a duplicate silently costs you one of the matches)
+    * match_id agrees with the id at the end of scraper_url
+    * kickoff_utc parses and is timezone-aware (a missing 'Z' yields a naive
+      datetime and crashes the worker on its first comparison)
+    * scraper_url points at the mobile host, the only one carrying match data
+
+Then, for every match entry it:
     1. normalizes home_team / away_team to the official display name
        ('Man Utd' → 'Manchester United'), writing the fix back into
-       matches.json so TheSportsDB, the scraper and the logo site all
-       agree on one spelling
+       matches.json so the scraper and the logo site agree on one spelling
     2. confirms the crest actually exists on football-logos.cc
     3. fetches the crest to Cloudinary so it's ready before kickoff
        (skipped for crests already uploaded)
 
-Exits non-zero if any team can't be resolved or any crest is missing,
-printing did-you-mean hints so the entry can be corrected.
+Exits non-zero if the structure is wrong, a team can't be resolved or a crest
+is missing, printing did-you-mean hints so the entry can be corrected.
 
 Usage:
     python validate_matches.py             # normalize + verify + upload
@@ -24,6 +33,9 @@ import argparse
 import json
 import os
 import sys
+from collections import Counter
+from datetime import datetime
+from urllib.parse import urlparse
 
 import requests
 
@@ -33,6 +45,77 @@ from logo_fetch import (COMPETITION_DISPLAY, COMPETITIONS, _scrape_hash,
                         normalize_team_name, resolve_competition, resolve_team)
 
 MATCHES_FILE = 'matches.json'
+
+REQUIRED_FIELDS = ('match_id', 'scraper_url', 'kickoff_utc', 'home_team', 'away_team')
+SCRAPER_HOST = 'm.allfootballapp.com'
+
+
+def _check_structure(matches: list) -> list[str]:
+    """
+    Structural problems in the fixture list, as a list of messages.
+
+    These are all things the name/crest checks below would happily pass over,
+    and each one costs a post at match time rather than failing loudly.
+    """
+    problems: list[str] = []
+
+    if not isinstance(matches, list):
+        return [f'{MATCHES_FILE} must contain a list of match objects']
+
+    # Duplicate ids — reported once each, not once per copy.
+    counts = Counter(e.get('match_id') for e in matches if isinstance(e, dict))
+    for mid, n in counts.items():
+        if mid is not None and n > 1:
+            problems.append(
+                f"match_id '{mid}' is used by {n} entries — ids must be unique. "
+                f"It keys the database and the worker registry, so only one of "
+                f"those matches would ever be posted.")
+
+    for i, entry in enumerate(matches):
+        if not isinstance(entry, dict):
+            problems.append(f'entry #{i + 1} is not an object')
+            continue
+
+        match_id = entry.get('match_id', f'#{i + 1}')
+
+        missing = [f for f in REQUIRED_FIELDS if not entry.get(f)]
+        if missing:
+            problems.append(f"match {match_id}: missing or empty {', '.join(missing)}")
+
+        url = entry.get('scraper_url')
+        if url:
+            host = (urlparse(url).hostname or '').lower()
+            if host != SCRAPER_HOST:
+                problems.append(
+                    f"match {match_id}: scraper_url host is '{host}' — it must be "
+                    f"'{SCRAPER_HOST}'. Only the mobile page carries the match "
+                    f"data blob; any other host returns nothing. Keep the trailing "
+                    f"id and rebuild the URL as "
+                    f"https://{SCRAPER_HOST}/match/Main/<teams>/<id>.")
+            url_id = urlparse(url).path.rstrip('/').rsplit('/', 1)[-1]
+            if entry.get('match_id') and url_id != entry['match_id']:
+                problems.append(
+                    f"match {match_id}: match_id does not match the id in "
+                    f"scraper_url ('{url_id}'). One of the two is wrong — the "
+                    f"URL decides which match is actually scraped.")
+
+        kickoff = entry.get('kickoff_utc')
+        if kickoff:
+            # Parsed exactly as main.py does, so this catches what it would hit.
+            try:
+                parsed = datetime.fromisoformat(str(kickoff).replace('Z', '+00:00'))
+            except ValueError as e:
+                problems.append(f"match {match_id}: kickoff_utc '{kickoff}' is not a "
+                                f"valid ISO-8601 timestamp ({e})")
+            else:
+                if parsed.tzinfo is None:
+                    problems.append(
+                        f"match {match_id}: kickoff_utc '{kickoff}' has no timezone — "
+                        f"add a trailing 'Z' ('{kickoff}Z'). Without it the worker "
+                        f"crashes comparing a naive time against UTC, and the match "
+                        f"goes uncovered.")
+
+    return problems
 
 
 def _verify_crest(official: str, upload: bool, cache: dict[str, str | None]) -> str | None:
@@ -73,10 +156,19 @@ def main() -> int:
         print(f'✖ {MATCHES_FILE} could not be read: {e}')
         return 1
 
-    problems: list[str] = []
+    problems: list[str] = _check_structure(matches)
     renames: list[str] = []
     crest_cache: dict[str, str | None] = {}
     changed = False
+
+    # Structural faults make the per-entry checks unreliable (and a malformed
+    # entry can't be name-checked at all), so report them on their own.
+    if problems:
+        print(f'\n✖ {len(problems)} structural problem(s) in {MATCHES_FILE}:')
+        for p in problems:
+            print(f'  - {p}')
+        print('\nFix these first, then re-run — team names and crests were not checked.')
+        return 1
 
     for entry in matches:
         match_id = entry.get('match_id', '?')

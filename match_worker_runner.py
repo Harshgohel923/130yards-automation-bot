@@ -3,7 +3,7 @@ Single-match entry point for GitHub Actions.
 Usage:  python3 match_worker_runner.py <match_id>
 
 Looks up the entry in matches.json and runs the full match_worker loop:
-  poll TheSportsDB → scrape at HT/FT → build scorecard → post to Instagram → exit.
+  poll the scraper → detect HT/FT → build scorecard → post to Instagram → exit.
 """
 
 import json
