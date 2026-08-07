@@ -1,16 +1,5 @@
 [
   {
-    "match_id": "54450358",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Bayern-vs-Aston-Villa/54450358",
-    "kickoff_utc": "2026-08-07T12:00:00Z",
-    "home_team": "Bayern Munich",
-    "away_team": "Aston Villa",
-    "competition": "Club Friendly",
-    "post_ht": false,
-    "knockout_match": true,
-    "records": []
-  },
-  {
     "match_id": "54457611",
     "scraper_url": "https://m.allfootballapp.com/match/Main/Juventus-vs-Inter/54457611",
     "kickoff_utc": "2026-08-08T11:00:00Z",
@@ -74,6 +63,17 @@
     "competition": "Club Friendly",
     "post_ht": false,
     "knockout_match": true,
+    "records": []
+  },
+  {
+    "match_id": "54338582",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/santos-vs-Athletico-paranaense/54338582",
+    "kickoff_utc": "2026-08-09T21:30:00Z",
+    "home_team": "Santos",
+    "away_team": "Athletico Paranaense",
+    "competition": "Brazilian Série A",
+    "post_ht": false,
+    "knockout_match": false,
     "records": []
   },
   {
