@@ -242,6 +242,36 @@ def _goal_symbol_path(event_type: str) -> str:
     return LOCAL_SYMBOLS.get(key, '')
 
 
+def load_template(competition: str | None, match_id: str):
+    """
+    Open the template image this match's cards are drawn on.
+
+    UCL matches get the dedicated design, everything else a random one — seeded
+    by match_id, so HT, FT, the stats page and any correction all share a look.
+    Shared with stats_card.py precisely so the two carousel slides can never
+    drift onto different backgrounds.
+    """
+    template_key = select_template_key(competition, match_id)
+    template_path = None
+    try:
+        template_path = fetch_template(template_key)
+    except Exception as e:
+        print(f"[scorecard] Cloudinary template fetch failed: {e}")
+
+    if not template_path or not os.path.exists(template_path):
+        # Any previously cached template beats failing the whole card.
+        cached = sorted(glob.glob(os.path.join(TEMPLATE_CACHE_DIR, '*.png')))
+        if not cached:
+            raise RuntimeError(
+                f"No template available for '{template_key}' — Cloudinary "
+                f"fetch failed and no cached template exists.")
+        template_path = cached[0]
+        print(f"[scorecard] Falling back to cached template: {template_path}")
+
+    print(f"[scorecard] Template: {template_key}")
+    return Image.open(template_path).convert('RGBA')
+
+
 def _extract_scorer_lines(events: list, team_name: str) -> list[dict]:
     """
     Pull displayable events for team_name from the scraper events list.
@@ -508,28 +538,7 @@ def generate_scorecard(scraper_data: dict, event_type: str = 'FT', match_id_over
                 pass
 
     # ── Template ──────────────────────────────────────────────────────────────
-    # UCL matches get the dedicated design, everything else a random one —
-    # seeded by match_id so HT, FT and any correction share a look.
-    template_key = select_template_key(
-        competition or match_sample.get('competition_name'), match_id)
-    template_path = None
-    try:
-        template_path = fetch_template(template_key)
-    except Exception as e:
-        print(f"[scorecard] Cloudinary template fetch failed: {e}")
-
-    if not template_path or not os.path.exists(template_path):
-        # Any previously cached template beats failing the whole card.
-        cached = sorted(glob.glob(os.path.join(TEMPLATE_CACHE_DIR, '*.png')))
-        if not cached:
-            raise RuntimeError(
-                f"No template available for '{template_key}' — Cloudinary "
-                f"fetch failed and no cached template exists.")
-        template_path = cached[0]
-        print(f"[scorecard] Falling back to cached template: {template_path}")
-
-    print(f"[scorecard] Template: {template_key}")
-    img = Image.open(template_path).convert('RGBA')
+    img = load_template(competition or match_sample.get('competition_name'), match_id)
 
     # Crests and logos are pasted straight onto the template; everything else
     # (text, rules, scorer symbols) is drawn on this transparent layer, which

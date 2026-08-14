@@ -15,6 +15,10 @@ GRAPH_URL    = 'https://graph.facebook.com/v19.0'
 CONTAINER_POLL_ATTEMPTS = 20
 CONTAINER_POLL_INTERVAL = 3   # seconds
 
+# Instagram's own limits on a carousel post.
+CAROUSEL_MIN_ITEMS = 2
+CAROUSEL_MAX_ITEMS = 10
+
 
 def post_to_instagram(public_image_url: str, caption: str) -> str:
     """
@@ -38,27 +42,7 @@ def post_to_instagram(public_image_url: str, caption: str) -> str:
     print(f"[instagram] Container created: {container_id}")
 
     # Step 2: Poll until container is ready
-    for attempt in range(CONTAINER_POLL_ATTEMPTS):
-        status_res = requests.get(
-            f'{GRAPH_URL}/{container_id}',
-            params={'fields': 'status_code', 'access_token': ACCESS_TOKEN},
-            timeout=10,
-        )
-        status_res.raise_for_status()
-        status = status_res.json().get('status_code')
-
-        if status == 'FINISHED':
-            break
-        if status == 'ERROR':
-            raise RuntimeError(f'Instagram container {container_id} processing failed')
-
-        print(f"[instagram] Container status: {status} (attempt {attempt + 1})")
-        time.sleep(CONTAINER_POLL_INTERVAL)
-    else:
-        raise RuntimeError(
-            f'Instagram container {container_id} not ready after '
-            f'{CONTAINER_POLL_ATTEMPTS} attempts'
-        )
+    _wait_for_container(container_id)
 
     # Step 3: Publish
     pub = requests.post(
@@ -72,6 +56,102 @@ def post_to_instagram(public_image_url: str, caption: str) -> str:
     pub.raise_for_status()
     media_id = pub.json()['id']
     print(f"[instagram] Published: {media_id}")
+    return media_id
+
+
+def _wait_for_container(container_id: str) -> None:
+    """Poll a media container until it reports FINISHED. Raises on ERROR or timeout."""
+    for attempt in range(CONTAINER_POLL_ATTEMPTS):
+        status_res = requests.get(
+            f'{GRAPH_URL}/{container_id}',
+            params={'fields': 'status_code', 'access_token': ACCESS_TOKEN},
+            timeout=10,
+        )
+        status_res.raise_for_status()
+        status = status_res.json().get('status_code')
+
+        if status == 'FINISHED':
+            return
+        if status == 'ERROR':
+            raise RuntimeError(f'Instagram container {container_id} processing failed')
+
+        print(f"[instagram] Container status: {status} (attempt {attempt + 1})")
+        time.sleep(CONTAINER_POLL_INTERVAL)
+
+    raise RuntimeError(
+        f'Instagram container {container_id} not ready after '
+        f'{CONTAINER_POLL_ATTEMPTS} attempts'
+    )
+
+
+def post_carousel_to_instagram(public_image_urls: list[str], caption: str) -> str:
+    """
+    Publish a multi-image carousel post to Instagram via the Graph API.
+
+    Each image becomes a child container (is_carousel_item), which is then
+    collected into one CAROUSEL container carrying the caption. Instagram
+    accepts between CAROUSEL_MIN_ITEMS and CAROUSEL_MAX_ITEMS slides and shows
+    every slide at the first one's aspect ratio — all our pages are rendered at
+    the same size, so nothing gets cropped differently.
+
+    Returns the Instagram media ID on success.
+    """
+    urls = [u for u in public_image_urls if u]
+    if not CAROUSEL_MIN_ITEMS <= len(urls) <= CAROUSEL_MAX_ITEMS:
+        raise ValueError(
+            f'A carousel needs {CAROUSEL_MIN_ITEMS}-{CAROUSEL_MAX_ITEMS} images, '
+            f'got {len(urls)}'
+        )
+
+    # Step 1: one child container per slide
+    children = []
+    for i, url in enumerate(urls, 1):
+        res = requests.post(
+            f'{GRAPH_URL}/{IG_USER_ID}/media',
+            data={
+                'image_url':       url,
+                'is_carousel_item': 'true',
+                'access_token':    ACCESS_TOKEN,
+            },
+            timeout=15,
+        )
+        res.raise_for_status()
+        child_id = res.json()['id']
+        children.append(child_id)
+        print(f"[instagram] Carousel item {i}/{len(urls)} created: {child_id}")
+
+    # Step 2: wait for every child to finish processing
+    for child_id in children:
+        _wait_for_container(child_id)
+
+    # Step 3: the carousel container itself — this is what carries the caption
+    parent = requests.post(
+        f'{GRAPH_URL}/{IG_USER_ID}/media',
+        data={
+            'media_type':   'CAROUSEL',
+            'children':     ','.join(children),
+            'caption':      caption,
+            'access_token': ACCESS_TOKEN,
+        },
+        timeout=15,
+    )
+    parent.raise_for_status()
+    container_id = parent.json()['id']
+    print(f"[instagram] Carousel container created: {container_id}")
+    _wait_for_container(container_id)
+
+    # Step 4: publish
+    pub = requests.post(
+        f'{GRAPH_URL}/{IG_USER_ID}/media_publish',
+        data={
+            'creation_id':  container_id,
+            'access_token': ACCESS_TOKEN,
+        },
+        timeout=15,
+    )
+    pub.raise_for_status()
+    media_id = pub.json()['id']
+    print(f"[instagram] Published carousel ({len(urls)} slides): {media_id}")
     return media_id
 
 

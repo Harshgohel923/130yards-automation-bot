@@ -104,6 +104,26 @@ def photo_public_id(match_id: str, event_type: str) -> str:
     return f"{MATCH_PHOTO_FOLDER}/{match_id}_{event_type.upper()}"
 
 
+def match_photo_exists(match_id: str, event_type: str) -> bool:
+    """
+    Has a photo been uploaded for this match/event yet?
+
+    A HEAD request, so asking doesn't pull the whole image down — this runs
+    while a match is live, purely to decide whether to send a reminder.
+
+    On a network error it answers False, i.e. "no photo". The reminder then
+    goes out and the worst case is a nudge about a photo already sent; the
+    alternative, staying quiet during a Cloudinary blip, loses the reminder
+    for the one match that needed it.
+    """
+    url = (f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/"
+           f"{photo_public_id(match_id, event_type)}")
+    try:
+        return requests.head(url, timeout=10).status_code == 200
+    except requests.RequestException:
+        return False
+
+
 def fetch_match_photo(match_id: str, event_type: str, dest_dir: str = 'assets/match_photos') -> str | None:
     """Download the bot-uploaded photo for a match/event to a local file.
     Returns the local path, or None if no photo has been uploaded."""

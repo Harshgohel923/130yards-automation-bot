@@ -329,10 +329,11 @@ def get_competition_logo_url(competition, alert=True):
     if key is None:
         if name and alert:
             send_alert(
-                f"⚠️ Unknown competition '{name}' — the card will show the "
-                f"130 Yards brand logo instead of a competition logo. If it "
-                f"should have one, add it to COMPETITIONS/COMPETITION_ALIASES "
-                f"in logo_fetch.py.",
+                f"⚠️ '{name}' isn't a competition the bot knows, so its cards "
+                f"will show the 130 Yards logo instead of the competition's "
+                f"badge.\n\n"
+                f"Posts still go out and look fine — they're just missing the "
+                f"tournament badge. Adding a new competition needs a developer.",
                 key=f'comp:{name}', cooldown=1800,
             )
         return get_brand_logo_url()
@@ -357,9 +358,11 @@ def get_competition_logo_url(competition, alert=True):
         fix = (f"python logo_fetch.py --competition \"{name}\"" if COMPETITIONS[key]
                else f"python logo_fetch.py --local <file.png> --competition \"{name}\"")
         send_alert(
-            f"⚠️ No logo on Cloudinary for competition '{name}'. Using the "
-            f"130 Yards brand logo on the card. Fix: run '{fix}' locally — "
-            f"it takes effect immediately, no push needed.",
+            f"⚠️ We don't have a badge saved for '{name}', so its cards will "
+            f"show the 130 Yards logo instead.\n\n"
+            f"Posts still go out normally — this is cosmetic.\n\n"
+            f"To add one: run '{fix}'. It takes effect straight away, nothing "
+            f"needs pushing.",
             key=f'comp:{key}', cooldown=1800,
         )
     return get_brand_logo_url()
@@ -418,10 +421,12 @@ def get_crest_url(team_name, alert=True):
     print(f"[warning] No crest found for '{team_name}' (normalized: '{normalized}')")
     if alert:
         send_alert(
-            f"⚠️ No crest on Cloudinary for '{team_name}'. The scorecard will "
-            f"render without this team's logo. Fix: run "
-            f"'python validate_matches.py' (or 'python logo_fetch.py "
-            f"\"{team_name}\"') and check the name spelling.",
+            f"⚠️ We don't have a badge for '{team_name}', so its scorecard will "
+            f"have a blank space where the logo goes.\n\n"
+            f"Everything else posts normally.\n\n"
+            f"To fix: check how the name is spelled in the fixture list, then "
+            f"run 'python validate_matches.py'. If the spelling is right, try "
+            f"'python logo_fetch.py \"{team_name}\"'.",
             key=f'crest:{team_name}', cooldown=1800,
         )
     return None

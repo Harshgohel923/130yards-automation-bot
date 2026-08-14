@@ -213,6 +213,31 @@ def build_hashtags(home: str, away: str, competition: str | None = None) -> str:
     return ' '.join(f'#{t}' for t in unique)
 
 
+GROUP_MAX_TAGS = 5
+
+
+def build_group_hashtags(team_names: list[str], limit: int = GROUP_MAX_TAGS) -> str:
+    """
+    Hashtag line for a carousel covering several matches.
+
+    The per-match scheme (competition + two teams + two nicknames) doesn't
+    survive a group of ten fixtures, so a group post tags teams only — passed
+    in priority order, normally the sides from the matches the caption actually
+    wrote about, and capped at `limit` because that is all the room a caption
+    should give hashtags.
+    """
+    seen, tags = set(), []
+    for name in team_names:
+        tag = team_tag(name)
+        if not tag or tag.lower() in seen:
+            continue
+        seen.add(tag.lower())
+        tags.append(tag)
+        if len(tags) >= limit:
+            break
+    return ' '.join(f'#{t}' for t in tags)
+
+
 def competition_label(competition: str | None) -> str:
     """Human-readable competition name for prompt copy."""
     key = resolve_competition(competition)

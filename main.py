@@ -33,14 +33,17 @@ from dotenv import load_dotenv
 from allfootball_desktop import enrich as enrich_with_desktop
 from caption import generate_caption
 from config import get_crest_url
+from carousel import nudge_dispatcher, submit_match
 from cloudinary_upload import upload_image, upload_match_data, delete_image
 from database import init_db, is_event_posted, mark_event_posted, upsert_match
 from football_scraper_dom import get_match_data
-from cloudinary_utils import fetch_match_photo
-from instagram import post_to_instagram, delete_instagram_post, get_post_permalink
-from telegram_notify import send_alert
+from cloudinary_utils import fetch_match_photo, match_photo_exists
+from instagram import (post_to_instagram, post_carousel_to_instagram,
+                       delete_instagram_post, get_post_permalink)
+from telegram_notify import send_alert, send_music_reminder
 from overlay_scorebar import generate_overlay_scorecard
 from scorecard import generate_scorecard
+from stats_card import generate_stats_card
 
 load_dotenv()
 
@@ -94,9 +97,10 @@ def _load_state():
     except Exception as e:
         print(f"[startup] Could not load state file: {e}")
         send_alert(
-            f"⚠️ Bot startup: could not load {STATE_FILE} ({e}).\n"
-            f"Early-post tracking from previous runs is lost — duplicate "
-            f"posts are possible for matches that were mid-game."
+            f"⚠️ The bot restarted and lost track of what it had already posted.\n\n"
+            f"If a match was in progress at the time, its scorecard could go up "
+            f"a second time — worth a quick look at the page.\n\n"
+            f"Technical detail: couldn't read {STATE_FILE} — {e}"
         )
 
 
@@ -113,8 +117,11 @@ def load_registry() -> list[dict]:
     except json.JSONDecodeError as e:
         print(f"[registry] JSON parse error in {REGISTRY_FILE}: {e}")
         send_alert(
-            f"❌ {REGISTRY_FILE} is invalid JSON ({e}).\n"
-            f"No matches can be scheduled until the file is fixed.",
+            f"❌ The fixture list has a formatting error, so the bot can't read "
+            f"any matches at all.\n\n"
+            f"Nothing will post — for any game — until it's fixed. This one "
+            f"needs a developer.\n\n"
+            f"Technical detail: {REGISTRY_FILE} is not valid JSON — {e}",
             key='registry:parse', cooldown=1800,
         )
         return []
@@ -229,13 +236,30 @@ def _archive_match_data(entry: dict):
     except Exception as e:
         print(f"[{entry['match_id']}] Warning: could not archive match data: {e}")
         send_alert(
-            f"⚠️ {entry['match_id']}: couldn't archive the match data JSON to "
-            f"Cloudinary ({e}).\nThe local copy is kept at {path} — upload it "
-            f"manually if you want it archived."
+            f"⚠️ {_label(entry)}: the match's data file couldn't be backed up.\n\n"
+            f"Nothing to worry about — the scorecard is unaffected and already "
+            f"posted. It only means we don't have a saved copy of this match's "
+            f"raw data.\n\n"
+            f"Technical detail: upload of {path} failed — {e}"
         )
 
 
 # ── Scorecard pipeline ────────────────────────────────────────────────────────
+
+def _label(entry: dict) -> str:
+    """
+    'Liverpool vs Leeds United' — how a person refers to a match.
+
+    Alerts go to people who don't read the code, so they lead with this rather
+    than a match id.
+    """
+    return f"{entry.get('home_team', '?')} vs {entry.get('away_team', '?')}"
+
+
+def _moment(event_type: str) -> str:
+    """'HT' / 'FT' spelled out for an alert."""
+    return {'HT': 'half-time', 'FT': 'full-time'}.get(event_type, event_type)
+
 
 def _competition_of(entry: dict, scraper_data: dict) -> str | None:
     """
@@ -270,15 +294,155 @@ def _generate_card(entry: dict, event_type: str, scraper_data: dict) -> str:
         except Exception as e:
             print(f"[{match_id}] Overlay scorecard failed ({e}) — falling back to template.")
             send_alert(
-                f"⚠️ {match_id}: the photo-overlay {event_type} scorecard "
-                f"failed to render ({e}).\nPosting the plain template card "
-                f"instead — check the match photo you uploaded."
+                f"⚠️ {_label(entry)}: the photo you sent couldn't be used for "
+                f"the {_moment(event_type)} scorecard.\n\n"
+                f"The standard card is going up instead, so the post still "
+                f"happens — it just won't have your photo on it. Worth trying a "
+                f"different photo next time.\n\n"
+                f"Technical detail: {e}"
             )
     return generate_scorecard(scraper_data, event_type=event_type,
                               match_id_override=match_id,
                               home_name=entry['home_team'],
                               away_name=entry['away_team'],
                               competition=competition)
+
+
+def _carousel_group_of(entry: dict) -> str | None:
+    """The group this match posts with, or None when it posts on its own."""
+    group = str(entry.get('carousel_group') or '').strip()
+    return group or None
+
+
+def _wants_stats_page(entry: dict, event_type: str) -> bool:
+    """
+    True when this post should carry a statistics slide.
+
+    Full time only — a stats page at half time would be half a story — and
+    never for a grouped match, where the carousel is one scorecard per match.
+    """
+    return (event_type == 'FT'
+            and bool(entry.get('post_ft_stats'))
+            and _carousel_group_of(entry) is None)
+
+
+def _generate_slides(entry: dict, event_type: str, scraper_data: dict) -> list[str]:
+    """
+    Local image paths for this post, in slide order.
+
+    Always starts with the scorecard. A match with post_ft_stats adds the
+    statistics page behind it; if that page can't be built the post still goes
+    out as a single card, because a missing second slide is worth far less than
+    a missing result.
+    """
+    paths = [_generate_card(entry, event_type, scraper_data)]
+    if not _wants_stats_page(entry, event_type):
+        return paths
+
+    match_id = entry['match_id']
+    try:
+        stats_path = generate_stats_card(
+            scraper_data,
+            match_id_override=match_id,
+            home_name=entry['home_team'],
+            away_name=entry['away_team'],
+            competition=_competition_of(entry, scraper_data))
+    except Exception as e:
+        print(f"[{match_id}] Stats page failed to render ({e}) — posting the card alone.")
+        send_alert(
+            f"⚠️ {_label(entry)}: the match stats page couldn't be made.\n\n"
+            f"The scorecard is posting on its own, so the result still goes up "
+            f"— it's just missing the second slide.\n\n"
+            f"Technical detail: {e}",
+            key=f'{match_id}:stats-render', cooldown=3600,
+        )
+        return paths
+
+    if stats_path:
+        paths.append(stats_path)
+    else:
+        print(f"[{match_id}] No statistics published — posting the card alone.")
+        send_alert(
+            f"⚠️ {_label(entry)}: no match stats were published for this game, "
+            f"so there's no stats slide.\n\n"
+            f"The scorecard is posting on its own. Nothing is broken — smaller "
+            f"matches often don't have stats available.",
+            key=f'{match_id}:stats-missing', cooldown=3600,
+        )
+    return paths
+
+
+def _post_slides(entry: dict, event_type: str, scraper_data: dict) -> tuple[list[str], str]:
+    """
+    Render → upload → caption → post, for one or several slides.
+
+    Returns (cloudinary_public_ids, instagram_media_id). A single slide posts as
+    an ordinary image; two or more post as a carousel. Raises on failure so both
+    callers keep their own error handling.
+    """
+    paths = _generate_slides(entry, event_type, scraper_data)
+
+    public_urls, public_ids = [], []
+    for path in paths:
+        url, public_id = upload_image(path)
+        os.remove(path)
+        public_urls.append(url)
+        public_ids.append(public_id)
+
+    caption = generate_caption(scraper_data, event_type=event_type,
+                               records=entry.get('records'),
+                               home_name=entry['home_team'],
+                               away_name=entry['away_team'],
+                               competition=_competition_of(entry, scraper_data))
+
+    if len(public_urls) > 1:
+        ig_id = post_carousel_to_instagram(public_urls, caption)
+    else:
+        ig_id = post_to_instagram(public_urls[0], caption)
+    return public_ids, ig_id
+
+
+def _run_group_pipeline(entry: dict, scraper_data: dict) -> bool:
+    """
+    Full time for a match that belongs to a carousel group.
+
+    Nothing is posted here. The card goes to Cloudinary with a manifest beside
+    it, and the dispatcher publishes the whole group once every member has
+    landed — see carousel.py for why the publisher isn't the last worker.
+
+    Returns True when the match was handed over, False on failure (the worker
+    retries on its next poll, exactly as a failed post would).
+    """
+    match_id = entry['match_id']
+    group = _carousel_group_of(entry)
+    print(f"[{match_id}] Full time — handing over to carousel group '{group}'…")
+
+    try:
+        image_path = _generate_card(entry, 'FT', scraper_data)
+        try:
+            submit_match(entry, scraper_data, image_path)
+        finally:
+            if os.path.exists(image_path):
+                os.remove(image_path)
+    except Exception as e:
+        print(f"[{match_id}] ❌ Carousel handover failed: {e}")
+        send_alert(
+            f"❌ {_label(entry)}: couldn't add this match to the '{group}' "
+            f"carousel.\n\n"
+            f"The whole carousel is on hold until it goes in — none of those "
+            f"matches will post yet. The bot keeps retrying by itself every "
+            f"minute.\n\n"
+            f"Technical detail: {e}",
+            key=f'{match_id}:carousel-submit', cooldown=600,
+        )
+        return False
+
+    mark_event_posted(match_id, 'FT')
+    print(f"[{match_id}] ✅ Added to carousel group '{group}'.")
+    # Let the dispatcher know now; if the nudge fails it picks the group up on
+    # its next scheduled run anyway.
+    nudge_dispatcher()
+    return True
 
 
 def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
@@ -291,26 +455,62 @@ def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
     print(f"[{match_id}] Running {event_type} pipeline…")
 
     try:
-        image_path = _generate_card(entry, event_type, scraper_data)
-        public_url, _ = upload_image(image_path)
-        os.remove(image_path)
-        caption = generate_caption(scraper_data, event_type=event_type,
-                                   records=entry.get('records'),
-                                   home_name=entry['home_team'],
-                                   away_name=entry['away_team'],
-                                   competition=_competition_of(entry, scraper_data))
-        ig_id   = post_to_instagram(public_url, caption)
+        _, ig_id = _post_slides(entry, event_type, scraper_data)
         mark_event_posted(match_id, event_type)
         print(f"[{match_id}] ✅ {event_type} posted — IG ID: {ig_id}")
+        send_music_reminder(f"{_label(entry)} — {_moment(event_type)}", ig_id)
     except Exception as e:
         print(f"[{match_id}] ❌ Pipeline error ({event_type}): {e}")
         # Do NOT mark as posted — will retry on next poll if status is unchanged
         send_alert(
-            f"❌ {match_id}: the {event_type} pipeline failed ({e}).\n"
-            f"The scorecard was NOT posted. It retries automatically every "
-            f"{POLL_INTERVAL_SECS}s while the match status is unchanged.",
+            f"❌ {_label(entry)}: the {_moment(event_type)} scorecard did not "
+            f"post.\n\n"
+            f"It is NOT on Instagram. The bot tries again by itself every "
+            f"minute while the match stays at this stage.\n\n"
+            f"Technical detail: {e}",
             key=f'{match_id}:pipeline:{event_type}', cooldown=600,
         )
+
+
+# ── Photo reminders ───────────────────────────────────────────────────────────
+# When to ask for the background photo, in scraper minutes. Early enough to
+# leave time to pick one and send it, late enough that the match has produced
+# something worth photographing.
+PHOTO_REMINDER_HT_MINUTE = 35    # first half, for the half-time card
+PHOTO_REMINDER_FT_MINUTE = 80    # second half, for the full-time card
+PHOTO_REMINDER_ET_MINUTE = 110   # extra time, second chance at the FT card
+
+
+def _photo_reminder(entry: dict, event_type: str, state_key: str,
+                    opener: str | None = None) -> None:
+    """
+    Ask for the match photo, once per worker run, and only when none is there.
+
+    The flag is set before the check, so a match is looked up at most once and
+    a reminder is never repeated: this is a nudge, not a nag. Sending the photo
+    afterwards works exactly as it always did — the pipeline picks up whatever
+    is on Cloudinary when it renders.
+    """
+    match_id = entry['match_id']
+    with STATE_LOCK:
+        if MATCH_STATE.get(match_id, {}).get(state_key):
+            return
+        MATCH_STATE.setdefault(match_id, {})[state_key] = True
+        _save_state()
+
+    if match_photo_exists(match_id, event_type):
+        print(f"[{match_id}] {event_type} photo already uploaded — no reminder sent.")
+        return
+
+    moment = _moment(event_type)
+    print(f"[{match_id}] Reminding about the {moment} photo.")
+    send_alert(
+        f"📸 {opener or f'{_label(entry)} — time to send the photo for the {moment} card.'}\n\n"
+        f"Message the bot privately: /start → pick this match → "
+        f"{'Half Time' if event_type == 'HT' else 'Full Time'} → send the photo.\n\n"
+        f"Nothing to send? That's fine — the card just uses the standard "
+        f"design instead."
+    )
 
 
 # ── Early-posting helpers ─────────────────────────────────────────────────────
@@ -375,38 +575,38 @@ def _wait_for_scorers(match_id: str, lagging: bool) -> bool:
     return True
 
 
-def _early_pipeline(entry: dict, event_type: str, scraper_data: dict) -> tuple[str | None, str | None]:
+def _early_pipeline(entry: dict, event_type: str, scraper_data: dict) -> tuple[list[str] | None, str | None]:
     """
     Generate scorecard, upload to Cloudinary, post to Instagram.
     Does NOT call mark_event_posted — early posts are tracked separately.
-    Returns (cloudinary_public_id, ig_media_id), or (None, None) on failure.
+    Returns (cloudinary_public_ids, ig_media_id), or (None, None) on failure.
     """
     match_id = entry['match_id']
     print(f"[{match_id}] Running early {event_type} pipeline…")
     try:
-        image_path = _generate_card(entry, event_type, scraper_data)
-        public_url, cid = upload_image(image_path)
-        os.remove(image_path)
-        caption = generate_caption(scraper_data, event_type=event_type,
-                                   records=entry.get('records'),
-                                   home_name=entry['home_team'],
-                                   away_name=entry['away_team'],
-                                   competition=_competition_of(entry, scraper_data))
-        ig_id = post_to_instagram(public_url, caption)
+        cids, ig_id = _post_slides(entry, event_type, scraper_data)
         print(f"[{match_id}] ✅ Early {event_type} posted — IG ID: {ig_id}")
-        return cid, ig_id
+        # Early posts are live immediately and mostly never corrected, so they
+        # need their music now. A correction posts again and reminds again,
+        # which is right: that is a different post.
+        send_music_reminder(f"{_label(entry)} — {_moment(event_type)}", ig_id)
+        return cids, ig_id
     except Exception as e:
         print(f"[{match_id}] ❌ Early {event_type} pipeline error: {e}")
         send_alert(
-            f"❌ {match_id}: the early {event_type} pipeline failed ({e}).\n"
-            f"No early scorecard was posted for this attempt — the worker "
-            f"will try again on a later poll or at the official whistle."
+            f"❌ {_label(entry)}: couldn't post the {_moment(event_type)} "
+            f"scorecard early.\n\n"
+            f"Nothing went out this time. The bot will try again shortly, and "
+            f"again at the official whistle — so this usually sorts itself "
+            f"out.\n\n"
+            f"Technical detail: {e}"
         )
         return None, None
 
 
-def _delete_early_post(match_id: str, event_type: str) -> None:
+def _delete_early_post(entry: dict, event_type: str) -> None:
     """Delete the active early post from Cloudinary and Instagram, clear state."""
+    match_id = entry['match_id']
     key_cid = f'early_{event_type.lower()}_cloudinary_id'
     key_ig  = f'early_{event_type.lower()}_ig_id'
 
@@ -415,15 +615,20 @@ def _delete_early_post(match_id: str, event_type: str) -> None:
         cid   = s.get(key_cid)
         ig_id = s.get(key_ig)
 
-    if cid:
+    # A stats-page post has two images behind it. Older state (and any worker
+    # resuming from a state.json written before carousels) stores a bare string.
+    cids = cid if isinstance(cid, list) else ([cid] if cid else [])
+    for one_cid in cids:
         try:
-            delete_image(cid)
+            delete_image(one_cid)
         except Exception as e:
-            print(f"[{match_id}] Warning: Cloudinary delete failed ({cid}): {e}")
+            print(f"[{match_id}] Warning: Cloudinary delete failed ({one_cid}): {e}")
             send_alert(
-                f"⚠️ {match_id}: couldn't delete the old scorecard image from "
-                f"Cloudinary ({cid}): {e}.\nHarmless for Instagram — it just "
-                f"leaves an orphaned image in the scorecards folder."
+                f"⚠️ {_label(entry)}: an old copy of the scorecard image "
+                f"couldn't be tidied up.\n\n"
+                f"Nothing to do here — Instagram is unaffected, it just leaves "
+                f"an unused file sitting in storage.\n\n"
+                f"Technical detail: Cloudinary delete of {one_cid} failed — {e}"
             )
 
     if ig_id:
@@ -433,9 +638,14 @@ def _delete_early_post(match_id: str, event_type: str) -> None:
             print(f"[{match_id}] Warning: Instagram delete failed ({ig_id}): {e}")
             link = get_post_permalink(ig_id) or f"media id {ig_id}"
             send_alert(
-                f"⚠️ {match_id}: couldn't delete the outdated {event_type} "
-                f"scorecard — delete it manually:\n{link}\n\n"
-                f"(The corrected card is being posted automatically.)"
+                f"🙋 Please delete this post manually — the bot can't:\n"
+                f"{link}\n\n"
+                f"{_label(entry)}: the score changed after that "
+                f"{_moment(event_type)} card went up, so it now shows the wrong "
+                f"result. A corrected one is being posted automatically — this "
+                f"is only about removing the old one.\n\n"
+                f"Instagram doesn't allow the bot to delete its own posts, so "
+                f"this always needs a person."
             )
 
     with STATE_LOCK:
@@ -456,9 +666,14 @@ def match_worker(entry: dict):
     match_id    = entry['match_id']
     scraper_url = entry['scraper_url']
     is_knockout = entry.get('knockout_match', False)
+    # A grouped match posts once, with its group, after the final whistle — so
+    # every early-posting path is off for it. There is nothing to be early for,
+    # and an early card would only have to be corrected via the broken delete.
+    group       = _carousel_group_of(entry)
 
     print(f"[{match_id}] Worker started — {entry['home_team']} vs {entry['away_team']}"
-          f"  (knockout={is_knockout})")
+          f"  (knockout={is_knockout}"
+          f"{f', carousel={group}' if group else ''})")
 
     # Pre-kickoff crest check: warn now, while there is still time to fix it,
     # instead of discovering a logo-less card at HT.
@@ -466,13 +681,13 @@ def match_worker(entry: dict):
                       if get_crest_url(t, alert=False) is None]
     if missing_crests:
         send_alert(
-            f"⚠️ {match_id}: worker started for {entry['home_team']} vs "
-            f"{entry['away_team']}, but no crest on Cloudinary for: "
-            f"{', '.join(missing_crests)}. Scorecards will render without "
-            f"the logo(s) unless fixed before HT.\n\n"
-            f"Fix: check the spelling in matches.json, then run "
-            f"'python validate_matches.py' locally — the upload takes effect "
-            f"immediately, no push needed.",
+            f"⚠️ {_label(entry)} kicks off shortly, but we don't have a badge "
+            f"for: {', '.join(missing_crests)}.\n\n"
+            f"The scorecard will still post — that team's badge will just be "
+            f"blank. There's still time to fix it before half-time.\n\n"
+            f"To fix: check how the team name is spelled in the fixture list "
+            f"(match {match_id}), then run 'python validate_matches.py'. It "
+            f"takes effect straight away — nothing needs pushing.",
             key=f'{match_id}:crest-precheck', cooldown=3600,
         )
 
@@ -497,6 +712,9 @@ def match_worker(entry: dict):
             'early_ft_cloudinary_id': None,
             'early_ft_score':         None,
             'scraper_failing_since':  None,
+            'photo_reminded_ht':      False,
+            'photo_reminded_ft':      False,
+            'photo_reminded_et':      False,
         }.items():
             s.setdefault(k, v)
         _save_state()
@@ -522,9 +740,10 @@ def match_worker(entry: dict):
             print(f"[{match_id}] Scraper fetch failed "
                   f"({outage_secs / 60:.0f} min into the outage).")
             send_alert(
-                f"⚠️ {match_id}: the live-score scraper returned no data.\n"
-                f"Match tracking is stalled until it recovers — retrying every "
-                f"{POLL_INTERVAL_SECS}s.",
+                f"⚠️ {_label(entry)}: we've lost the live score feed for this "
+                f"match.\n\n"
+                f"Nothing can be posted until it comes back. The bot keeps "
+                f"checking every minute and it usually recovers on its own.",
                 key=f'{match_id}:scraper', cooldown=600,
             )
 
@@ -542,10 +761,12 @@ def match_worker(entry: dict):
             print(f"[{match_id}] Scraper down since {failing_since:%H:%M}Z — "
                   f"posting FT from the last cached scrape.")
             send_alert(
-                f"⚠️ {match_id}: the scraper has been down for "
-                f"{outage_secs / 60:.0f} min and the match should be over.\n"
-                f"Posting the FT card from the last cached scrape — check the "
-                f"final score is correct.",
+                f"⚠️ {_label(entry)}: the live score feed has been down for "
+                f"{outage_secs / 60:.0f} minutes and this match should have "
+                f"finished by now.\n\n"
+                f"The bot is posting the full-time card using the last score it "
+                f"managed to see. Please double-check the final score is right "
+                f"— if a late goal went in, the card will be wrong.",
                 key=f'{match_id}:stale-ft', cooldown=3600,
             )
             scraper_data = cached
@@ -600,6 +821,24 @@ def match_worker(entry: dict):
               f"  early_ht={early_ht_posted}  early_ft={early_ft_posted}")
 
         # ══════════════════════════════════════════════════════════════════════
+        # PHOTO REMINDERS  (ask before the card is needed, not after)
+        # ══════════════════════════════════════════════════════════════════════
+        if (raw_status == '1H' and minute >= PHOTO_REMINDER_HT_MINUTE
+                and entry.get('post_ht', True) and not ht_posted):
+            _photo_reminder(entry, 'HT', 'photo_reminded_ht')
+        elif raw_status == '2H' and minute >= PHOTO_REMINDER_FT_MINUTE and not ft_posted:
+            _photo_reminder(entry, 'FT', 'photo_reminded_ft')
+        elif raw_status == 'ET' and minute >= PHOTO_REMINDER_ET_MINUTE and not ft_posted:
+            # Extra time means the FT card is still to come and the 80' nudge is
+            # long past. Tracked under its own key so it fires even if that one
+            # already did — but _photo_reminder still stays quiet if a photo
+            # arrived in the meantime.
+            _photo_reminder(
+                entry, 'FT', 'photo_reminded_et',
+                opener=f"{_label(entry)} has gone to extra time — last call for "
+                       f"the full-time photo.")
+
+        # ══════════════════════════════════════════════════════════════════════
         # EARLY HT MONITORING  (first half, scraper minute 45+)
         # ══════════════════════════════════════════════════════════════════════
         if (raw_status == '1H'
@@ -610,13 +849,13 @@ def match_worker(entry: dict):
             if (not early_ht_posted
                     and not _wait_for_scorers(match_id, lagging)):
                 print(f"[{match_id}] Scraper minute={minute} — posting early HT scorecard…")
-                cid, ig_id = _early_pipeline(entry, 'HT', scraper_data)
-                if cid and ig_id:
+                cids, ig_id = _early_pipeline(entry, 'HT', scraper_data)
+                if cids and ig_id:
                     with STATE_LOCK:
                         s = MATCH_STATE[match_id]
                         s['early_ht_posted']        = True
                         s['early_ht_ig_id']         = ig_id
-                        s['early_ht_cloudinary_id'] = cid
+                        s['early_ht_cloudinary_id'] = cids
                         s['early_ht_score']         = list(current_score)
                         _save_state()
 
@@ -624,13 +863,13 @@ def match_worker(entry: dict):
                 if (current_score != early_ht_score
                         and not _wait_for_scorers(match_id, lagging)):
                     print(f"[{match_id}] HT score changed {early_ht_score}→{current_score} — correcting…")
-                    _delete_early_post(match_id, 'HT')
-                    cid, ig_id = _early_pipeline(entry, 'HT', scraper_data)
-                    if cid and ig_id:
+                    _delete_early_post(entry, 'HT')
+                    cids, ig_id = _early_pipeline(entry, 'HT', scraper_data)
+                    if cids and ig_id:
                         with STATE_LOCK:
                             s = MATCH_STATE[match_id]
                             s['early_ht_ig_id']         = ig_id
-                            s['early_ht_cloudinary_id'] = cid
+                            s['early_ht_cloudinary_id'] = cids
                             s['early_ht_score']         = list(current_score)
                             _save_state()
 
@@ -664,6 +903,7 @@ def match_worker(entry: dict):
         # ══════════════════════════════════════════════════════════════════════
         elif (raw_status == '2H'
                 and minute >= 90
+                and group is None
                 and not ft_posted
                 and not is_event_posted(match_id, 'FT')):
 
@@ -675,13 +915,13 @@ def match_worker(entry: dict):
                     print(f"[{match_id}] Minute={minute} — draw in knockout, waiting for injury time goal…")
                 elif not _wait_for_scorers(match_id, lagging):
                     print(f"[{match_id}] Minute={minute} — posting early FT scorecard…")
-                    cid, ig_id = _early_pipeline(entry, 'FT', scraper_data)
-                    if cid and ig_id:
+                    cids, ig_id = _early_pipeline(entry, 'FT', scraper_data)
+                    if cids and ig_id:
                         with STATE_LOCK:
                             s = MATCH_STATE[match_id]
                             s['early_ft_posted']        = True
                             s['early_ft_ig_id']         = ig_id
-                            s['early_ft_cloudinary_id'] = cid
+                            s['early_ft_cloudinary_id'] = cids
                             s['early_ft_score']         = list(current_score)
                             _save_state()
 
@@ -692,19 +932,19 @@ def match_worker(entry: dict):
                         # No scorer-lag guard: removing a wrong card needs no events.
                         print(f"[{match_id}] Score equalized {early_ft_score}→{current_score}"
                               f" in knockout — deleting early FT post.")
-                        _delete_early_post(match_id, 'FT')
+                        _delete_early_post(entry, 'FT')
                         with STATE_LOCK:
                             MATCH_STATE[match_id]['early_ft_score'] = list(current_score)
                             _save_state()
                     elif not _wait_for_scorers(match_id, lagging):
                         print(f"[{match_id}] FT score changed {early_ft_score}→{current_score} — correcting…")
-                        _delete_early_post(match_id, 'FT')
-                        cid, ig_id = _early_pipeline(entry, 'FT', scraper_data)
-                        if cid and ig_id:
+                        _delete_early_post(entry, 'FT')
+                        cids, ig_id = _early_pipeline(entry, 'FT', scraper_data)
+                        if cids and ig_id:
                             with STATE_LOCK:
                                 s = MATCH_STATE[match_id]
                                 s['early_ft_ig_id']         = ig_id
-                                s['early_ft_cloudinary_id'] = cid
+                                s['early_ft_cloudinary_id'] = cids
                                 s['early_ft_score']         = list(current_score)
                                 _save_state()
 
@@ -716,7 +956,19 @@ def match_worker(entry: dict):
                 active_ft_ig = MATCH_STATE[match_id].get('early_ft_ig_id')
                 _eft_done    = MATCH_STATE[match_id].get('early_ft_posted', False)
 
-            if _eft_done and active_ft_ig:
+            if group is not None:
+                # Grouped: hand the card to the carousel instead of posting it.
+                if _wait_for_scorers(match_id, lagging):
+                    print(f"[{match_id}] FT confirmed but scorer list lagging — retrying next poll.")
+                else:
+                    _save_match_data(entry, scraper_data)
+                    if _run_group_pipeline(entry, scraper_data):
+                        with STATE_LOCK:
+                            MATCH_STATE[match_id]['ft_posted'] = True
+                            _save_state()
+                        _archive_match_data(entry)
+                        break
+            elif _eft_done and active_ft_ig:
                 print(f"[{match_id}] FT confirmed — early post active, skipping fallback.")
                 mark_event_posted(match_id, 'FT')
                 with STATE_LOCK:
@@ -742,6 +994,7 @@ def match_worker(entry: dict):
         # ET / AP HANDLING  (extra time and penalty shootouts)
         # ══════════════════════════════════════════════════════════════════════
         elif (raw_status in ('ET', 'AP')
+                and group is None
                 and not ft_posted
                 and not is_event_posted(match_id, 'FT')):
             print(f"[{match_id}] [{raw_status}] minute={minute} — evaluating…")
@@ -759,7 +1012,7 @@ def match_worker(entry: dict):
                 # what routes the FT trigger to a full repost.
                 if active_ft_ig:
                     print(f"[{match_id}] Going to penalties — deleting ET early post…")
-                    _delete_early_post(match_id, 'FT')
+                    _delete_early_post(entry, 'FT')
                 print(f"[{match_id}] Penalty shootout in progress — waiting for the final result…")
 
             elif raw_status == 'ET':
@@ -770,25 +1023,25 @@ def match_worker(entry: dict):
                                   f"minute={minute} — waiting until 119' to post early…")
                         elif not _wait_for_scorers(match_id, lagging):
                             print(f"[{match_id}] Minute={minute}, ET score={current_score} — posting early…")
-                            cid, ig_id = _early_pipeline(entry, 'FT', scraper_data)
-                            if cid and ig_id:
+                            cids, ig_id = _early_pipeline(entry, 'FT', scraper_data)
+                            if cids and ig_id:
                                 with STATE_LOCK:
                                     s = MATCH_STATE[match_id]
                                     s['early_ft_posted']        = True
                                     s['early_ft_ig_id']         = ig_id
-                                    s['early_ft_cloudinary_id'] = cid
+                                    s['early_ft_cloudinary_id'] = cids
                                     s['early_ft_score']         = list(current_score)
                                     _save_state()
                     elif (early_ft_score and current_score != early_ft_score
                             and not _wait_for_scorers(match_id, lagging)):
                         print(f"[{match_id}] ET score changed {early_ft_score}→{current_score} — correcting…")
-                        _delete_early_post(match_id, 'FT')
-                        cid, ig_id = _early_pipeline(entry, 'FT', scraper_data)
-                        if cid and ig_id:
+                        _delete_early_post(entry, 'FT')
+                        cids, ig_id = _early_pipeline(entry, 'FT', scraper_data)
+                        if cids and ig_id:
                             with STATE_LOCK:
                                 s = MATCH_STATE[match_id]
                                 s['early_ft_ig_id']         = ig_id
-                                s['early_ft_cloudinary_id'] = cid
+                                s['early_ft_cloudinary_id'] = cids
                                 s['early_ft_score']         = list(current_score)
                                 _save_state()
                 else:
@@ -816,10 +1069,12 @@ def _worker_safe(entry: dict):
         with WORKERS_LOCK:
             ACTIVE_WORKERS.discard(match_id)
         send_alert(
-            f"❌ {match_id}: the match worker CRASHED ({e}).\n"
-            f"Live monitoring for {entry['home_team']} vs {entry['away_team']} "
-            f"stopped — it will be respawned on the next registry check if the "
-            f"match window is still open."
+            f"❌ {_label(entry)}: the bot stopped following this match "
+            f"unexpectedly.\n\n"
+            f"No scorecards will go out for it right now. The bot tries to pick "
+            f"it back up within a few minutes, as long as the match is still "
+            f"on.\n\n"
+            f"Technical detail: {e}"
         )
 
 
@@ -855,9 +1110,12 @@ def check_registry():
         except (KeyError, ValueError) as e:
             print(f"[registry] Bad kickoff_utc for match {match_id}: {e}")
             send_alert(
-                f"❌ matches.json: match {match_id} has a bad/missing "
-                f"kickoff_utc ({e}).\nThis match will never get a worker "
-                f"until the entry is fixed.",
+                f"❌ {_label(entry)}: the kick-off time in the fixture list is "
+                f"missing or written incorrectly, so this match is being "
+                f"skipped entirely.\n\n"
+                f"No scorecards will post for it until the time is corrected "
+                f"(match {match_id} in the fixture list).\n\n"
+                f"Technical detail: {e}",
                 key=f'registry:kickoff:{match_id}', cooldown=1800,
             )
             continue

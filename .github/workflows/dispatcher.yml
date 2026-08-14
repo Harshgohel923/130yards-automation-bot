@@ -6,23 +6,48 @@ on:
   workflow_dispatch:           # also triggerable manually
 
 permissions:
-  actions: write   # needed to trigger match_bot.yml
+  actions: write    # needed to trigger match_bot.yml
+  contents: write   # needed to push the pruned matches.json back to master
 
-jobs: 
+# The dispatcher also publishes carousel groups, which must happen exactly once.
+# The external cron and GitHub's own schedule can otherwise overlap; queueing
+# runs instead of running them side by side keeps a single writer.
+concurrency:
+  group: match-dispatcher
+  cancel-in-progress: false
+
+jobs:
   dispatch:
     runs-on: ubuntu-latest
     steps:
+      # Full history: the prune step rebases onto master before pushing, which
+      # a shallow clone can't do.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
 
-      - name: Install dispatcher dependencies
-        run: pip install requests
+      # The full set, not just requests: publishing a carousel group needs the
+      # Cloudinary, Instagram and Gemini stack the workers use.
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-      - name: Dispatch match workers
+      - name: Dispatch match workers and publish carousels
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          # Carousel publishing runs here, so the dispatcher needs the same
+          # credentials a match worker has.
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.TELEGRAM_ALLOWED_USER_IDS }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
         run: python3 .github/scripts/dispatcher.py

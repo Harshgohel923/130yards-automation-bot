@@ -12,6 +12,11 @@ on:
 # by scanning run names — no external state needed.
 run-name: match-${{ inputs.match_id }}
 
+# A worker that finishes a carousel match nudges the dispatcher to publish the
+# group now rather than at its next 15-minute tick.
+permissions:
+  actions: write
+
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -40,4 +45,7 @@ jobs:
           # Group chat that receives pipeline alerts. Without this, alerts fall
           # back to the first id in TELEGRAM_ALLOWED_USER_IDS.
           TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          # Only used to nudge the dispatcher after a carousel handover.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: python3 match_worker_runner.py ${{ inputs.match_id }}

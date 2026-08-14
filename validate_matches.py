@@ -64,7 +64,12 @@ AUTO_FIELDS = ('match_id', 'kickoff_utc', 'home_team', 'away_team', 'competition
 # same way as a hand-written one. Anything unlisted keeps its position at the
 # end. Only reordered when a fixture is actually filled, to keep diffs quiet.
 FIELD_ORDER = ('match_id', 'scraper_url', 'kickoff_utc', 'home_team', 'away_team',
-               'competition', 'post_ht', 'knockout_match', 'records')
+               'competition', 'post_ht', 'post_ft_stats', 'knockout_match',
+               'carousel_group', 'records')
+
+# Instagram will not accept more slides than this in one post, and a carousel
+# group is one slide per match.
+MAX_CAROUSEL_MATCHES = 10
 
 
 def _reorder(entry: dict) -> dict:
@@ -202,6 +207,23 @@ def _check_structure(matches: list) -> list[str]:
                     f"scraper_url ('{url_id}'). One of the two is wrong — the "
                     f"URL decides which match is actually scraped.")
 
+        if 'post_ft_stats' in entry and not isinstance(entry['post_ft_stats'], bool):
+            problems.append(
+                f"match {match_id}: post_ft_stats must be true or false, got "
+                f"{entry['post_ft_stats']!r}.")
+
+        if 'carousel_group' in entry:
+            group = entry['carousel_group']
+            if group is not None and not isinstance(group, str):
+                problems.append(
+                    f"match {match_id}: carousel_group must be a string id (or "
+                    f"omitted), got {group!r}.")
+            elif isinstance(group, str) and not group.strip():
+                problems.append(
+                    f"match {match_id}: carousel_group is empty. Remove the "
+                    f"field to post this match on its own, or give the group a "
+                    f"name shared with the other matches it posts with.")
+
         kickoff = entry.get('kickoff_utc')
         if kickoff:
             # Parsed exactly as main.py does, so this catches what it would hit.
@@ -218,7 +240,62 @@ def _check_structure(matches: list) -> list[str]:
                         f"crashes comparing a naive time against UTC, and the match "
                         f"goes uncovered.")
 
+    problems += _check_carousel_sizes(matches)
     return problems
+
+
+def _carousel_groups(matches: list) -> dict[str, list[dict]]:
+    """{carousel_group: entries}, mirroring carousel.groups_in()."""
+    groups: dict[str, list[dict]] = {}
+    for entry in matches:
+        if not isinstance(entry, dict):
+            continue
+        group = entry.get('carousel_group')
+        if isinstance(group, str) and group.strip():
+            groups.setdefault(group.strip(), []).append(entry)
+    return groups
+
+
+def _check_carousel_sizes(matches: list) -> list[str]:
+    """
+    Reject a group too big for one Instagram post.
+
+    Caught here, on the day you edit the fixture list, rather than at full time
+    when the group is ready to go out and there is nothing to be done about it.
+    """
+    problems = []
+    for group, entries in _carousel_groups(matches).items():
+        if len(entries) > MAX_CAROUSEL_MATCHES:
+            ids = ', '.join(str(e.get('match_id', '?')) for e in entries)
+            problems.append(
+                f"carousel_group '{group}' has {len(entries)} matches — "
+                f"Instagram allows at most {MAX_CAROUSEL_MATCHES} slides in one "
+                f"post, and a group is one slide per match. Split it into two "
+                f"groups. Matches: {ids}")
+    return problems
+
+
+def _carousel_notes(matches: list) -> list[str]:
+    """Advisory notes about grouping — worth saying, not worth failing over."""
+    notes = []
+    for group, entries in sorted(_carousel_groups(matches).items()):
+        ids = ', '.join(str(e.get('match_id', '?')) for e in entries)
+        if len(entries) == 1:
+            notes.append(
+                f"carousel_group '{group}' has only one match ({ids}) — it will "
+                f"post as a single image, not a carousel. Check the group id if "
+                f"that isn't what you meant.")
+        else:
+            notes.append(f"carousel_group '{group}': {len(entries)} matches ({ids})")
+
+        stats_too = [str(e.get('match_id', '?')) for e in entries
+                     if e.get('post_ft_stats')]
+        if stats_too:
+            notes.append(
+                f"  ↳ post_ft_stats is set on {', '.join(stats_too)}, but grouped "
+                f"matches post one scorecard each — no stats page is rendered "
+                f"for them.")
+    return notes
 
 
 def _verify_crest(official: str, upload: bool, cache: dict[str, str | None]) -> str | None:
@@ -357,6 +434,12 @@ def main() -> int:
         print('\nNormalized names:' if not args.check else '\nWould normalize:')
         for r in renames:
             print(f'  {r}')
+
+    notes = _carousel_notes(matches)
+    if notes:
+        print('\nCarousel groups:')
+        for n in notes:
+            print(f'  {n}')
 
     if changed:
         # Write-then-rename so a crash can never truncate the fixture file.

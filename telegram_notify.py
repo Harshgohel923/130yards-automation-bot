@@ -58,3 +58,34 @@ def send_alert(text: str, key: str | None = None, cooldown: int = 0) -> None:
                   f'(HTTP {res.status_code}): {res.text[:200]}')
     except Exception as e:
         print(f'[telegram_notify] sendMessage error: {e}')
+
+
+def send_music_reminder(description: str, media_id: str | None = None) -> None:
+    """
+    Nudge to add music to a post that has just gone live.
+
+    Instagram's publishing API can't attach audio, so every post the bot makes
+    goes up silent and someone has to add the track by hand — easy to forget
+    once the match is over, hence the reminder, with a tappable link straight
+    to the post.
+
+    Never raises and is never throttled: one post, one reminder.
+    """
+    link = None
+    if media_id:
+        # Imported here rather than at module level: this module is used by
+        # config.py and the renderers, which have no business importing the
+        # Instagram client.
+        try:
+            from instagram import get_post_permalink
+            link = get_post_permalink(media_id)
+        except Exception as e:
+            print(f'[telegram_notify] Could not look up the post link: {e}')
+
+    send_alert(
+        f"🎵 Just posted — remember to add the music.\n\n"
+        f"{description}\n"
+        f"{link or '(open the page to find it — the link lookup failed)'}\n\n"
+        f"Instagram won't let the bot add audio, so it has to be done by hand "
+        f"in the app."
+    )

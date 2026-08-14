@@ -3,8 +3,9 @@ import json
 import os
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 
-from hashtags import build_hashtags, competition_label
+from hashtags import build_group_hashtags, build_hashtags, competition_label
 
 load_dotenv()
 
@@ -41,6 +42,11 @@ def _summarise_events(events: list) -> str:
 
 def _summarise_stats(stats: dict) -> str:
     """Pull a few key stats for the prompt."""
+    # Before kickoff — and whenever the scraper has nothing — this field is a
+    # message string, not a dict. Reaching .get on it would fail the whole post
+    # over a line of prompt garnish.
+    if not isinstance(stats, dict):
+        return ''
     stat_list = stats.get('list', {})
     if not isinstance(stat_list, dict):
         return ''
@@ -216,7 +222,10 @@ def generate_caption(scraper_data: dict, event_type: str = 'FT',
 
     goals_str = _summarise_events(scraper_data.get('events', []))
     stats_str = _summarise_stats(scraper_data.get('statistics', {}))
-    analysis  = scraper_data.get('matchAnalysis', {})
+    # Same story as the statistics field: a placeholder string when there is
+    # nothing to report.
+    analysis  = scraper_data.get('matchAnalysis')
+    analysis  = analysis if isinstance(analysis, dict) else {}
     h2h_str   = _summarise_h2h(analysis)
     form_str  = _summarise_recent_form(analysis, home_team, away_team)
 
@@ -329,6 +338,161 @@ Return ONLY the caption text — no labels, no explanations, no markdown formatt
     print("[caption] All Gemini models failed — using fallback caption")
     return _fallback_caption(home_team, away_team, home_score, away_score,
                              event_type, hashtag_line)
+
+
+def _group_match_facts(match: dict) -> str:
+    """One match's facts for the group prompt — everything the model may draw on."""
+    bits = [
+        f"match_id: {match.get('match_id')}",
+        f"{match.get('home_team')} vs {match.get('away_team')}",
+        f"competition: {match.get('competition') or 'football'}",
+        f"score: {match.get('home_score')}-{match.get('away_score')}",
+    ]
+    if match.get('penalties'):
+        bits.append(f"penalty shootout: {match['penalties']}")
+    if match.get('ending') and match['ending'] != 'full-time':
+        bits.append(f"decided in: {match['ending']}")
+    if match.get('goals'):
+        bits.append(f"goals: {match['goals']}")
+    if match.get('records'):
+        bits.append('records: ' + '; '.join(str(r) for r in match['records']))
+    return ' | '.join(bits)
+
+
+def generate_group_caption(matches: list[dict]) -> str:
+    """
+    Caption for a carousel covering several matches.
+
+    Gemini picks which one or two stories are worth telling and writes them as
+    narrative — it is explicitly forbidden from stating any scoreline, because
+    the scorecards in the carousel already carry every result and a model slip
+    would otherwise publish a wrong score that Instagram won't let us edit.
+
+    It returns the caption plus the match ids it chose, and those matches' teams
+    become the hashtags, so the tags always describe what the caption is about.
+    """
+    if not matches:
+        return ''
+
+    facts = '\n'.join(f'- {_group_match_facts(m)}' for m in matches)
+    competitions = []
+    for m in matches:
+        label = competition_label(m.get('competition'))
+        if label and label not in competitions:
+            competitions.append(label)
+
+    prompt = f"""You are a football content writer for an Instagram page.
+
+This is a CAROUSEL post collecting the full-time scorecards of {len(matches)} matches
+({', '.join(competitions) or 'football'}). Write ONE caption for the whole post.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+UNICODE FONT STYLES — use ONLY these two, no others (never script/calligraphic):
+  1. Bold Italic Sans (e.g. 𝙏𝙝𝙚 𝙦𝙪𝙞𝙘𝙠 𝙗𝙧𝙤𝙬𝙣 𝙛𝙤𝙭)   → punchy secondary lines
+  2. Bold Serif       (e.g. 𝐓𝐡𝐞 𝐪𝐮𝐢𝐜𝐤 𝐛𝐫𝐨𝐰𝐧 𝐟𝐨𝐱)      → the opening headline
+Plain text for regular sentences, PLAIN CAPITALS for extra emphasis. Within any
+single word use ONE style for every letter — never mix styled and plain
+characters inside a word, it renders as broken text.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+THE ONE RULE YOU MUST NOT BREAK:
+Never state a score, a scoreline, or a numeric result. No "3-0", no "3️⃣-0️⃣",
+no "won 2-1", no "a 4-goal thriller", no aggregate numbers. The scorecards in
+the carousel show every score already. Write about MOMENTS instead: who did
+something remarkable, what it felt like, what it means. You may name players,
+say a team won or lost, and describe a hat-trick or a late winner — just never
+attach numbers to the result.
+
+CAPTION RULES:
+- Open with a bold styled headline about the single most striking thing that
+  happened across all these matches
+- Pick only ONE or TWO matches worth writing about. You do NOT need to mention
+  every match — most of them will not be mentioned at all, and that is correct.
+  Choose whatever is genuinely notable: a standout individual performance, an
+  upset, a shootout, a comeback, a milestone.
+- LENGTH IS CRITICAL — hard cap 80 words / 600 characters, at most 5 short
+  lines. Every line is one punchy sentence or fragment, never a dense paragraph.
+- Write every sentence on its own line with a BLANK LINE after it
+- Refer to teams the way fans do; club emojis tied to their colours or nickname,
+  flags only for national teams
+- Emojis throughout but tasteful — never 3+ in a row, never forced
+- Tone: passionate football fan — real, emotional, not corporate, not clickbait
+- Do NOT write a hashtag line. Hashtags are added separately.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The matches in this carousel:
+{facts}
+
+Return ONLY JSON with exactly these two keys:
+  "caption"            — the caption text
+  "highlight_match_ids" — array of the match_id strings you actually wrote
+                          about, most prominent first (1 or 2 ids)"""
+
+    schema = {
+        'type': 'object',
+        'properties': {
+            'caption': {'type': 'string'},
+            'highlight_match_ids': {'type': 'array', 'items': {'type': 'string'}},
+        },
+        'required': ['caption', 'highlight_match_ids'],
+    }
+
+    for model in GEMINI_MODELS:
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type='application/json',
+                    response_schema=schema,
+                ),
+            )
+            payload = json.loads(response.text)
+            caption = str(payload.get('caption') or '').strip()
+            if not caption:
+                raise ValueError('empty caption in response')
+            highlights = [str(i) for i in (payload.get('highlight_match_ids') or [])]
+            print(f"[caption] Group caption via {model} "
+                  f"(highlighting {highlights or 'nothing in particular'})")
+            return _space_out_lines(
+                _ensure_hashtags(caption, _group_hashtag_line(matches, highlights)))
+        except Exception as e:
+            print(f"[caption] {model} failed: {e} — trying next model...")
+
+    print("[caption] All Gemini models failed — using fallback group caption")
+    return _fallback_group_caption(matches)
+
+
+def _group_hashtag_line(matches: list[dict], highlight_ids: list[str]) -> str:
+    """
+    Team tags for a group post, drawn from the matches the caption highlighted.
+
+    Unrecognised ids are ignored, and every other match follows in carousel
+    order — so a model that returns nothing usable still yields a full tag line.
+    """
+    by_id = {str(m.get('match_id')): m for m in matches}
+    ordered = [by_id[i] for i in highlight_ids if i in by_id]
+    ordered += [m for m in matches if m not in ordered]
+
+    teams = []
+    for match in ordered:
+        teams.extend([match.get('home_team', ''), match.get('away_team', '')])
+    return build_group_hashtags(teams)
+
+
+def _fallback_group_caption(matches: list[dict]) -> str:
+    """Deterministic group caption — no scores, matching the model's brief."""
+    count = len(matches)
+    return (
+        f"FULL TIME.\n"
+        f"\n"
+        f"Every result from {'today' if count > 1 else 'the day'}, "
+        f"all {count} of them.\n"
+        f"\n"
+        f"Swipe through 👉\n"
+        f"\n"
+        f"{_group_hashtag_line(matches, [])}"
+    )
 
 
 def _fallback_caption(home, away, hs, as_, event_type, hashtag_line):
