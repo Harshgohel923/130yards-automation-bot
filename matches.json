@@ -1,17 +1,5 @@
 [
   {
-    "match_id": "54493153",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/deportivo-alavez-vs-getafe/54493153",
-    "kickoff_utc": "2026-08-15T17:30:00Z",
-    "home_team": "Deportivo",
-    "away_team": "Getafe",
-    "competition": "La Liga",
-    "post_ht": false,
-    "post_ft_stats": true,
-    "knockout_match": false,
-    "records": []
-  },
-  {
     "match_id": "54493161",
     "scraper_url": "https://m.allfootballapp.com/match/Main/sevilla-vs-rayo-vallecano/54493161",
     "kickoff_utc": "2026-08-15T19:30:00Z",
