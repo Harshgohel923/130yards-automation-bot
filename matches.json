@@ -1,17 +1,5 @@
 [
   {
-    "match_id": "54461363",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Bayern-vs-Leipzig/54461363",
-    "kickoff_utc": "2026-08-15T13:30:00Z",
-    "home_team": "Bayern Munich",
-    "away_team": "RB Leipzig",
-    "competition": "Ger LTC",
-    "post_ht": false,
-    "knockout_match": true,
-    "records": [],
-    "post_ft_stats": true
-  },
-  {
     "match_id": "54492623",
     "scraper_url": "https://m.allfootballapp.com/match/Main/Tottenham-vs-Hoffenheim/54492623",
     "kickoff_utc": "2026-08-15T14:00:00Z",
