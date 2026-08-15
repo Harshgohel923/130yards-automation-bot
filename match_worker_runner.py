@@ -14,6 +14,7 @@ import json
 import sys
 import traceback
 
+import matchlog
 from database import init_db
 from main import _worker_safe
 from telegram_notify import send_alert
@@ -50,6 +51,8 @@ except SystemExit:
     raise
 except Exception as e:
     traceback.print_exc()
+    matchlog.finish('worker could not start', traceback.format_exc().strip(),
+                    level=matchlog.ERROR, match_id=target_id)
     send_alert(
         f"❌ The bot could not start following the match with id {target_id}.\n\n"
         f"No scorecards will go out for it. It will try again within a few "

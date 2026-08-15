@@ -109,9 +109,10 @@ Each worker thread handles one match end-to-end:
 
 ## Registry cleanup
 
-The dispatcher prunes finished fixtures out of `matches.json` on each tick and
-commits the trimmed file back to master, so the list stays as short as the
-fixtures still to come. Commits look like:
+The dispatcher prunes finished fixtures out of `matches.json` **once a day**,
+at 10:00 German time (`PRUNE_HOUR_LOCAL`), and commits the trimmed file back to
+master together with the day's match log — one housekeeping commit, not one per
+fixture. Commits look like:
 
 ```
 chore: remove 3 finished fixtures
@@ -133,6 +134,22 @@ A fixture is only dropped when **all** of these hold:
 
 A fixture whose `kickoff_utc` can't be parsed is never pruned — that's a human's
 problem to look at, not something to silently delete.
+
+**Why once a day.** Pruning per tick sounds like it would commit constantly but
+didn't: a fixture only becomes prunable six hours after its own kickoff, so the
+commits landed one per *distinct kickoff time* — nine on 15 August, five of them
+removing a single fixture. Batching them into one daily pass is the only
+difference; nothing about which fixtures qualify has changed. The hour is late
+enough that an overnight MLS kickoff (02:30 local) is past its six hours by
+08:30, and early enough to be clear of the European afternoon.
+
+The dispatcher ticks four times inside that hour. The first does the work; the
+rest find nothing left to prune, which is also what makes a failed push retry
+fifteen minutes later at no cost. If the window is missed entirely — the
+external cron was down — the next tick that sees a fixture more than
+`PRUNE_CATCHUP_HOURS` (24) past its deadline tidies up immediately rather than
+waiting for tomorrow. No state is stored between runs: both answers come from
+the clock and the fixtures already in hand.
 
 Note that a fixture which **failed** to post is pruned too. Six hours on, no
 process will ever pick it up again, and the failure was alerted at the time.
@@ -263,32 +280,123 @@ Two degradations, neither of which costs you the post:
 
 Team crests and competition logos are fetched from
 [football-logos.cc](https://football-logos.cc) (3000×3000 PNGs) and stored in
-Cloudinary under **deterministic public ids**:
+Cloudinary under **deterministic public ids**.
+
+#### Where everything lives in Cloudinary
 
 ```
-assets/national/<name>      e.g. assets/national/united-states
-assets/club/<name>          e.g. assets/club/bayern-munich
-assets/competition/<key>    e.g. assets/competition/premier-league
+assets/club/<slug>            crests          e.g. assets/club/ac-milan
+assets/national/<slug>        crests          e.g. assets/national/argentina
+assets/competition/<key>      badges          e.g. assets/competition/mls
+match_photos/<id>_<HT|FT>     your photos     uploaded via the Telegram bot
+scorecards/<random>           rendered cards  Cloudinary-named, posted to IG
+carousel/<group>/…            staging         group rendezvous
+logs/<match_id>.json          staging         per-match log, see Match log
 ```
 
-The name-resolution stack (all in `logo_fetch.py`):
+The rule behind the crest paths: **a public id comes from the team's own
+official name, never from how the source site spells it**
+(`logo_public_id`, `logo_fetch.py`). Spurs live at
+`assets/club/tottenham-hotspur` even though the site files them under
+`tottenham`. The site's spellings are its business; yours shouldn't change
+when it renames something.
 
-- `NICKNAMES` — every variant spelling → canonical slug
-  (`Man Utd`, `Spurs`, `Internazionale`, `Korea Republic`, …).
-  Accents are stripped automatically (`Türkiye`, `Beşiktaş` work as typed).
-- `SITE_OVERRIDES` — teams the source site spells differently
-  (`usa-national-team`, `dutch-national-team`, `tottenham`, …).
-- `DISPLAY_NAMES` — canonical slug → official display form
-  (`AC Milan`, `Côte d'Ivoire`); common football acronyms (FC, SK, AFC…)
-  stay uppercase automatically.
-- `COMPETITIONS` / `COMPETITION_ALIASES` / `COMPETITION_DISPLAY` — the same
-  system for competitions, absorbing TheSportsDB ("English Premier League"),
-  scraper ("Premier League"), and shorthand ("EPL", "UCL", "Carabao Cup")
-  spellings.
-- Clubs sharing a slug across countries can't overwrite each other: the
-  non-priority country gets a suffixed id (`assets/club/liverpool-uruguay`).
+Clubs sharing a slug across countries can't overwrite each other either: the
+non-priority country gets a suffixed id (`assets/club/liverpool-uruguay`).
 
-CLI:
+#### The normalization tables
+
+Six hand-maintained dicts, all in `logo_fetch.py`. There is no naming data
+anywhere else — not in `config.py`, not in Cloudinary, not in the index.
+(Line numbers drift as the file is edited; the table name is the reliable
+anchor.)
+
+| Table | Line | Job |
+|---|---|---|
+| `NICKNAMES` | 105 | any *input* spelling → canonical slug (`usa` → `united-states`, `spurs` → `tottenham-hotspur`) |
+| `DISPLAY_NAMES` | 212 | canonical slug → what prints on the card (`ac-milan` → `AC Milan`) |
+| `SITE_OVERRIDES` | 239 | canonical slug → where the *site* keeps it, as `(country, site_slug, is_national)` |
+| `COMPETITIONS` | 398 | canonical key → site location, as `(country, site_slug, variant)`; `None` = not on the site |
+| `COMPETITION_ALIASES` | 427 | any spelling → canonical key (`epl`, `ucl`, `saudi-pl`) |
+| `COMPETITION_DISPLAY` | 488 | canonical key → printed name |
+
+The distinction that trips people up: **`NICKNAMES` is for spellings other
+people use; `SITE_OVERRIDES` is for when your canonical name and the site's
+filename disagree.** Tottenham need both — `spurs` → `tottenham-hotspur` in
+`NICKNAMES`, and `tottenham-hotspur` → `england/tottenham` in
+`SITE_OVERRIDES`. Accents are stripped automatically, so `Türkiye` and
+`Beşiktaş` work as typed without an entry.
+
+#### The site's team data (`data/logo_index.json`)
+
+**3,622 teams** — 223 national, 3,399 clubs — built by scraping the site's
+image sitemap. The format is `{slug: [countries]}`, which is how the
+duplicate-slug handling above knows a slug is shared (18 of them are).
+
+It is **gitignored and rebuilt automatically** when missing or older than
+`INDEX_MAX_AGE_DAYS` (30), so every Actions run builds its own. It is a cache
+of the source site: **never edit it** — your edits vanish on the next refresh.
+It is also where the did-you-mean hints come from, so those slugs are always
+real pages on the site.
+
+#### What actually happens to a name
+
+`resolve_team`:
+
+```
+"Man Utd"
+  → _slugify        → "man-utd"                  lowercase, accents stripped
+  → NICKNAMES       → "manchester-united"        canonical from here on
+  → SITE_OVERRIDES? → absent, so the canonical doubles as the site slug
+  → index lookup    → tries "manchester-united-national-team", then
+                       "manchester-united" → found in ['england']
+  → Cloudinary id     assets/club/manchester-united
+  → DISPLAY_NAMES   → "Manchester United"        what prints on the card
+```
+
+A miss raises `LookupError` carrying the five closest real slugs.
+
+#### Adding a fixture without typing any names
+
+`matches.json` entries fill themselves in. A new fixture can be **just the
+URL** — `validate_matches.py` reads `match_id`, `kickoff_utc`, both teams and
+the competition off the match page, normalizes them, and writes them back. It
+only fills blanks; anything you typed is left alone.
+
+```json
+[{ "scraper_url": "https://m.allfootballapp.com/match/Main/x/54329126" }]
+```
+
+```
+Filled from the match page:
+  entry #1: home_team = 'Nashville SC'
+  entry #1: away_team = 'Inter Miami CF'
+  entry #1: competition = 'MLS'
+Normalized names:
+  match 54329126: away_team 'Inter Miami CF' → 'Inter Miami'
+```
+
+So the normal workflow is: paste URLs, run validate, read the diff. Hand-typing
+team names is the exception, not the routine.
+
+#### When a name does need you
+
+| Situation | What to do | Push needed? |
+|---|---|---|
+| The name resolves | Nothing | — |
+| The site has the team under a different name | Add to `NICKNAMES`; add `SITE_OVERRIDES` too if the site's slug differs from the official name | **Yes** |
+| The site doesn't have the team at all | `python logo_fetch.py --local crest.png "Team Name"` | No |
+
+Only the middle row needs a code change. The third takes effect immediately —
+`get_crest_url` caches hits but re-checks misses, so a crest uploaded
+mid-match is picked up by the next render.
+
+Competitions work the same way, with one extra convenience: an unrecognised
+competition name is looked up under its slugified form, so
+`--local --competition "Saudi PL"` is enough — no `COMPETITIONS` entry
+required. See *Crest/logo lookup at render time*.
+
+#### CLI
 
 ```bash
 python logo_fetch.py "Leeds United"                    # fetch a club crest
@@ -311,10 +419,20 @@ python logo_fetch.py --local logo.png --competition "Community Shield"
   real 404s (retry, then optimistic URL) so an outage never false-alarms.
 - `get_competition_logo_url(name)` — competition logo, with fallback chain:
   known competition → its logo; **friendly → the dedicated Friendly Match
-  logo** (`assets/competition/friendly`); unknown/missing → the 130 Yards
-  brand logo. The card never renders an empty logo slot.
+  logo** (`assets/competition/friendly`); **a competition with no entry at
+  all → whatever has been uploaded under its slugified name**
+  (`"Saudi PL"` → `assets/competition/saudi-pl`, exactly where
+  `--local --competition` writes it); nothing found → the 130 Yards brand
+  logo. The card never renders an empty logo slot.
+
+  That third step is what makes a new competition work without a code change.
+  `--local --competition` has always accepted any name, but the lookup used to
+  give up as soon as `resolve_competition` returned `None`, so an uploaded
+  badge was never found and the alert said a developer was needed. Both ends
+  now agree on the same public id.
 - Missing crests/logos send a throttled Telegram alert with the exact fix
-  command.
+  command — `--competition` when the source site carries it, `--local
+  --competition` when it doesn't.
 
 ### Validation (`validate_matches.py`)
 
@@ -336,7 +454,12 @@ Per entry it:
 3. Uploads the crest to Cloudinary so it's ready before kickoff.
 4. Does the same for the optional `competition` field (`"EPL"` →
    `"Premier League"`, logo pre-fetched).
-5. Type-checks `post_ft_stats` and `carousel_group`, and **fails when any
+5. An unknown competition is a failure **only if no badge has been uploaded
+   for it**. Upload one with `--local --competition "Saudi PL"` and the name
+   is accepted as typed from then on — an uploaded badge is proof the name was
+   deliberate rather than a typo. Failures print did-you-mean suggestions and
+   the exact upload command.
+6. Type-checks `post_ft_stats` and `carousel_group`, and **fails when any
    carousel group holds more than 10 matches** — Instagram's carousel cap, and
    a group is one slide per match. It also prints each group's size, warns when
    a group has only one match (usually a typo in the id), and notes when a
@@ -355,6 +478,8 @@ options.
 | `cloudinary_utils.py` | Template fetch/cache (cache key includes the Cloudinary public id, so changing `CLOUDINARY_TEMPLATES` busts stale caches automatically), match-photo fetch. |
 | `database.py` | SQLite: which events have been posted per match (prevents duplicates). |
 | `telegram_notify.py` | Fire-and-forget `send_alert(text, key, cooldown)` — per-key throttling, never raises. Also `send_music_reminder()`, sent after every publish. |
+| `matchlog.py` | Per-match event log. Workers append milestones and errors to Cloudinary; see *Match log*. |
+| `logbook.py` | Renders those logs into `logs/<day>.md` for the dispatcher to commit. |
 
 ### Auth (`setup_token.py`)
 
@@ -370,6 +495,73 @@ Exchanges it for a long-lived user token, walks to the **Page access token
 these to GitHub). Re-run only if the token is invalidated (password change,
 permission revoke, Meta-side invalidation). After re-running, update the
 `IG_ACCESS_TOKEN` repo secret (paste the raw value, no quotes).
+
+---
+
+## Match log
+
+**[`logs/`](logs/) is the one place to find out what happened to a match.**
+One Markdown file per day, newest listed first in
+[`logs/README.md`](logs/README.md).
+
+It exists because nothing else survives a match. Every worker runs in its own
+Actions runner and `bot.db`, `state.json` and `data/` are all gitignored, so
+when the run ends the only record was its stdout — buried in the Actions UI
+and deleted after 90 days. Telegram tells you when something breaks; this tells
+you what happened.
+
+```
+## Manchester United vs AC Milan
+
+**16:45** · Club Friendly · carousel group `…` · 2 worker runs · id `54457598`
+
+16:16:04    worker started             first run
+16:16:22    crests checked             both found
+16:47:31    status 1H                  minute 3 · 0-0
+17:02:11 ❌ worker crashed             AttributeError: 'list' object has no…
+17:14:02    worker started             run 2
+17:15:40 ⚠️ live feed lost             no data from the scraper
+```
+
+**All times are German local** (CET/CEST, DST handled), and a match is filed
+under the German calendar day it kicks off on — so a 00:30 UTC MLS match
+appears under the following day, where you would look for it.
+
+How it is written, and why that way:
+
+- A **worker** appends events to Cloudinary at `logs/<match_id>.json`. It is
+  the sole writer for its own match, so there is no contention — the same
+  reason the carousel rendezvouses there.
+- The **dispatcher** renders every staged log into `logs/<day>.md` and commits
+  it in the same push as the pruned `matches.json`. It is a single serialised
+  writer that already pushes to master, so it is the only process that safely
+  can.
+- That render happens **once a day**, in the same 10:00 window as the prune. A
+  live match rewrites its log every minute, so committing per tick would mean a
+  commit every fifteen — far more churn than the fixture pruning that window
+  was introduced to fix. Nothing is lost by waiting: the events reach Cloudinary
+  as they happen, and Telegram still alerts you in real time. To read a log
+  before the daily pass, render it locally:
+
+  ```bash
+  python logbook.py            # write logs/<day>.md for every staged log
+  python logbook.py --print    # print them to the terminal instead
+  ```
+- **A respawned worker continues its log rather than replacing it.** The record
+  of why the first one died is the most valuable thing in the file; overwriting
+  it on restart would delete the evidence exactly when it started to matter.
+- **Every Telegram alert is logged automatically** — `main.py` wraps
+  `send_alert` rather than editing twenty call sites, so an alert added later
+  is recorded without anyone remembering to. What you were told and what was
+  recorded cannot drift apart.
+- Writes are debounced to once a minute, but warnings, errors, posts and
+  handovers flush immediately, and a **SIGTERM flushes everything** — a job
+  killed at its timeout is precisely the run whose log you want.
+- Logging never raises. Every function swallows its own exceptions: a log that
+  fails to write is worth strictly less than a post that goes out.
+
+Staged logs older than `RETAIN_DAYS` (14) are dropped from Cloudinary once
+rendered. The Markdown in git is the permanent copy.
 
 ---
 

@@ -37,6 +37,7 @@ Usage:
 """
 
 import argparse
+import difflib
 import json
 import os
 import sys
@@ -392,9 +393,26 @@ def main() -> int:
         if comp:
             key = resolve_competition(comp)
             if key is None:
-                known = ', '.join(sorted(COMPETITION_DISPLAY.values()))
-                problems.append(f"match {match_id}: unknown competition '{comp}'. "
-                                f"Known: {known}")
+                # No entry for this competition — but a badge uploaded by hand
+                # lands at the slugified name, and get_competition_logo_url
+                # looks there, so an uploaded badge means the name is
+                # deliberate rather than a typo. Accept it as typed.
+                from config import get_brand_logo_url, get_competition_logo_url
+                if get_competition_logo_url(comp, alert=False) != get_brand_logo_url():
+                    print(f'✔ match {match_id}: competition = {comp} (badge uploaded by hand)')
+                    continue
+                close = difflib.get_close_matches(
+                    comp, sorted(COMPETITION_DISPLAY.values()), n=5, cutoff=0.6)
+                hint = (f"Did you mean: {', '.join(close)}?"
+                        if close else
+                        f"Known: {', '.join(sorted(COMPETITION_DISPLAY.values()))}.")
+                problems.append(
+                    f"match {match_id}: '{comp}' isn't a competition the bot "
+                    f"knows, and no badge has been uploaded for it.\n"
+                    f"    {hint}\n"
+                    f"    If the name is right, supply a badge for it:\n"
+                    f"      python logo_fetch.py --local <file.png> "
+                    f"--competition \"{comp}\"")
                 continue
             official = COMPETITION_DISPLAY[key]
             if official != comp:
@@ -454,20 +472,39 @@ def main() -> int:
         print(f'\n✖ {len(problems)} problem(s):')
         for p in problems:
             print(f'  - {p}')
-        print(
-            "\nHow to fix an unresolved team:\n"
-            "  1. Find it on football-logos.cc — the page URL is "
-            "football-logos.cc/<country>/<slug>/\n"
-            "     (the did-you-mean hints above are real slugs from that site).\n"
-            "  2. Easiest: use the slug's spelling as the team name in "
-            "matches.json ('jeju-sk-fc' → \"Jeju SK FC\") and re-run this.\n"
-            "  3. Want a different name on the card? Add the team to "
-            "SITE_OVERRIDES (and, if needed, DISPLAY_NAMES / NICKNAMES) in "
-            "logo_fetch.py, re-run this, then push before match day.\n"
-            "  4. Team not on the site at all? Upload your own PNG:\n"
-            "     python logo_fetch.py --local crest.png \"Team Name\"  "
-            "— then re-run this."
-        )
+        # Only the guide that applies: a run that failed purely on competitions
+        # shouldn't be answered with four steps about team crests.
+        if any("isn't a competition" in p or 'competition' in p.split(':', 1)[-1][:40]
+               for p in problems):
+            print(
+                "\nHow to fix an unresolved competition:\n"
+                "  1. Check the spelling against the known names listed above, "
+                "and use one of those if it matches.\n"
+                "  2. New competition? Supply its badge yourself — any PNG, "
+                "ideally square and transparent:\n"
+                "     python logo_fetch.py --local badge.png --competition "
+                "\"Saudi PL\"  — then re-run this.\n"
+                "     The name you pass is the name to keep in matches.json; "
+                "the badge is found by it from then on.\n"
+                "  3. Want it fetched automatically instead, and the site "
+                "carries it? Add it to COMPETITIONS in logo_fetch.py, then "
+                "push before match day."
+            )
+        if not all("isn't a competition" in p for p in problems):
+            print(
+                "\nHow to fix an unresolved team:\n"
+                "  1. Find it on football-logos.cc — the page URL is "
+                "football-logos.cc/<country>/<slug>/\n"
+                "     (the did-you-mean hints above are real slugs from that site).\n"
+                "  2. Easiest: use the slug's spelling as the team name in "
+                "matches.json ('jeju-sk-fc' → \"Jeju SK FC\") and re-run this.\n"
+                "  3. Want a different name on the card? Add the team to "
+                "SITE_OVERRIDES (and, if needed, DISPLAY_NAMES / NICKNAMES) in "
+                "logo_fetch.py, re-run this, then push before match day.\n"
+                "  4. Team not on the site at all? Upload your own PNG:\n"
+                "     python logo_fetch.py --local crest.png \"Team Name\"  "
+                "— then re-run this."
+            )
         return 1
 
     print(f'\n✔ All {len(matches)} match(es) valid.')

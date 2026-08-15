@@ -316,27 +316,28 @@ def get_competition_logo_url(competition, alert=True):
     fall back to the 130 Yards brand logo — never an empty slot.
     """
     import requests
-    from logo_fetch import COMPETITIONS, COMPETITION_FOLDER, resolve_competition
+    from logo_fetch import (COMPETITIONS, COMPETITION_FOLDER, _slugify,
+                            resolve_competition)
     from telegram_notify import send_alert
 
     name = (competition or '').strip()
+    if not name:
+        return get_brand_logo_url()
 
     # Legacy hand-mapped tournament logos (the white WC 2026 mark).
     if name in CLOUDINARY_TOURNAMENT_LOGO:
         return f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/{CLOUDINARY_TOURNAMENT_LOGO[name]}"
 
+    # A competition the bot has no entry for is still worth looking up: an
+    # uploaded badge lands at the slugified name, exactly as `--local
+    # --competition` writes it. Checking here is what makes that command work
+    # without a code change — the same deal unknown team crests already get.
     key = resolve_competition(name)
+    known = key is not None
     if key is None:
-        if name and alert:
-            send_alert(
-                f"⚠️ '{name}' isn't a competition the bot knows, so its cards "
-                f"will show the 130 Yards logo instead of the competition's "
-                f"badge.\n\n"
-                f"Posts still go out and look fine — they're just missing the "
-                f"tournament badge. Adding a new competition needs a developer.",
-                key=f'comp:{name}', cooldown=1800,
-            )
-        return get_brand_logo_url()
+        key = _slugify(name)
+        if not key:
+            return get_brand_logo_url()
 
     if key in _COMP_URL_CACHE:
         return _COMP_URL_CACHE[key]
@@ -353,16 +354,20 @@ def get_competition_logo_url(competition, alert=True):
                 return url   # Cloudinary unreachable — optimistic, uncached
 
     if alert:
-        # Site-sourced logos can be re-fetched; site-less ones (friendly)
-        # need a manual --local upload.
-        fix = (f"python logo_fetch.py --competition \"{name}\"" if COMPETITIONS[key]
-               else f"python logo_fetch.py --local <file.png> --competition \"{name}\"")
+        # Only a competition the bot knows *and* that the source site carries
+        # can be fetched automatically. Everything else — friendlies, and any
+        # competition with no entry at all — needs a badge supplied by hand.
+        fetchable = known and COMPETITIONS[key]
+        fix = (f'python logo_fetch.py --competition "{name}"' if fetchable
+               else f'python logo_fetch.py --local <file.png> --competition "{name}"')
         send_alert(
             f"⚠️ We don't have a badge saved for '{name}', so its cards will "
             f"show the 130 Yards logo instead.\n\n"
             f"Posts still go out normally — this is cosmetic.\n\n"
-            f"To add one: run '{fix}'. It takes effect straight away, nothing "
-            f"needs pushing.",
+            f"To add one: run '{fix}'"
+            + ("" if fetchable else
+               " — point it at a PNG of the badge you want") +
+            f". It takes effect straight away, nothing needs pushing.",
             key=f'comp:{key}', cooldown=1800,
         )
     return get_brand_logo_url()

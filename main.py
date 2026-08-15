@@ -40,12 +40,28 @@ from football_scraper_dom import get_match_data
 from cloudinary_utils import fetch_match_photo, match_photo_exists
 from instagram import (post_to_instagram, post_carousel_to_instagram,
                        delete_instagram_post, get_post_permalink)
-from telegram_notify import send_alert, send_music_reminder
+from telegram_notify import send_alert as _send_alert_raw, send_music_reminder
 from overlay_scorebar import generate_overlay_scorecard
 from scorecard import generate_scorecard
 from stats_card import generate_stats_card
+import matchlog
 
 load_dotenv()
+
+
+# Every alert is also a log entry. Wrapping the import rather than editing
+# twenty call sites means an alert added later is recorded automatically —
+# what you were told and what was recorded can't drift apart.
+_ALERT_LEVEL = {'❌': matchlog.ERROR, '⚠️': matchlog.WARN, '🙋': matchlog.WARN}
+
+
+def send_alert(text: str, key: str | None = None, cooldown: int = 0) -> None:
+    matchlog.log(
+        'alert sent',
+        ' '.join(str(text).split())[:200],
+        level=_ALERT_LEVEL.get(str(text)[:2].strip(), matchlog.INFO),
+    )
+    _send_alert_raw(text, key=key, cooldown=cooldown)
 
 # ── Tunables ──────────────────────────────────────────────────────────────────
 REGISTRY_FILE       = 'matches.json'
@@ -290,9 +306,12 @@ def _generate_card(entry: dict, event_type: str, scraper_data: dict) -> str:
                                               away_name=entry['away_team'],
                                               competition=competition)
             print(f"[{match_id}] Using photo-overlay scorecard ({event_type}).")
+            matchlog.log(f'card {event_type}', 'photo overlay — your photo was used')
             return path
         except Exception as e:
             print(f"[{match_id}] Overlay scorecard failed ({e}) — falling back to template.")
+            matchlog.warn(f'card {event_type}',
+                          f'photo found but overlay failed, using template — {e}')
             send_alert(
                 f"⚠️ {_label(entry)}: the photo you sent couldn't be used for "
                 f"the {_moment(event_type)} scorecard.\n\n"
@@ -301,6 +320,8 @@ def _generate_card(entry: dict, event_type: str, scraper_data: dict) -> str:
                 f"different photo next time.\n\n"
                 f"Technical detail: {e}"
             )
+    if not photo_path:
+        matchlog.log(f'card {event_type}', 'template — no photo had been uploaded')
     return generate_scorecard(scraper_data, event_type=event_type,
                               match_id_override=match_id,
                               home_name=entry['home_team'],
@@ -360,6 +381,7 @@ def _generate_slides(entry: dict, event_type: str, scraper_data: dict) -> list[s
 
     if stats_path:
         paths.append(stats_path)
+        matchlog.log('stats page', 'rendered as slide 2')
     else:
         print(f"[{match_id}] No statistics published — posting the card alone.")
         send_alert(
@@ -426,6 +448,7 @@ def _run_group_pipeline(entry: dict, scraper_data: dict) -> bool:
                 os.remove(image_path)
     except Exception as e:
         print(f"[{match_id}] ❌ Carousel handover failed: {e}")
+        matchlog.error(f"handover to '{group}' failed", f'{type(e).__name__}: {e}')
         send_alert(
             f"❌ {_label(entry)}: couldn't add this match to the '{group}' "
             f"carousel.\n\n"
@@ -439,6 +462,9 @@ def _run_group_pipeline(entry: dict, scraper_data: dict) -> bool:
 
     mark_event_posted(match_id, 'FT')
     print(f"[{match_id}] ✅ Added to carousel group '{group}'.")
+    matchlog.log(f"handed to carousel '{group}'",
+                 'card is staged — the group posts once every match is in',
+                 force=True)
     # Let the dispatcher know now; if the nudge fails it picks the group up on
     # its next scheduled run anyway.
     nudge_dispatcher()
@@ -458,9 +484,11 @@ def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
         _, ig_id = _post_slides(entry, event_type, scraper_data)
         mark_event_posted(match_id, event_type)
         print(f"[{match_id}] ✅ {event_type} posted — IG ID: {ig_id}")
+        matchlog.log(f'posted {event_type}', f'IG {ig_id}', force=True)
         send_music_reminder(f"{_label(entry)} — {_moment(event_type)}", ig_id)
     except Exception as e:
         print(f"[{match_id}] ❌ Pipeline error ({event_type}): {e}")
+        matchlog.error(f'{event_type} post failed', f'{type(e).__name__}: {e}')
         # Do NOT mark as posted — will retry on next poll if status is unchanged
         send_alert(
             f"❌ {_label(entry)}: the {_moment(event_type)} scorecard did not "
@@ -500,10 +528,12 @@ def _photo_reminder(entry: dict, event_type: str, state_key: str,
 
     if match_photo_exists(match_id, event_type):
         print(f"[{match_id}] {event_type} photo already uploaded — no reminder sent.")
+        matchlog.log(f'photo {event_type}', 'already uploaded — no reminder needed')
         return
 
     moment = _moment(event_type)
     print(f"[{match_id}] Reminding about the {moment} photo.")
+    matchlog.log(f'photo {event_type}', 'none uploaded yet — reminder sent')
     send_alert(
         f"📸 {opener or f'{_label(entry)} — time to send the photo for the {moment} card.'}\n\n"
         f"Message the bot privately: /start → pick this match → "
@@ -586,6 +616,7 @@ def _early_pipeline(entry: dict, event_type: str, scraper_data: dict) -> tuple[l
     try:
         cids, ig_id = _post_slides(entry, event_type, scraper_data)
         print(f"[{match_id}] ✅ Early {event_type} posted — IG ID: {ig_id}")
+        matchlog.log(f'posted early {event_type}', f'IG {ig_id}', force=True)
         # Early posts are live immediately and mostly never corrected, so they
         # need their music now. A correction posts again and reminds again,
         # which is right: that is a different post.
@@ -593,6 +624,7 @@ def _early_pipeline(entry: dict, event_type: str, scraper_data: dict) -> tuple[l
         return cids, ig_id
     except Exception as e:
         print(f"[{match_id}] ❌ Early {event_type} pipeline error: {e}")
+        matchlog.error(f'early {event_type} post failed', f'{type(e).__name__}: {e}')
         send_alert(
             f"❌ {_label(entry)}: couldn't post the {_moment(event_type)} "
             f"scorecard early.\n\n"
@@ -634,8 +666,11 @@ def _delete_early_post(entry: dict, event_type: str) -> None:
     if ig_id:
         try:
             delete_instagram_post(ig_id)
+            matchlog.log('deleted superseded post', f'IG {ig_id}')
         except Exception as e:
             print(f"[{match_id}] Warning: Instagram delete failed ({ig_id}): {e}")
+            matchlog.warn('delete failed — needs you',
+                          f'IG {ig_id} is still up: {e}')
             link = get_post_permalink(ig_id) or f"media id {ig_id}"
             send_alert(
                 f"🙋 Please delete this post manually — the bot can't:\n"
@@ -674,11 +709,18 @@ def match_worker(entry: dict):
     print(f"[{match_id}] Worker started — {entry['home_team']} vs {entry['away_team']}"
           f"  (knockout={is_knockout}"
           f"{f', carousel={group}' if group else ''})")
+    matchlog.start(entry)
+    matchlog.log('settings', f"knockout={is_knockout} post_ht={entry.get('post_ht', True)} "
+                             f"stats={bool(entry.get('post_ft_stats'))} "
+                             f"carousel={group or 'none'}")
 
     # Pre-kickoff crest check: warn now, while there is still time to fix it,
     # instead of discovering a logo-less card at HT.
     missing_crests = [t for t in (entry['home_team'], entry['away_team'])
                       if get_crest_url(t, alert=False) is None]
+    matchlog.log('crests checked',
+                 f"missing: {', '.join(missing_crests)}" if missing_crests else 'both found',
+                 level=matchlog.WARN if missing_crests else matchlog.INFO)
     if missing_crests:
         send_alert(
             f"⚠️ {_label(entry)} kicks off shortly, but we don't have a badge "
@@ -719,11 +761,16 @@ def match_worker(entry: dict):
             s.setdefault(k, v)
         _save_state()
 
+    # The poll loop runs once a minute for up to three hours; only transitions
+    # are worth recording, so remember what was last written to the log.
+    logged_status, logged_score = None, None
+
     while True:
         now = datetime.now(timezone.utc)
 
         if now > deadline_utc:
             print(f"[{match_id}] Safety ceiling reached — stopping worker.")
+            matchlog.warn('gave up', 'safety ceiling reached — match ran too long')
             break
 
         # ── Poll the scraper — one fetch drives the whole iteration ───────────
@@ -739,6 +786,8 @@ def match_worker(entry: dict):
             outage_secs = (now - failing_since).total_seconds()
             print(f"[{match_id}] Scraper fetch failed "
                   f"({outage_secs / 60:.0f} min into the outage).")
+            if outage_secs < 60:
+                matchlog.warn('live feed lost', 'no data from the scraper')
             send_alert(
                 f"⚠️ {_label(entry)}: we've lost the live score feed for this "
                 f"match.\n\n"
@@ -760,6 +809,9 @@ def match_worker(entry: dict):
 
             print(f"[{match_id}] Scraper down since {failing_since:%H:%M}Z — "
                   f"posting FT from the last cached scrape.")
+            matchlog.warn('feed still down at full time',
+                          f'{outage_secs / 60:.0f} min out — posting FT from the '
+                          f'last score we saw')
             send_alert(
                 f"⚠️ {_label(entry)}: the live score feed has been down for "
                 f"{outage_secs / 60:.0f} minutes and this match should have "
@@ -819,6 +871,17 @@ def match_worker(entry: dict):
         print(f"[{match_id}] status={raw_status} minute={minute} score={current_score[0]}-{current_score[1]}"
               f"  ht_posted={ht_posted}  ft_posted={ft_posted}"
               f"  early_ht={early_ht_posted}  early_ft={early_ft_posted}")
+
+        if raw_status != logged_status:
+            matchlog.log(f'status {raw_status}',
+                         f"minute {minute} · {current_score[0]}-{current_score[1]}")
+            logged_status = raw_status
+        if current_score != logged_score:
+            if logged_score is not None:
+                matchlog.log('score',
+                             f"{logged_score[0]}-{logged_score[1]} → "
+                             f"{current_score[0]}-{current_score[1]} at {minute}'")
+            logged_score = current_score
 
         # ══════════════════════════════════════════════════════════════════════
         # PHOTO REMINDERS  (ask before the card is needed, not after)
@@ -1057,6 +1120,7 @@ def match_worker(entry: dict):
     with WORKERS_LOCK:
         ACTIVE_WORKERS.discard(match_id)
     print(f"[{match_id}] Worker exited.")
+    matchlog.finish('worker exited', 'nothing further to do for this match')
 
 
 def _worker_safe(entry: dict) -> bool:
@@ -1075,6 +1139,9 @@ def _worker_safe(entry: dict) -> bool:
         traceback.print_exc()
         with WORKERS_LOCK:
             ACTIVE_WORKERS.discard(match_id)
+        matchlog.bind(match_id)
+        matchlog.finish('worker crashed', traceback.format_exc().strip(),
+                        level=matchlog.ERROR, match_id=match_id)
         send_alert(
             f"❌ {_label(entry)}: the bot stopped following this match "
             f"unexpectedly.\n\n"

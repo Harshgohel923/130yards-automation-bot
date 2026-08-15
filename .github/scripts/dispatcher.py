@@ -17,6 +17,7 @@ import os
 import subprocess
 import sys
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -43,6 +44,24 @@ DISPATCH_LOOKAHEAD    = 15 * 60   # how far ahead this dispatcher looks
 # gives up at kickoff + 210 min (MAX_MATCH_DURATION), so by six hours there is
 # nothing left that could still act on the entry.
 PRUNE_AFTER_HOURS = 6
+
+# Pruning per fixture meant one commit per distinct kickoff time — six on a
+# normal Saturday, since a fixture crosses PRUNE_AFTER_HOURS whenever its own
+# kickoff did, six hours earlier. It is pure housekeeping, so it is batched
+# into a single daily pass instead.
+#
+# 10:00 German time: late enough that even an overnight MLS kickoff (02:30
+# local) is past its six hours by 08:30, early enough to be well clear of the
+# European afternoon. The dispatcher ticks four times inside the hour; the
+# first one does the work and the rest find nothing left to prune, which also
+# means a failed push simply retries fifteen minutes later.
+PRUNE_TZ = ZoneInfo('Europe/Berlin')
+PRUNE_HOUR_LOCAL = 10
+
+# If the daily window is missed entirely — the external cron was down for an
+# hour, say — don't let the registry grow until this time tomorrow.
+PRUNE_CATCHUP_HOURS = 24
+
 MATCHES_FILE = os.path.join(REPO_ROOT, 'matches.json')
 GIT_AUTHOR_NAME  = '130 Yards Bot'
 GIT_AUTHOR_EMAIL = 'bot@users.noreply.github.com'
@@ -204,14 +223,51 @@ def _prune_reason(entry: dict, now, running: set, pending_groups: set) -> str | 
     return f'kicked off {hours:.0f}h ago'
 
 
-def prune_finished_matches(registry: list, running: set):
+def _overdue_hours(entry: dict, now) -> float:
+    """How long this fixture has been prunable. Negative means not yet."""
+    try:
+        kickoff = datetime.fromisoformat(str(entry['kickoff_utc']).replace('Z', '+00:00'))
+    except (KeyError, ValueError):
+        return 0.0
+    deadline = kickoff + timedelta(hours=PRUNE_AFTER_HOURS)
+    return (now - deadline).total_seconds() / 3600
+
+
+def _daily_window(now) -> bool:
+    """True on the four ticks inside the daily housekeeping hour."""
+    return now.astimezone(PRUNE_TZ).hour == PRUNE_HOUR_LOCAL
+
+
+def _prune_window_open(removable: list, now) -> bool:
     """
-    Drop fixtures that can no longer need anything, and push the trimmed file.
+    Is this the tick that should do the daily tidy-up?
+
+    True during the daily window, or when something has been waiting so long
+    that the window was clearly missed. Nothing is stored between runs: both
+    answers come from the clock and the fixtures already in hand.
+    """
+    if _daily_window(now):
+        return True
+    worst = max((_overdue_hours(e, now) for e, _ in removable), default=0.0)
+    if worst >= PRUNE_CATCHUP_HOURS:
+        print(f'[dispatcher] Prune window was missed — a fixture has been '
+              f'finished for {worst:.0f}h, tidying up now')
+        return True
+    return False
+
+
+def prune_finished_matches(registry: list, running: set) -> tuple[list[str], str] | None:
+    """
+    Drop fixtures that can no longer need anything, and write the trimmed file.
 
     Conservative on purpose: a fixture only goes once it is past every deadline
     the bot has, has no worker running, and isn't holding up a carousel. A
     fixture that failed to post is dropped too — six hours on, no process will
     ever pick it up again, and the failure was alerted at the time.
+
+    Returns (paths, commit subject) for the caller to push, or None when there
+    was nothing to prune. Pushing is the caller's job so the registry and the
+    day's log travel in a single commit.
     """
     now = datetime.now(timezone.utc)
     pending_groups = _pending_carousel_groups(registry)
@@ -226,7 +282,16 @@ def prune_finished_matches(registry: list, running: set):
 
     if not removed:
         print('[dispatcher] Nothing to prune from matches.json')
-        return
+        return None
+
+    # Everything above is a dry run until the window opens: the fixtures stay
+    # in the file, and the only cost of waiting is a slightly longer registry.
+    if not _prune_window_open(removed, now):
+        local = now.astimezone(PRUNE_TZ)
+        print(f'[dispatcher] {len(removed)} fixture(s) ready to prune — holding '
+              f'until the {PRUNE_HOUR_LOCAL:02d}:00 pass '
+              f'(now {local:%H:%M} {local.tzname()})')
+        return None
 
     for entry, reason in removed:
         print(f'[dispatcher] Pruning {entry.get("match_id")} '
@@ -238,9 +303,52 @@ def prune_finished_matches(registry: list, running: set):
 
     lines = '\n'.join(f'- {e.get("home_team")} vs {e.get("away_team")} '
                       f'({e.get("kickoff_utc")})' for e, _ in removed)
-    message = (f'chore: remove {len(removed)} finished '
+    subject = (f'remove {len(removed)} finished '
                f'fixture{"s" if len(removed) != 1 else ""}\n\n{lines}\n')
-    _push_registry(message)
+    return ['matches.json'], subject
+
+
+def update_logbook(now) -> tuple[list[str], str] | None:
+    """
+    Render the per-match logs into `logs/<day>.md`.
+
+    Once a day, in the same window as the prune, so the two housekeeping jobs
+    share one commit. A live match rewrites its log every minute, so doing this
+    per tick would mean a commit every fifteen — far more churn than the
+    fixture pruning this window was introduced to fix.
+
+    Nothing is lost by waiting: the logs are on Cloudinary the moment they are
+    written, and `python logbook.py` renders them locally whenever you want to
+    read one before the daily pass.
+
+    Imported lazily, like the carousel: a fault in the log renderer must never
+    stop matches being dispatched. Logging is the least important thing here.
+    """
+    if not _daily_window(now):
+        return None
+
+    try:
+        import logbook
+    except Exception as e:
+        print(f'[dispatcher] WARNING: logbook unavailable ({e})')
+        return None
+
+    try:
+        changed, dropped = logbook.sync(REPO_ROOT)
+    except Exception as e:
+        print(f'[dispatcher] WARNING: could not update the logbook: {e}')
+        return None
+
+    if dropped:
+        print(f'[dispatcher] Dropped {dropped} staged log(s) past retention')
+    if not changed:
+        print('[dispatcher] Logbook already current')
+        return None
+
+    print(f'[dispatcher] Logbook updated: {", ".join(changed)}')
+    days = sorted({os.path.basename(p)[:-3] for p in changed
+                   if not p.endswith('README.md')})
+    return changed, f'update match log ({", ".join(days) or "index"})\n'
 
 
 def _git(*args) -> bool:
@@ -254,9 +362,9 @@ def _git(*args) -> bool:
     return True
 
 
-def _push_registry(message: str) -> None:
+def _push(paths: list[str], message: str) -> None:
     """
-    Commit matches.json and push it to master.
+    Commit the given paths and push them to master.
 
     Best-effort: this runner is thrown away either way, so a failed push costs
     nothing but a retry on the next tick. Rebasing first handles the case where
@@ -266,16 +374,16 @@ def _push_registry(message: str) -> None:
         return
     if not _git('config', 'user.email', GIT_AUTHOR_EMAIL):
         return
-    if not _git('add', 'matches.json'):
+    if not _git('add', *paths):
         return
     if not _git('commit', '-m', message):
-        print('[dispatcher] Nothing staged — matches.json was already current')
+        print('[dispatcher] Nothing staged — the tree was already current')
         return
     # Pull anything pushed since checkout so the push can't be rejected for
     # being behind; if that fails, leave it — the next tick tries again.
     _git('pull', '--rebase', 'origin', 'master')
     if _git('push', 'origin', 'HEAD:master'):
-        print('[dispatcher] Pushed the trimmed matches.json to master')
+        print(f'[dispatcher] Pushed to master: {", ".join(paths)}')
 
 
 def main():
@@ -326,7 +434,18 @@ def main():
 
     # Then tidy the registry. After publishing, so a group that just went out
     # stops holding its fixtures back.
-    prune_finished_matches(registry, running)
+    pending = [c for c in (prune_finished_matches(registry, running),
+                           update_logbook(now)) if c]
+
+    # One commit for both: two pushes a tick would race each other for no gain,
+    # and the registry and the log describe the same fifteen minutes anyway.
+    if pending:
+        paths = [p for c in pending for p in c[0]]
+        subjects = [c[1] for c in pending]
+        message = ('chore: ' + subjects[0] if len(subjects) == 1
+                   else 'chore: update fixtures and match log\n\n'
+                        + '\n\n'.join(s.strip() for s in subjects) + '\n')
+        _push(paths, message)
 
 
 if __name__ == '__main__':

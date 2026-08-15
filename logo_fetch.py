@@ -416,6 +416,8 @@ COMPETITIONS = {
     'fifa-club-world-cup':    ('tournaments', 'fifa-club-world-cup', None),
     'fifa-world-cup':         ('tournaments', 'fifa-world-cup-2026', 'white'),
     'concacaf-champions-cup': ('tournaments', 'concacaf-champions-cup', None),
+    'mls':                    ('usa', 'mls', None),
+    'saudi-pro-league':       ('saudi-arabia', 'saudi-professional-league', None),
     # Not on football-logos.cc — the logo has to be uploaded by hand:
     #   python logo_fetch.py --local <file.png> --competition "Leagues Cup"
     'leagues-cup':            None,
@@ -464,6 +466,15 @@ COMPETITION_ALIASES = {
     'leagues-cup-2026': 'leagues-cup',
     'concacaf-champions-league': 'concacaf-champions-cup',
     'ccc': 'concacaf-champions-cup',
+    'major-league-soccer': 'mls',
+    'usa-mls': 'mls',
+    # The site files it as "saudi-professional-league"; everyone else, and the
+    # scraper, calls it something shorter.
+    'saudi-professional-league': 'saudi-pro-league',
+    'saudi-pl': 'saudi-pro-league',
+    'saudi-league': 'saudi-pro-league',
+    'roshn-saudi-league': 'saudi-pro-league',
+    'spl': 'saudi-pro-league',
     'friendlies': 'friendly',
     'club-friendly': 'friendly',
     'club-friendlies': 'friendly',
@@ -495,6 +506,8 @@ COMPETITION_DISPLAY = {
     'fifa-club-world-cup': 'FIFA Club World Cup',
     'fifa-world-cup': 'FIFA World Cup',
     'concacaf-champions-cup': 'CONCACAF Champions Cup',
+    'mls': 'MLS',
+    'saudi-pro-league': 'Saudi Pro League',
     'leagues-cup': 'Leagues Cup',
     'friendly': 'Club Friendly',
 }

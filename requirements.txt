@@ -4,5 +4,6 @@ requests
 python-dotenv
 apscheduler
 Pillow
+tzdata
 opencv-python
 python-telegram-bot
