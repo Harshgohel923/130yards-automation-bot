@@ -1,17 +1,5 @@
 [
   {
-    "match_id": "54492623",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Tottenham-vs-Hoffenheim/54492623",
-    "kickoff_utc": "2026-08-15T14:00:00Z",
-    "home_team": "Tottenham Hotspur",
-    "away_team": "Hoffenheim",
-    "competition": "Club Friendly",
-    "post_ht": false,
-    "knockout_match": true,
-    "records": [],
-    "carousel_group": "1"
-  },
-  {
     "match_id": "54457598",
     "scraper_url": "https://m.allfootballapp.com/match/Main/Man-Utd-vs-Milan/54457598",
     "kickoff_utc": "2026-08-15T14:45:00Z",
@@ -57,42 +45,6 @@
     "post_ht": false,
     "post_ft_stats": true,
     "knockout_match": false,
-    "records": []
-  },
-  {
-    "match_id": "54554484",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/leeds-united-vs-augsburg/54554484",
-    "kickoff_utc": "2026-08-15T14:00:00Z",
-    "home_team": "Leeds United",
-    "away_team": "Augsburg",
-    "competition": "Club Friendly",
-    "post_ht": false,
-    "carousel_group": "1",
-    "knockout_match": true,
-    "records": []
-  },
-  {
-    "match_id": "54527180",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/brentford-vs-eintracht-frankfurt/54527180",
-    "kickoff_utc": "2026-08-15T14:00:00Z",
-    "home_team": "Brentford",
-    "away_team": "Eintracht Frankfurt",
-    "competition": "Club Friendly",
-    "post_ht": false,
-    "carousel_group": "1",
-    "knockout_match": true,
-    "records": []
-  },
-  {
-    "match_id": "54527183",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/newcastle-united-vs-bayer-leverkusen/54527183",
-    "kickoff_utc": "2026-08-15T14:00:00Z",
-    "home_team": "Newcastle United",
-    "away_team": "Bayer Leverkusen",
-    "competition": "Club Friendly",
-    "post_ht": false,
-    "carousel_group": "1",
-    "knockout_match": true,
     "records": []
   },
   {
