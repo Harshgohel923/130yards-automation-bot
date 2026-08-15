@@ -33,7 +33,7 @@
     "post_ht": false,
     "knockout_match": true,
     "records": [],
-    "carousel_group": "54492623-54457598-54468870"
+    "carousel_group": "1"
   },
   {
     "match_id": "54457598",
@@ -58,5 +58,89 @@
     "knockout_match": true,
     "records": [],
     "carousel_group": "54492623-54457598-54468870"
+  },
+  {
+    "match_id": "54493153",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/deportivo-alavez-vs-getafe/54493153",
+    "kickoff_utc": "2026-08-15T17:30:00Z",
+    "home_team": "Deportivo",
+    "away_team": "Getafe",
+    "competition": "La Liga",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  },
+  {
+    "match_id": "54493161",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/sevilla-vs-rayo-vallecano/54493161",
+    "kickoff_utc": "2026-08-15T19:30:00Z",
+    "home_team": "Sevilla",
+    "away_team": "Rayo Vallecano",
+    "competition": "La Liga",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  },
+  {
+    "match_id": "54554484",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/leeds-united-vs-augsburg/54554484",
+    "kickoff_utc": "2026-08-15T14:00:00Z",
+    "home_team": "Leeds United",
+    "away_team": "Augsburg",
+    "competition": "Club Friendly",
+    "post_ht": false,
+    "carousel_group": "1",
+    "knockout_match": true,
+    "records": []
+  },
+  {
+    "match_id": "54527180",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/brentford-vs-eintracht-frankfurt/54527180",
+    "kickoff_utc": "2026-08-15T14:00:00Z",
+    "home_team": "Brentford",
+    "away_team": "Eintracht Frankfurt",
+    "competition": "Club Friendly",
+    "post_ht": false,
+    "carousel_group": "1",
+    "knockout_match": true,
+    "records": []
+  },
+  {
+    "match_id": "54527183",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/newcastle-united-vs-bayer-leverkusen/54527183",
+    "kickoff_utc": "2026-08-15T14:00:00Z",
+    "home_team": "Newcastle United",
+    "away_team": "Bayer Leverkusen",
+    "competition": "Club Friendly",
+    "post_ht": false,
+    "carousel_group": "1",
+    "knockout_match": true,
+    "records": []
+  },
+  {
+    "match_id": "54533569",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/al-nassr-fc-vs-al-fateh/54533569",
+    "kickoff_utc": "2026-08-15T18:00:00Z",
+    "home_team": "Al-Nassr",
+    "away_team": "Al Fateh",
+    "competition": "Saudi PL",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  },
+  {
+    "match_id": "54329126",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/nashville-sc-vs-inter-miami-cf/54329126",
+    "kickoff_utc": "2026-08-16T00:30:00Z",
+    "home_team": "Nashville SC",
+    "away_team": "Inter Miami",
+    "competition": "MLS",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
   }
 ]
