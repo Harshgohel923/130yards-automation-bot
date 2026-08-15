@@ -1,17 +1,5 @@
 [
   {
-    "match_id": "54468870",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Dortmund-vs-Roma/54468870",
-    "kickoff_utc": "2026-08-15T15:30:00Z",
-    "home_team": "Borussia Dortmund",
-    "away_team": "Roma",
-    "competition": "Club Friendly",
-    "post_ht": false,
-    "knockout_match": true,
-    "records": [],
-    "carousel_group": "54492623-54457598-54468870"
-  },
-  {
     "match_id": "54493153",
     "scraper_url": "https://m.allfootballapp.com/match/Main/deportivo-alavez-vs-getafe/54493153",
     "kickoff_utc": "2026-08-15T17:30:00Z",
