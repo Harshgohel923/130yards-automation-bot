@@ -8,7 +8,8 @@
     "competition": "Club Friendly",
     "post_ht": false,
     "knockout_match": true,
-    "records": []
+    "records": [],
+    "post_ft_stats": true
   },
   {
     "match_id": "54461363",
@@ -19,7 +20,8 @@
     "competition": "Ger LTC",
     "post_ht": false,
     "knockout_match": true,
-    "records": []
+    "records": [],
+    "post_ft_stats": true
   },
   {
     "match_id": "54492623",
@@ -30,7 +32,8 @@
     "competition": "Club Friendly",
     "post_ht": false,
     "knockout_match": true,
-    "records": []
+    "records": [],
+    "carousel_group": "54492623-54457598-54468870"
   },
   {
     "match_id": "54457598",
@@ -41,7 +44,8 @@
     "competition": "Club Friendly",
     "post_ht": false,
     "knockout_match": true,
-    "records": []
+    "records": [],
+    "carousel_group": "54492623-54457598-54468870"
   },
   {
     "match_id": "54468870",
@@ -52,6 +56,7 @@
     "competition": "Club Friendly",
     "post_ht": false,
     "knockout_match": true,
-    "records": []
+    "records": [],
+    "carousel_group": "54492623-54457598-54468870"
   }
 ]
