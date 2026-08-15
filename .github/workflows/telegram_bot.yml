@@ -7,6 +7,15 @@ on:
 # by scanning run names — same stateless dedup as match workers.
 run-name: telegram-bot
 
+# Exactly one bot process may hold the token. Two of them long-polling the same
+# bot split incoming updates randomly between them, so a conversation started
+# on one instance loses its photo to the other — a failure that looks like the
+# bot ignoring you. The dispatcher's run-name check normally prevents a second
+# launch; this makes it an invariant rather than a race it has to win.
+concurrency:
+  group: telegram-photo-bot
+  cancel-in-progress: false
+
 permissions:
   actions: read   # watchdog lists match_bot.yml runs to know when to stop
 

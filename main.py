@@ -1059,11 +1059,18 @@ def match_worker(entry: dict):
     print(f"[{match_id}] Worker exited.")
 
 
-def _worker_safe(entry: dict):
-    """Run match_worker and alert if it crashes — a dead thread is silent."""
+def _worker_safe(entry: dict) -> bool:
+    """
+    Run match_worker and alert if it crashes — a dead worker is silent.
+
+    Returns True if the worker finished cleanly, False if it crashed, so a
+    caller that owns a process (rather than a thread) can still exit non-zero
+    and leave a red run behind it.
+    """
     match_id = entry['match_id']
     try:
         match_worker(entry)
+        return True
     except Exception as e:
         traceback.print_exc()
         with WORKERS_LOCK:
@@ -1076,6 +1083,7 @@ def _worker_safe(entry: dict):
             f"on.\n\n"
             f"Technical detail: {e}"
         )
+        return False
 
 
 # ── Registry checker (runs on APScheduler interval) ──────────────────────────

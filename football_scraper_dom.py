@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import traceback
 
 import requests
 
@@ -70,6 +71,19 @@ def get_match_data(url: str) -> dict | None:
     Returns None if the page cannot be fetched or parsed.
     Also saves the result to data/<match_id>-<home>-vs-<away>.json.
     """
+    try:
+        return _parse_match_page(url)
+    except Exception:
+        # A payload shaped in a way we have never seen must not kill the run.
+        # The poll loop already treats None as an outage: it alerts, keeps
+        # checking every minute, and falls back to the last good scrape at
+        # full time. Raising here would instead take the worker down mid-match.
+        print(f"[scraper] Unexpected payload shape for {url}:")
+        traceback.print_exc()
+        return None
+
+
+def _parse_match_page(url: str) -> dict | None:
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -128,6 +142,21 @@ def get_match_data(url: str) -> dict | None:
             return "No data available"
         return {k: v for k, v in d.items() if k != "name"}
 
+    # ── Statistics arrive in two shapes ───────────────────────────────────────
+    # Once there is something to report the feed sends a dict
+    # ({"team_A": …, "team_B": …, "list": [...]}); while there is nothing yet it
+    # sends an empty list instead. That gap matters most in the minutes right
+    # after kickoff, when `status` has already flipped away from "Fixture" but
+    # no statistic has been published — so normalise once here rather than
+    # leaving each reader below to guess which shape arrived.
+    ov_stats_raw = mds["matchOverviewFormation"].get("statistics")
+    if not isinstance(ov_stats_raw, dict):
+        ov_stats_raw = {}
+
+    raw_events = mds["matchOverviewFormation"].get("events")
+    if not isinstance(raw_events, list):
+        raw_events = []
+
     if status == "Fixture":
         formatted_events = "Match has not started yet"
         formatted_stats  = "Match has not started yet"
@@ -135,7 +164,7 @@ def get_match_data(url: str) -> dict | None:
         # ── 3. Parse events ───────────────────────────────────────────────────
         formatted_events = []
 
-        for item in mds["matchOverviewFormation"].get("events", []):
+        for item in raw_events:
             minute = f"{item['minute']}'"
 
             for team_name, raw_team_events in [
@@ -249,10 +278,10 @@ def get_match_data(url: str) -> dict | None:
                         })
 
         # ── 4. Parse statistics ───────────────────────────────────────────────
-        raw_stats       = mds["matchOverviewFormation"]["statistics"].get("list", [])
+        raw_stats       = ov_stats_raw.get("list", [])
         formatted_stats = {}
 
-        for stat in raw_stats:
+        for stat in raw_stats if isinstance(raw_stats, list) else []:
             stat_name = stat.get("type", "")
             val_home  = stat.get("team_A", {}).get("value", "0")
             val_away  = stat.get("team_B", {}).get("value", "0")
@@ -272,12 +301,8 @@ def get_match_data(url: str) -> dict | None:
             formatted_stats[stat_name] = {"home": home_v, "away": away_v}
 
     # ── 5. Build output object ────────────────────────────────────────────────
-    maf          = mds.get("matchAnalysisFormation", {})
-    ov_stats_raw = mds["matchOverviewFormation"]["statistics"]
- 
-    if not isinstance(ov_stats_raw, dict):
-        ov_stats_raw = {}
- 
+    maf = mds.get("matchAnalysisFormation", {})
+
     # For fixtures, statistics and events are plain strings, not dicts
     if status == "Fixture":
         output_statistics = "Match has not started yet"

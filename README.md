@@ -89,9 +89,9 @@ Each worker thread handles one match end-to-end:
 - **Photo reminders** at 35', 80' and 110' — see *Reminders* below.
 - **Early posting**: posts the HT card at scraper minute 45 and the FT card
   at minute 90, without waiting for the official whistle. If the score
-  changes before the whistle (stoppage-time goal), it posts a corrected card
-  and alerts you to delete the outdated one (IG's delete API is broken —
-  see *Known limitations*).
+  changes before the whistle (stoppage-time goal), it deletes the outdated
+  post and puts up a corrected card. If the delete fails you get a 🙋 alert
+  with the permalink instead — see *Deleting a superseded post*.
 - Handles extra time and penalty shootouts (shootout goals are backed out of
   the FT score; 120' shootout events are excluded from scorer lines).
 - Worker crashes are caught, alerted, and the worker is respawned on the next
@@ -350,7 +350,7 @@ options.
 
 | File | Role |
 |---|---|
-| `instagram.py` | IG Graph API: publish image posts, look up post permalinks, (broken) delete. |
+| `instagram.py` | IG Graph API: publish image posts, look up post permalinks, delete. |
 | `cloudinary_upload.py` | Uploads rendered cards and archives match data JSON. |
 | `cloudinary_utils.py` | Template fetch/cache (cache key includes the Cloudinary public id, so changing `CLOUDINARY_TEMPLATES` busts stale caches automatically), match-photo fetch. |
 | `database.py` | SQLite: which events have been posted per match (prevents duplicates). |
@@ -390,8 +390,30 @@ Emoji convention:
 | **🙋** | The bot can't finish this — a person must | **Yes** |
 | **📸 / 🎵** | A routine reminder — nothing is wrong | Only if you want the photo or the music |
 
-**🙋** is used for exactly one thing today: deleting a superseded post, which
-Instagram's API won't let the bot do (see *Known limitations*).
+**🙋** is used for exactly one thing today: a superseded post the bot tried and
+failed to delete (see *Deleting a superseded post*). It should now be rare —
+if you are seeing it regularly, the delete API has regressed again.
+
+### Deleting a superseded post
+
+When a stoppage-time goal changes the score after an early card has gone up,
+`_delete_early_post` removes the outdated post before the corrected one is
+published. This **works** — confirmed 2026-08-16 on Deportivo Alavés vs Getafe,
+where the 2–0 early FT card was deleted and reposted as 3–0.
+
+It did not always. Through July 2026 the endpoint failed for this account with
+a persistent Meta-side error (HTTP 400 `"Fatal"`, subcode **2207085**) despite
+a token holding `instagram_manage_contents` and requests matching the docs
+exactly — tested across API v19–v25 with both Page and user tokens. Meta fixed
+it server-side; nothing in this repo changed.
+
+The manual-delete fallback stays in place for the regression, and the two
+outcomes are easy to tell apart:
+
+| Outcome | What you see |
+|---|---|
+| Delete succeeded | Nothing. Silence is the success signal. `[instagram] Deleted post: <id>` in the run log. |
+| Delete failed | 🙋 alert with a tappable permalink, and `Warning: Instagram delete failed` in the run log. |
 
 ### Reminders
 
@@ -511,10 +533,6 @@ logo is skipped).
 
 ## Known limitations
 
-- **Instagram post deletion is broken Meta-side** (HTTP 400 "Fatal",
-  subcode 2207085, across API versions and token types). When an outdated
-  early post must go, the bot posts the corrected card and sends you the
-  outdated post's permalink to delete manually.
 - The scraper depends on allfootballapp's mobile DOM; a redesign there would
   need `football_scraper_dom.py` updated (you'd get scraper-failure alerts).
   It is the only live data source, so an outage stalls tracking — the
@@ -534,8 +552,8 @@ logo is skipped).
   member never finishes, the group waits four hours past the last kickoff before
   posting without it.
 - Grouped matches don't post early and don't get corrected. That's deliberate —
-  the group post happens once, after every result is final, so it never lands in
-  the situation the broken delete API can't get it out of.
+  the group post happens once, after every result is final, so a wrong scoreline
+  never goes up in the first place.
 
 ---
 
