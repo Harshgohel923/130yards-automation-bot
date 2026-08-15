@@ -1,17 +1,5 @@
 [
   {
-    "match_id": "54457598",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Man-Utd-vs-Milan/54457598",
-    "kickoff_utc": "2026-08-15T14:45:00Z",
-    "home_team": "Manchester United",
-    "away_team": "AC Milan",
-    "competition": "Club Friendly",
-    "post_ht": false,
-    "knockout_match": true,
-    "records": [],
-    "carousel_group": "54492623-54457598-54468870"
-  },
-  {
     "match_id": "54468870",
     "scraper_url": "https://m.allfootballapp.com/match/Main/Dortmund-vs-Roma/54468870",
     "kickoff_utc": "2026-08-15T15:30:00Z",
