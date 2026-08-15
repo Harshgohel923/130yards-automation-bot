@@ -1,17 +1,5 @@
 [
   {
-    "match_id": "54526283",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Chelsea-vs-Real-Sociedad/54526283",
-    "kickoff_utc": "2026-08-15T13:00:00Z",
-    "home_team": "Chelsea",
-    "away_team": "Real Sociedad",
-    "competition": "Club Friendly",
-    "post_ht": false,
-    "knockout_match": true,
-    "records": [],
-    "post_ft_stats": true
-  },
-  {
     "match_id": "54461363",
     "scraper_url": "https://m.allfootballapp.com/match/Main/Bayern-vs-Leipzig/54461363",
     "kickoff_utc": "2026-08-15T13:30:00Z",
