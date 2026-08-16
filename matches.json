@@ -1,19 +1,8 @@
 [
   {
-    "match_id": "54493161",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/sevilla-vs-rayo-vallecano/54493161",
-    "kickoff_utc": "2026-08-15T19:30:00Z",
-    "home_team": "Sevilla",
-    "away_team": "Rayo Vallecano",
-    "competition": "La Liga",
-    "post_ht": false,
-    "post_ft_stats": true,
-    "knockout_match": false,
-    "records": []
-  },
-  {
     "match_id": "54533569",
     "scraper_url": "https://m.allfootballapp.com/match/Main/al-nassr-fc-vs-al-fateh/54533569",
+    "desktop_url": "https://www.allfootballapp.com/match/54533569",
     "kickoff_utc": "2026-08-15T18:00:00Z",
     "home_team": "Al-Nassr",
     "away_team": "Al Fateh",
@@ -21,11 +10,27 @@
     "post_ht": false,
     "post_ft_stats": true,
     "knockout_match": false,
-    "records": []
+    "records": [],
+    "kickoff_local": "Sat 15 Aug 2026, 20:00 CEST"
+  },
+  {
+    "match_id": "54493161",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/sevilla-vs-rayo-vallecano/54493161",
+    "desktop_url": "https://www.allfootballapp.com/match/54493161",
+    "kickoff_utc": "2026-08-15T19:30:00Z",
+    "home_team": "Sevilla",
+    "away_team": "Rayo Vallecano",
+    "competition": "La Liga",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": [],
+    "kickoff_local": "Sat 15 Aug 2026, 21:30 CEST"
   },
   {
     "match_id": "54329126",
     "scraper_url": "https://m.allfootballapp.com/match/Main/nashville-sc-vs-inter-miami-cf/54329126",
+    "desktop_url": "https://www.allfootballapp.com/match/54329126",
     "kickoff_utc": "2026-08-16T00:30:00Z",
     "home_team": "Nashville SC",
     "away_team": "Inter Miami",
@@ -33,6 +38,7 @@
     "post_ht": false,
     "post_ft_stats": true,
     "knockout_match": false,
-    "records": []
+    "records": [],
+    "kickoff_local": "Sun 16 Aug 2026, 02:30 CEST"
   }
 ]

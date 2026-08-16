@@ -30,13 +30,14 @@ import os
 import signal
 import threading
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 
 import cloudinary
 import cloudinary.api
 import cloudinary.uploader
 import requests
 from dotenv import load_dotenv
+
+from config import LOCAL_TZ
 
 load_dotenv()
 
@@ -47,7 +48,8 @@ cloudinary.config(
 )
 
 FOLDER = 'logs'
-DISPLAY_TZ = ZoneInfo('Europe/Berlin')
+# One definition of "local", shared with the fixture list and the dispatcher.
+DISPLAY_TZ = LOCAL_TZ
 
 # Most poll iterations produce no events at all, so this rarely delays
 # anything; it exists to stop a burst of events becoming a burst of uploads.

@@ -1,11 +1,20 @@
 # All assets ids are from cloudinary here:
 
 import os
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
 load_dotenv()
 CLOUD_NAME = os.getenv('CLOUDINARY_CLOUD_NAME')
+
+# Anything a person reads is shown in German local time — the fixture list, the
+# match log, the dispatcher's housekeeping window. Everything *stored* stays
+# UTC, which is what the scraper speaks and the only form that can't be
+# misread. Using the IANA zone rather than a fixed offset is what makes the
+# summer/winter switch automatic: CEST (UTC+2) and CET (UTC+1) are chosen per
+# date, including on the changeover weekends.
+LOCAL_TZ = ZoneInfo('Europe/Berlin')
 
 # Normalize team names from scraper to config
 # Normalize team names from scraper to official FIFA names

@@ -9,6 +9,17 @@ not overwrite. So a new entry can be as short as:
 
     { "scraper_url": "https://m.allfootballapp.com/match/Main/x/54457613" }
 
+Either host works. The desktop site lists fixtures the mobile UI never shows,
+so a match is often easier to find there; paste that URL and the mobile one is
+computed for you (and vice versa — desktop_url is filled in either way):
+
+    { "scraper_url": "https://www.allfootballapp.com/match/54457613" }
+
+Fixtures are sorted by kick-off, earliest first, every time this runs, and
+kickoff_local is refreshed to show that kick-off in German time — 'Sun 16 Aug
+2026, 02:30 CEST'. It is derived from kickoff_utc, which stays the only
+kickoff the bot reads; editing kickoff_local moves nothing.
+
 Then it checks the file's structure — the mistakes that are easy to make when
 hand-editing fixtures and that no amount of name-checking would catch:
     * required fields present
@@ -47,10 +58,10 @@ from urllib.parse import urlparse
 
 import requests
 
-from config import get_crest_url
+from config import LOCAL_TZ, get_crest_url
 from football_scraper_dom import get_match_data
 from logo_fetch import (COMPETITION_DISPLAY, COMPETITIONS, _scrape_hash,
-                        fetch_competition_logo, fetch_logo,
+                        _slugify, fetch_competition_logo, fetch_logo,
                         normalize_team_name, resolve_competition, resolve_team)
 
 MATCHES_FILE = 'matches.json'
@@ -58,15 +69,21 @@ MATCHES_FILE = 'matches.json'
 REQUIRED_FIELDS = ('match_id', 'scraper_url', 'kickoff_utc', 'home_team', 'away_team')
 SCRAPER_HOST = 'm.allfootballapp.com'
 
+# The desktop site lists fixtures the mobile UI never surfaces, so a fixture is
+# often easiest to find there. Either host may be pasted into scraper_url; the
+# mobile one is written back, because only it carries the match data blob.
+DESKTOP_HOSTS = ('www.allfootballapp.com', 'allfootballapp.com')
+
 # Fields derivable from the match page, so only scraper_url has to be typed.
 AUTO_FIELDS = ('match_id', 'kickoff_utc', 'home_team', 'away_team', 'competition')
 
 # Key order for entries this script fills in, so a generated entry reads the
 # same way as a hand-written one. Anything unlisted keeps its position at the
 # end. Only reordered when a fixture is actually filled, to keep diffs quiet.
-FIELD_ORDER = ('match_id', 'scraper_url', 'kickoff_utc', 'home_team', 'away_team',
-               'competition', 'post_ht', 'post_ft_stats', 'knockout_match',
-               'carousel_group', 'records')
+FIELD_ORDER = ('match_id', 'scraper_url', 'desktop_url', 'kickoff_utc',
+               'kickoff_local', 'home_team', 'away_team', 'competition',
+               'post_ht', 'post_ft_stats', 'knockout_match', 'carousel_group',
+               'records')
 
 # Instagram will not accept more slides than this in one post, and a carousel
 # group is one slide per match.
@@ -78,6 +95,184 @@ def _reorder(entry: dict) -> dict:
     ordered = {k: entry[k] for k in FIELD_ORDER if k in entry}
     ordered.update({k: v for k, v in entry.items() if k not in ordered})
     return ordered
+
+
+def _match_id_in(url: str) -> str | None:
+    """
+    The match id inside either URL form.
+
+    Mobile is /match/Main/<teams>/<id>, desktop is bare /match/<id>, so rather
+    than pattern-match a shape that could change, take the last all-digit path
+    segment. Both forms end in one and nothing else in either path is numeric.
+    """
+    segments = [s for s in urlparse(url).path.split('/') if s]
+    for segment in reversed(segments):
+        if segment.isdigit():
+            return segment
+    return None
+
+
+def mobile_url(match_id: str, home: str | None = None, away: str | None = None) -> str:
+    """
+    The scrapeable URL for a match.
+
+    The slug is decoration — the server resolves purely on the trailing id,
+    verified against real, dummy and deliberately wrong slugs, all of which
+    return the same match. It is built from the team names anyway so the URL
+    stays readable when you check it.
+    """
+    slug = f'{_slugify(home)}-vs-{_slugify(away)}' if home and away else 'match'
+    return f'https://{SCRAPER_HOST}/match/Main/{slug}/{match_id}'
+
+
+def desktop_url(match_id: str) -> str:
+    """The desktop page — same match, the host with the fuller fixture list."""
+    return f'https://{DESKTOP_HOSTS[0]}/match/{match_id}'
+
+
+def _normalize_urls(matches: list, write: bool) -> tuple[list[str], list[str], bool]:
+    """
+    Accept either host in `scraper_url`, and keep `desktop_url` beside it.
+
+    Runs before autofill, which needs a URL it can actually scrape. A desktop
+    URL carries no team names, so the mobile URL is built with a placeholder
+    slug here and rewritten with the real names once autofill has them.
+
+    Returns (notes, problems, changed).
+    """
+    notes: list[str] = []
+    problems: list[str] = []
+    changed = False
+
+    for i, entry in enumerate(matches):
+        if not isinstance(entry, dict):
+            continue
+        url = str(entry.get('scraper_url') or '').strip()
+        if not url:
+            continue                     # reported by the structure check
+
+        label = entry.get('match_id') or f'entry #{i + 1}'
+        host = (urlparse(url).hostname or '').lower()
+        match_id = _match_id_in(url)
+
+        if match_id is None:
+            problems.append(
+                f"{label}: no match id found in scraper_url '{url}'. Both forms "
+                f"end in the numeric id — https://{SCRAPER_HOST}/match/Main/"
+                f"<teams>/<id> or https://{DESKTOP_HOSTS[0]}/match/<id>.")
+            continue
+
+        if host in DESKTOP_HOSTS:
+            entry['scraper_url'] = mobile_url(match_id,
+                                              entry.get('home_team'),
+                                              entry.get('away_team'))
+            notes.append(f"{label}: desktop URL → {entry['scraper_url']}")
+            changed = changed or write
+        elif host != SCRAPER_HOST:
+            continue                     # unknown host — the structure check reports it
+
+        if not entry.get('desktop_url'):
+            entry['desktop_url'] = desktop_url(match_id)
+            changed = changed or write
+
+        matches[i] = _reorder(entry)
+
+    return notes, problems, changed
+
+
+def _retitle_urls(matches: list, write: bool) -> bool:
+    """
+    Put the real team names into any URL still carrying the placeholder slug.
+
+    Only touches URLs this script generated a moment ago, so a hand-written
+    URL — however it spells its teams — is left exactly as typed.
+    """
+    changed = False
+    for entry in matches:
+        if not isinstance(entry, dict):
+            continue
+        url = str(entry.get('scraper_url') or '')
+        if '/match/Main/match/' not in url:
+            continue
+        match_id = _match_id_in(url)
+        home, away = entry.get('home_team'), entry.get('away_team')
+        if not (match_id and home and away):
+            continue
+        entry['scraper_url'] = mobile_url(match_id, home, away)
+        changed = changed or write
+    return changed
+
+
+def _local_kickoff(kickoff_utc: str) -> str | None:
+    """
+    'Sat 15 Aug 2026, 20:00 CEST' — the kickoff as a person in Germany reads it.
+
+    The zone abbreviation is the point of including it: CEST means summer time
+    is on, CET means it is off, so the field answers the daylight-saving
+    question by itself rather than leaving it to be worked out.
+    """
+    try:
+        parsed = datetime.fromisoformat(str(kickoff_utc).replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return None
+    return parsed.astimezone(LOCAL_TZ).strftime('%a %-d %b %Y, %H:%M %Z')
+
+
+def _refresh_local_times(matches: list, write: bool) -> tuple[list[str], bool]:
+    """
+    Keep `kickoff_local` in step with `kickoff_utc`.
+
+    Derived, always — `kickoff_utc` is the only kickoff the bot reads, and this
+    is recomputed from it on every run. Editing `kickoff_local` by hand moves
+    nothing; the change is reported here and then overwritten, so it can't
+    quietly disagree with the time the match is actually tracked at.
+    """
+    notes: list[str] = []
+    changed = False
+
+    for entry in matches:
+        if not isinstance(entry, dict):
+            continue
+        local = _local_kickoff(entry.get('kickoff_utc'))
+        if local is None:
+            continue                     # unparseable — the structure check has it
+        previous = entry.get('kickoff_local')
+        if previous == local:
+            continue
+        entry['kickoff_local'] = local
+        changed = changed or write
+        label = entry.get('match_id', '?')
+        notes.append(f'match {label}: {previous} → {local}' if previous
+                     else f'match {label}: {local}')
+
+    return notes, changed
+
+
+def _sort_by_kickoff(matches: list) -> bool:
+    """
+    Order the fixture list by kick-off, earliest first.
+
+    Purely for reading: nothing downstream cares about order — the dispatcher
+    scans the whole list every tick — but a file you hand-edit is easier to
+    work with in the order the matches actually happen. A fixture whose
+    kickoff can't be parsed sorts last rather than crashing the sort; the
+    structure check reports it separately.
+    """
+    def key(entry):
+        if not isinstance(entry, dict):
+            return (2, '')
+        try:
+            parsed = datetime.fromisoformat(
+                str(entry['kickoff_utc']).replace('Z', '+00:00'))
+        except (KeyError, ValueError, TypeError):
+            return (1, str(entry.get('match_id', '')))
+        return (0, parsed.isoformat())
+
+    ordered = sorted(matches, key=key)
+    if ordered == matches:
+        return False
+    matches[:] = ordered
+    return True
 
 
 def _kickoff_from(match_sample: dict) -> str | None:
@@ -194,13 +389,18 @@ def _check_structure(matches: list) -> list[str]:
         url = entry.get('scraper_url')
         if url:
             host = (urlparse(url).hostname or '').lower()
-            if host != SCRAPER_HOST:
+            if host in DESKTOP_HOSTS:
+                # Conversion runs before this and rewrites anything usable, so a
+                # desktop URL still here is one it couldn't read an id from —
+                # already reported, and saying "wrong host" too would be wrong.
+                pass
+            elif host != SCRAPER_HOST:
                 problems.append(
-                    f"match {match_id}: scraper_url host is '{host}' — it must be "
-                    f"'{SCRAPER_HOST}'. Only the mobile page carries the match "
-                    f"data blob; any other host returns nothing. Keep the trailing "
-                    f"id and rebuild the URL as "
-                    f"https://{SCRAPER_HOST}/match/Main/<teams>/<id>.")
+                    f"match {match_id}: scraper_url host is '{host}', which isn't "
+                    f"an AllFootball match page. Paste either the mobile URL "
+                    f"(https://{SCRAPER_HOST}/match/Main/<teams>/<id>) or the "
+                    f"desktop one (https://{DESKTOP_HOSTS[0]}/match/<id>) — the "
+                    f"desktop form is converted for you.")
             url_id = urlparse(url).path.rstrip('/').rsplit('/', 1)[-1]
             if entry.get('match_id') and url_id != entry['match_id']:
                 problems.append(
@@ -337,11 +537,16 @@ def main() -> int:
         print(f'✖ {MATCHES_FILE} could not be read: {e}')
         return 1
 
-    # Fill blank fields from the match page first, so the checks below see a
-    # complete entry and a new fixture only needs its scraper_url.
-    filled, fill_problems, changed = _autofill(matches, write=not args.check)
+    # Settle the URLs before anything reads them: a desktop URL becomes its
+    # mobile twin here, so autofill has a page it can actually scrape.
+    converted, url_problems, changed = _normalize_urls(matches, write=not args.check)
 
-    problems: list[str] = fill_problems + _check_structure(matches)
+    # Fill blank fields from the match page next, so the checks below see a
+    # complete entry and a new fixture only needs its scraper_url.
+    filled, fill_problems, filled_changed = _autofill(matches, write=not args.check)
+    changed = changed or filled_changed
+
+    problems: list[str] = url_problems + fill_problems + _check_structure(matches)
     renames: list[str] = []
     crest_cache: dict[str, str | None] = {}
 
@@ -441,6 +646,18 @@ def main() -> int:
                     problems.append(f"match {match_id}: no logo for competition "
                                     f"'{official}' — {e}")
 
+    if converted:
+        print('\nConverted from the desktop URL:' if not args.check
+              else '\nWould convert from the desktop URL:')
+        for c in converted:
+            # Re-read: the slug was filled in with the real names after autofill.
+            mid = c.split(':', 1)[0].strip()
+            final = next((e['scraper_url'] for e in matches
+                          if isinstance(e, dict) and str(e.get('match_id')) == mid
+                          and e.get('scraper_url')), None)
+            print(f'  {c.split(" → ")[0]} → {final}' if final else f'  {c}')
+        print('  ↳ check these point at the right match before pushing.')
+
     if filled:
         print('\nFilled from the match page:' if not args.check
               else '\nWould fill from the match page:')
@@ -458,6 +675,27 @@ def main() -> int:
         print('\nCarousel groups:')
         for n in notes:
             print(f'  {n}')
+
+    # Now the teams have been normalized, a URL built from a desktop link can
+    # carry their official names rather than the placeholder — or the scraper's
+    # spelling, which is what it would have picked up any earlier than this.
+    changed = _retitle_urls(matches, write=not args.check) or changed
+
+    local_notes, local_changed = _refresh_local_times(matches, write=not args.check)
+    changed = changed or local_changed
+    if local_notes:
+        print('\nKick-off in German time:' if not args.check
+              else '\nWould set the German kick-off time:')
+        for n in local_notes:
+            print(f'  {n}')
+
+    # Last, so the file is written in the order it will be read. Only after the
+    # structure check has passed, since that is what guarantees every
+    # kickoff_utc actually parses.
+    if _sort_by_kickoff(matches):
+        print('\nSorted fixtures by kick-off time.' if not args.check
+              else '\nWould sort fixtures by kick-off time.')
+        changed = changed or not args.check
 
     if changed:
         # Write-then-rename so a crash can never truncate the fixture file.

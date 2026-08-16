@@ -158,6 +158,8 @@ NICKNAMES = {
     'bilbao': 'athletic-club',
     'betis': 'real-betis',
     'sociedad': 'real-sociedad',
+    'vallecano': 'rayo-vallecano',      # the scraper's own spelling
+    'rayo': 'rayo-vallecano',
     'rcd-mallorca': 'mallorca',
     'rcd-espanyol': 'espanyol',
     # ── clubs: Mexico / MLS ──
@@ -199,6 +201,7 @@ NICKNAMES = {
     'inter-miami-cf': 'inter-miami',
     'boca': 'boca-juniors',
     'alnassr': 'al-nassr',
+    'al-nassr-fc': 'al-nassr',          # the scraper's own spelling
     'alhilal': 'al-hilal',
     'jeju-united': 'jeju-sk',
     'jeju-sk-fc': 'jeju-sk',

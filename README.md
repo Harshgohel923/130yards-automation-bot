@@ -444,6 +444,62 @@ python validate_matches.py --check     # dry run, changes nothing
 python validate_matches.py --no-upload # verify only, skip Cloudinary
 ```
 
+**Either host works in `scraper_url`.** The desktop site lists fixtures the
+mobile UI never surfaces, so a match is often far easier to find there — paste
+that URL and the mobile one is computed for you:
+
+```json
+{ "scraper_url": "https://www.allfootballapp.com/match/54457613" }
+```
+
+becomes
+
+```json
+{
+  "match_id": "54457613",
+  "scraper_url": "https://m.allfootballapp.com/match/Main/liverpool-vs-leeds-united/54457613",
+  "desktop_url": "https://www.allfootballapp.com/match/54457613",
+  …
+}
+```
+
+The conversion is reliable because the mobile slug is decoration: the server
+resolves on the trailing id alone — verified with real, dummy and deliberately
+wrong slugs, all of which return the same match. The slug is still built from
+the teams so the URL reads properly when you check it, and it is written after
+name normalization, so it carries `rayo-vallecano` rather than the scraper's
+`vallecano`. An existing mobile URL is never rewritten, however its teams are
+spelled. `desktop_url` is filled in either direction and is there for you, not
+the code — the bot derives the desktop page from `match_id` at runtime.
+
+**Fixtures are sorted by kick-off, earliest first,** on every run. Nothing
+downstream cares about order — the dispatcher scans the whole list each tick —
+but a file you hand-edit is easier to work with in the order matches happen.
+
+**`kickoff_local` shows the kick-off in German time**, recomputed from
+`kickoff_utc` on every run:
+
+```json
+"kickoff_utc":   "2026-08-16T00:30:00Z",
+"kickoff_local": "Sun 16 Aug 2026, 02:30 CEST",
+```
+
+The zone abbreviation is the useful part: **CEST means summer time is on, CET
+means it is off**, so the field answers the daylight-saving question rather
+than leaving it to be worked out. The conversion uses the IANA `Europe/Berlin`
+zone (`LOCAL_TZ` in `config.py`, shared with the match log), so the changeover
+weekends are handled exactly — a 01:30 UTC kickoff on 29 March 2026 reads
+03:30 CEST, because 02:00–03:00 local does not exist that night.
+
+It is **derived, never a source of truth**. `kickoff_utc` is the only kickoff
+the bot reads; editing `kickoff_local` moves nothing. A hand-edited value is
+reported and then overwritten:
+
+```
+Kick-off in German time:
+  match 54493161: Sat 15 Aug 2026, 18:00 CEST → Sat 15 Aug 2026, 21:30 CEST
+```
+
 Per entry it:
 
 1. Normalizes `home_team` / `away_team` to the official display name
@@ -687,7 +743,9 @@ aliases, and the `get_crest_url` / `get_competition_logo_url` lookups.
 {
   "match_id": "54457604",
   "scraper_url": "https://m.allfootballapp.com/match/Main/Liverpool-vs-Leeds-United/54457604",
+  "desktop_url": "https://www.allfootballapp.com/match/54457604",
   "kickoff_utc": "2026-08-02T23:00:00Z",
+  "kickoff_local": "Mon 3 Aug 2026, 01:00 CEST",
   "home_team": "Liverpool",
   "away_team": "Leeds United",
   "competition": "Club Friendly",
