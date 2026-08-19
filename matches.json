@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "match_id": "54529360",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Barcelona-vs-El-Ahly-Cairo/54529360",
+    "desktop_url": "https://www.allfootballapp.com/match/54529360",
+    "kickoff_utc": "2026-08-19T18:00:00Z",
+    "home_team": "Barcelona",
+    "away_team": "Al Ahly",
+    "competition": "Trofeo Joan Gamper",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": true,
+    "records": [],
+    "kickoff_local": "Wed 19 Aug 2026, 20:00 CEST"
+  },
+  {
+    "match_id": "54493154",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Atletico-vs-Malaga/54493154",
+    "desktop_url": "https://www.allfootballapp.com/match/54493154",
+    "kickoff_utc": "2026-08-19T19:00:00Z",
+    "home_team": "Atlético Madrid",
+    "away_team": "Malaga",
+    "competition": "La Liga",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": [],
+    "kickoff_local": "Wed 19 Aug 2026, 21:00 CEST"
+  }
+]
