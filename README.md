@@ -25,12 +25,15 @@ Europe's top-5 leagues, the UEFA Champions League, and pre-season friendlies.
    Gemini, and posts to Instagram.
 6. If you sent a match photo to the Telegram bot, the card is rendered as a
    photo overlay; otherwise the classic template card is used.
-7. Set `post_ft_stats` on a fixture and its FT post becomes a two-slide
+7. Set `post_lineups` on a fixture and the worker also posts the **starting
+   XIs** before kickoff, as a two-slide carousel — one team per slide, in the
+   order you choose with `lineups_first`.
+8. Set `post_ft_stats` on a fixture and its FT post becomes a two-slide
    carousel: the scorecard, then a **match statistics page**.
-8. Give several fixtures the same `carousel_group` id and they post as **one
+9. Give several fixtures the same `carousel_group` id and they post as **one
    carousel** instead of one post each — one scorecard per match, published by
    the dispatcher once the last of them has finished.
-9. Any failure anywhere sends you a descriptive Telegram alert.
+10. Any failure anywhere sends you a descriptive Telegram alert.
 
 ---
 
@@ -86,6 +89,10 @@ Each worker thread handles one match end-to-end:
 - **Pre-kickoff crest check**: the moment the worker starts, it verifies both
   teams' crests exist on Cloudinary and alerts you if not — while there is
   still time to fix it.
+- **Starting XI post** (opt in with `post_lineups`): from the moment the
+  worker starts it watches for the published line-ups and posts them as a
+  two-slide carousel, then leaves them alone. It gives up at kickoff + 5 min
+  with a 🙋 alert — see *The starting XI post* below.
 - **Photo reminders** at 35', 80' and 110' — see *Reminders* below.
 - **Early posting**: posts the HT card at scraper minute 45 and the FT card
   at minute 90, without waiting for the official whistle. If the score
@@ -232,6 +239,7 @@ fixture list rather than at full time.
 | `scorecard.py` | Classic template card: stamps crests, score, scorers (+minutes and event symbols), stage text, stadium onto the HT/FT template. Coordinates live at the top of the file as `*_BOX` tuples (picked with `pick_coords.py`). |
 | `overlay_scorebar.py` | Photo card: renders a dark scorebar panel over the bottom of a match photo — crests, big score, team-colored underlines (colors derived from the crest), scorer lines, competition logo on the panel border, penalties strip. |
 | `stats_card.py` | The FT statistics page — slide two of a `post_ft_stats` post. Same template as the scorecard (`scorecard.load_template`, seeded by `match_id`, so both slides share a background) but blurred and veiled, since the page is dense with small marks. Header is the **momentum chart**, not the score: slide one already carries that. Body is a priority-ordered stat list as team-coloured split bars. |
+| `lineup_card.py` | The pre-match starting XI page — one per team, posted as a two-slide carousel before kickoff. Draws the scraper's position grid as a pitch in perspective, each player a shirt in the team's own colours, with the bench, referee and conditions down the left. Falls back to a listed team sheet when the feed publishes names without positions. |
 | `carousel.py` | Carousel groups: the Cloudinary manifest store, the dispatcher nudge, and `publish_group`. See *Carousel groups* above. |
 | `caption.py` | Instagram caption via Gemini (2.5-flash → 2.0-flash → plain fallback), fed the score line, events, and the optional hand-written `records` from `matches.json`. The hashtag line comes from `hashtags.py`, not the model. |
 | `hashtags.py` | The five hashtags, built in code: competition, home team, away team, then each side's nickname. Names resolve through `logo_fetch`'s canonical slugs, so any spelling yields the same tags. |
@@ -275,6 +283,70 @@ Two degradations, neither of which costs you the post:
   falls back to a crest–VS–crest strip and the rest of the page is unaffected.
 - **No statistics at all** — `generate_stats_card` returns `None`, the scorecard
   posts on its own, and you get a ⚠️ alert saying so.
+
+### The starting XI post (`lineup_card.py`)
+
+Opt in per fixture with `"post_lineups": true`. **One page per team, posted as
+a two-slide carousel before kickoff** — `"lineups_first": "away"` puts the away
+side on slide one, otherwise the home side leads.
+
+The layout is the familiar broadcast team sheet: both crests either side of
+**VS** at the top with the opponent's badge dimmed, the bench down the left,
+the XI on the pitch.
+
+What it draws:
+
+- **A pitch in perspective** — the team's own goal at the bottom, the
+  opposition's at the top. The scraper gives each starter a grid position, not
+  coordinates: `position_x` is the band (`GK`, `D1`, `DM`, `M`, `AM`, `A`) and
+  `position_y` the side within it (`L`, `CL`, `C`, `CR`, `R`). Bands become
+  rows from the near goal up, sides become columns — so any shape the feed
+  reports renders without a per-formation template, and the **formation label**
+  (`4-2-3-1`) is counted off the rows rather than trusted from the feed. Each
+  row is spread across the pitch's width *at its own depth*, so the far rows
+  narrow the way they do on television.
+- **Columns sit part-way between an even spread and their nominal side.** An
+  even spread alone draws two wing-backs as a narrow pair in the middle; the
+  nominal sides alone leave a hole in the centre of a back four. The blend
+  keeps a flat four evenly spaced *and* pushes a lone wide player out to the
+  touchline.
+- **A drawn shirt per player**, in the team's own colours — curated in
+  `overlay_scorebar.TEAM_COLORS`, sampled from the crest otherwise, exactly as
+  the scorer underlines and the stats bars are. Squad number on the front, name
+  on a coloured plate underneath. The keeper wears the change colour.
+- **The bench** down the left column, surnames only, ending in `+N MORE` when a
+  national side names more than the column holds.
+- **Coach, referee and conditions** under the bench. Referee and conditions
+  (temperature, with the weather beneath it) come from the same feed block the
+  line-ups do; the **coach comes from `matches.json`**, because no feed carries
+  one — neither the mobile payload's formation block nor the desktop page has a
+  manager field. All three are routinely absent, so each is drawn only when it
+  exists and whichever remain close the gap.
+
+The header sits on the **pitch's** axis rather than the page's: the bench takes
+the left quarter, so crests centred on the canvas would read as off-centre above
+the pitch they belong to.
+
+**When it posts.** Line-ups are announced around an hour before kickoff and the
+worker starts 30 minutes before, so the card is normally ready on one of its
+first polls. The feed publishes the names first and the grid positions a few
+minutes later, so:
+
+- positions available → the pitch, immediately;
+- names but no positions → **wait**, until 5 minutes before kickoff, then post
+  the XI as a listed **team sheet** in place of the pitch, with the rest of the
+  page unchanged (some competitions never get positions — the feed reports this
+  itself as `formationFlag`);
+- nothing published by kickoff + 5 minutes → give up with a 🙋 alert.
+
+Nothing here can affect the rest of the match: the HT and FT posts read their
+own state and are never gated on the line-ups. A failed line-up post retries
+every minute until the deadline and alerts once (⚠️) if it never succeeds.
+
+> Colours come from the crest when a team isn't in `TEAM_COLORS` — accurate to
+> the badge, not always to the kit. Add the team there (`'Man City':
+> [(108, 171, 220), (28, 44, 92)]`) to pin its exact shirt colours; every other
+> card style picks the change up too.
 
 ### Assets: crests and logos (`logo_fetch.py`)
 
@@ -751,6 +823,9 @@ aliases, and the `get_crest_url` / `get_competition_logo_url` lookups.
   "competition": "Club Friendly",
   "post_ht": true,
   "post_ft_stats": true,
+  "post_lineups": true,
+  "lineups_first": "home",
+  "coaches": { "home": "A. Slot", "away": "D. Farke" },
   "knockout_match": false,
   "carousel_group": "sat-15aug",
   "records": ["Optional hand-written storylines used in the caption…"]
@@ -764,6 +839,9 @@ any reasonable spelling survives `validate_matches.py`.
 |---|---|
 | `post_ht` | Post a half-time card. Default true. |
 | `post_ft_stats` | Add the statistics page as slide two of the FT post. Ignored when the match is in a carousel group. |
+| `post_lineups` | Post the starting XIs as a two-slide carousel before kickoff. Default false. |
+| `lineups_first` | `"home"` (default) or `"away"` — which team's XI is slide one. Only meaningful with `post_lineups`. |
+| `coaches` | `{"home": …, "away": …}` — the managers, printed on the line-up cards. Optional, and the only line there no feed provides. |
 | `knockout_match` | Wait through a level scoreline at 90' for ET/penalties rather than posting early. |
 | `carousel_group` | Post with every other match carrying the same id, as one carousel. Omit for a normal solo post. Max 10 matches per group. |
 

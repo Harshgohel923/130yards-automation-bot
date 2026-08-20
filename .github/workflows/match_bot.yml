@@ -27,7 +27,12 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 245   # covers dispatcher lead (30m) + MAX_MATCH_DURATION (210m) + 5m buffer
+    timeout-minutes: 360   # GitHub's hard ceiling for a hosted-runner job, and the
+                           # wall clock starts at job start, not kickoff. That leaves
+                           # MAX_MATCH_DURATION (290m, measured from kickoff) reachable
+                           # for a normal fixture dispatched 30m early, and clipped to
+                           # ~285m for a lineup fixture dispatched 75m early. FT
+                           # detection ends the run long before either ceiling.
 
     steps:
       - uses: actions/checkout@v4

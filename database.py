@@ -7,9 +7,10 @@ Two tables:
 
   posted_events    — one row per (match_id, event_type) pair that has been
                      successfully posted to Instagram.
-                     event_type is either 'HT' or 'FT'.
+                     event_type is 'LINEUPS' (the pre-match starting XI
+                     carousel), 'HT' or 'FT'.
                      This is the idempotency guard: even if the process
-                     restarts mid-match, we never post the same scorecard twice.
+                     restarts mid-match, we never post the same card twice.
 """
 
 import sqlite3
@@ -43,7 +44,7 @@ def init_db():
 
             CREATE TABLE IF NOT EXISTS posted_events (
                 match_id    TEXT    NOT NULL,
-                event_type  TEXT    NOT NULL,   -- 'HT' or 'FT'
+                event_type  TEXT    NOT NULL,   -- 'LINEUPS', 'HT' or 'FT'
                 posted_at   TEXT    DEFAULT (datetime('now')),
                 PRIMARY KEY (match_id, event_type)
             );
@@ -78,7 +79,7 @@ def is_event_posted(match_id: str, event_type: str) -> bool:
 
 
 def mark_event_posted(match_id: str, event_type: str):
-    """Record that event_type ('HT' or 'FT') has been posted for match_id."""
+    """Record that event_type ('LINEUPS', 'HT' or 'FT') has been posted."""
     with _conn() as conn:
         conn.execute(
             'INSERT OR IGNORE INTO posted_events (match_id, event_type) VALUES (?, ?)',

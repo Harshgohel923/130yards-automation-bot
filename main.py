@@ -31,13 +31,14 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from dotenv import load_dotenv
 
 from allfootball_desktop import enrich as enrich_with_desktop
-from caption import generate_caption
+from caption import generate_caption, generate_lineup_caption
 from config import get_crest_url
 from carousel import nudge_dispatcher, submit_match
 from cloudinary_upload import upload_image, upload_match_data, delete_image
 from database import init_db, is_event_posted, mark_event_posted, upsert_match
 from football_scraper_dom import get_match_data
 from cloudinary_utils import fetch_match_photo, match_photo_exists
+from lineup_card import generate_lineup_card, has_lineups, has_positions
 from instagram import (post_to_instagram, post_carousel_to_instagram,
                        delete_instagram_post, get_post_permalink)
 from telegram_notify import send_alert as _send_alert_raw, send_music_reminder
@@ -70,13 +71,27 @@ POLL_INTERVAL_SECS  = 60       # how often to hit the scraper during a live matc
 REGISTRY_POLL_SECS  = 300      # how often to re-read matches.json for new entries
 # Start monitoring this many seconds before kickoff
 PRE_MATCH_WINDOW    = 5 * 60
+# Fixtures posting a starting XI need the worker up when the lineups drop,
+# around an hour before kickoff — mirrors the dispatcher's early window.
+LINEUP_PRE_MATCH_WINDOW = 75 * 60
 # Stop polling this many seconds after scheduled kickoff (safety ceiling; FT
-# detection will stop it sooner in practice — 210 min covers ET + full penalty shootout)
-MAX_MATCH_DURATION  = 210 * 60
+# detection will stop it sooner in practice — 290 min matches the Actions job
+# ceiling in match_bot.yml, and covers ET + full penalty shootout with slack for
+# long stoppages and delayed kickoffs)
+MAX_MATCH_DURATION  = 290 * 60
 # Once the scraper has been unreachable for this long AND the match should be
 # over by the clock, fall back to the last cached scrape to post FT rather than
 # letting an outage swallow the post entirely.
 SCRAPER_STALE_SECS  = 15 * 60
+# ── Starting XI post ─────────────────────────────────────────────────────────
+# Lineups are announced around an hour before kickoff, and a post_lineups
+# fixture's worker starts 60-75 minutes before, so the card normally goes out
+# roughly an hour ahead of the match — within a poll of the feed publishing.
+# The feed publishes the names first and the grid positions a few minutes
+# later; the page can draw either, so the wait for positions is bounded rather
+# than open-ended.
+LINEUP_SHEET_FALLBACK_SECS = 5 * 60    # before kickoff, stop holding out for the grid
+LINEUP_DEADLINE_SECS       = 5 * 60    # after kickoff, a starting XI post is stale
 
 # ── Global state ──────────────────────────────────────────────────────────────
 # { match_id: { "status": str, "ht_posted": bool, "ft_posted": bool,
@@ -500,6 +515,118 @@ def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
         )
 
 
+# ── Starting XI pipeline ──────────────────────────────────────────────────────
+
+def _lineup_order(entry: dict) -> tuple[str, str]:
+    """
+    Which team leads the carousel, from the fixture's `lineups_first`.
+
+    Defaults to the home side; anything unrecognised is treated as home rather
+    than failing a post over a typo in the registry.
+    """
+    first = str(entry.get('lineups_first') or 'home').strip().lower()
+    return ('away', 'home') if first == 'away' else ('home', 'away')
+
+
+def _lineup_coach(entry: dict, side: str) -> str | None:
+    """
+    This side's manager, from the fixture's `coaches` entry.
+
+    Hand-written like `records`, because no feed carries one: neither the
+    mobile payload's formation block nor the desktop page has a manager field.
+    Absent, the card simply leaves the line off.
+    """
+    coaches = entry.get('coaches')
+    if not isinstance(coaches, dict):
+        return None
+    return str(coaches.get(side) or '').strip() or None
+
+
+def _lineup_ready(entry: dict, scraper_data: dict, now) -> bool:
+    """
+    Is there enough team news to post?
+
+    Positions are what makes the pitch, so they are worth waiting for — but not
+    past LINEUP_SHEET_FALLBACK_SECS before kickoff, after which the names alone
+    are posted as a team sheet. Waiting longer would trade a good card for no
+    card at all.
+    """
+    if not has_lineups(scraper_data):
+        return False
+    if has_positions(scraper_data):
+        return True
+    kickoff = datetime.fromisoformat(entry['kickoff_utc'].replace('Z', '+00:00'))
+    late = now >= kickoff - timedelta(seconds=LINEUP_SHEET_FALLBACK_SECS)
+    if late:
+        print(f"[{entry['match_id']}] Lineups published without positions — "
+              f"posting them as a team sheet.")
+    return late
+
+
+def _run_lineup_pipeline(entry: dict, scraper_data: dict) -> bool:
+    """
+    The pre-match starting XI carousel: one slide per team, home first unless
+    the fixture says otherwise.
+
+    Returns True once it is on Instagram. A failure returns False and is
+    retried on the next poll — right up to the deadline, after which the
+    match's own coverage carries on untouched. Nothing here can affect the HT
+    or FT posts: those read their own state and are never gated on this.
+    """
+    match_id = entry['match_id']
+    first, second = _lineup_order(entry)
+    print(f"[{match_id}] Posting starting XIs ({first} first)…")
+
+    paths, public_ids, public_urls = [], [], []
+    try:
+        for side in (first, second):
+            path = generate_lineup_card(
+                scraper_data, side=side,
+                match_id_override=match_id,
+                home_name=entry['home_team'],
+                away_name=entry['away_team'],
+                competition=_competition_of(entry, scraper_data),
+                coach=_lineup_coach(entry, side))
+            if not path:
+                raise RuntimeError(f'no {side} XI to draw')
+            paths.append(path)
+
+        for path in paths:
+            url, public_id = upload_image(path)
+            public_urls.append(url)
+            public_ids.append(public_id)
+
+        caption = generate_lineup_caption(
+            scraper_data,
+            home_name=entry['home_team'],
+            away_name=entry['away_team'],
+            competition=_competition_of(entry, scraper_data),
+            records=entry.get('records'),
+            first=first)
+        ig_id = post_carousel_to_instagram(public_urls, caption)
+    except Exception as e:
+        print(f"[{match_id}] ❌ Starting XI post failed: {e}")
+        matchlog.error('lineup post failed', f'{type(e).__name__}: {e}')
+        send_alert(
+            f"⚠️ {_label(entry)}: the starting XI post didn't go up.\n\n"
+            f"Only the line-ups are affected — the half-time and full-time "
+            f"scorecards are untouched and will post as normal. The bot keeps "
+            f"trying until kickoff.\n\n"
+            f"Technical detail: {e}",
+            key=f'{match_id}:lineups', cooldown=600,
+        )
+        return False
+    finally:
+        for path in paths:
+            if os.path.exists(path):
+                os.remove(path)
+
+    mark_event_posted(match_id, 'LINEUPS')
+    print(f"[{match_id}] ✅ Starting XIs posted — IG ID: {ig_id}")
+    matchlog.log('posted line-ups', f'IG {ig_id} — {first} first', force=True)
+    return True
+
+
 # ── Photo reminders ───────────────────────────────────────────────────────────
 # When to ask for the background photo, in scraper minutes. Early enough to
 # leave time to pick one and send it, late enough that the match has produced
@@ -766,6 +893,7 @@ def match_worker(entry: dict):
     matchlog.start(entry)
     matchlog.log('settings', f"knockout={is_knockout} post_ht={entry.get('post_ht', True)} "
                              f"stats={bool(entry.get('post_ft_stats'))} "
+                             f"lineups={_lineup_order(entry)[0] if entry.get('post_lineups') else 'off'} "
                              f"carousel={group or 'none'}")
 
     # Pre-kickoff crest check: warn now, while there is still time to fix it,
@@ -799,6 +927,7 @@ def match_worker(entry: dict):
             'status':                 'scheduled',
             'ht_posted':              False,
             'ft_posted':              False,
+            'lineups_posted':         False,
             'early_ht_posted':        False,
             'early_ft_posted':        False,
             'early_ht_ig_id':         None,
@@ -921,6 +1050,7 @@ def match_worker(entry: dict):
             s               = MATCH_STATE[match_id]
             ht_posted       = s.get('ht_posted', False)
             ft_posted       = s.get('ft_posted', False)
+            lineups_posted  = s.get('lineups_posted', False)
             early_ht_posted = s.get('early_ht_posted', False)
             early_ft_posted = s.get('early_ft_posted', False)
             early_ht_ig_id  = s.get('early_ht_ig_id')
@@ -944,6 +1074,37 @@ def match_worker(entry: dict):
                              f"{logged_score[0]}-{logged_score[1]} → "
                              f"{current_score[0]}-{current_score[1]} at {minute}'")
             logged_score = current_score
+
+        # ══════════════════════════════════════════════════════════════════════
+        # STARTING XI  (pre-match, opt in with post_lineups)
+        # ══════════════════════════════════════════════════════════════════════
+        # Runs before anything else in the loop so the team-news post never
+        # queues behind live-match work, and stops for good at kickoff +
+        # LINEUP_DEADLINE_SECS: an XI graphic is worth nothing once the match
+        # is under way, and retrying forever would keep alerting about it.
+        if (entry.get('post_lineups') and not lineups_posted
+                and not is_event_posted(match_id, 'LINEUPS')):
+            if now > kickoff_utc + timedelta(seconds=LINEUP_DEADLINE_SECS):
+                print(f"[{match_id}] Starting XI deadline passed — skipping the line-ups.")
+                matchlog.warn('line-ups skipped',
+                              'no XI was published in time — the match is under way')
+                send_alert(
+                    f"🙋 {_label(entry)}: no starting XI was published in time, "
+                    f"so there's no team-news post for this one.\n\n"
+                    f"Nothing is broken — the half-time and full-time cards are "
+                    f"unaffected and will post as normal.",
+                    key=f'{match_id}:lineups-missed', cooldown=3600,
+                )
+                with STATE_LOCK:
+                    MATCH_STATE[match_id]['lineups_posted'] = True
+                    _save_state()
+                lineups_posted = True
+            elif _lineup_ready(entry, scraper_data, now):
+                if _run_lineup_pipeline(entry, scraper_data):
+                    with STATE_LOCK:
+                        MATCH_STATE[match_id]['lineups_posted'] = True
+                        _save_state()
+                    lineups_posted = True
 
         # ══════════════════════════════════════════════════════════════════════
         # PHOTO REMINDERS  (ask before the card is needed, not after)
@@ -1269,7 +1430,9 @@ def check_registry():
             )
             continue
 
-        window_open  = kickoff - timedelta(seconds=PRE_MATCH_WINDOW)
+        window_open  = kickoff - timedelta(
+            seconds=LINEUP_PRE_MATCH_WINDOW if entry.get('post_lineups')
+            else PRE_MATCH_WINDOW)
         window_close = kickoff + timedelta(seconds=MAX_MATCH_DURATION)
 
         if window_open <= now <= window_close:

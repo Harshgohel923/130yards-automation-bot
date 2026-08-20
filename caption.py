@@ -6,6 +6,7 @@ from google import genai
 from google.genai import types
 
 from hashtags import build_group_hashtags, build_hashtags, competition_label
+from lineup_card import build_rows, formation_label
 
 load_dotenv()
 
@@ -338,6 +339,114 @@ Return ONLY the caption text — no labels, no explanations, no markdown formatt
     print("[caption] All Gemini models failed — using fallback caption")
     return _fallback_caption(home_team, away_team, home_score, away_score,
                              event_type, hashtag_line)
+
+
+def _summarise_xi(team_block: dict) -> str:
+    """'4-2-3-1: Donnarumma, Nico O'Reilly, …' — one line of team news."""
+    players = (team_block or {}).get('lineups') or []
+    if not players:
+        return 'not published'
+    names = ', '.join(str(p.get('person') or '').strip() for p in players
+                      if str(p.get('person') or '').strip())
+    shape = formation_label(build_rows(players)) if any(
+        p.get('position_x') for p in players) else ''
+    return f'{shape}: {names}' if shape else names
+
+
+def generate_lineup_caption(scraper_data: dict,
+                            home_name: str | None = None,
+                            away_name: str | None = None,
+                            competition: str | None = None,
+                            records: list | None = None,
+                            first: str = 'home') -> str:
+    """
+    Caption for the pre-match starting XI carousel.
+
+    Same voice as the scorecard captions and the same hashtag line, but nothing
+    has happened yet: there is no score to lead with, so the prompt is pointed
+    at team news — the shape, a returning name, who is missing.
+
+    `first` names the team on slide one, so the caption can open with the team
+    the reader is looking at rather than always the home side.
+    """
+    match_sample = scraper_data.get('matchSample', {})
+    home_team = home_name or match_sample.get('team_A_name', 'Home')
+    away_team = away_name or match_sample.get('team_B_name', 'Away')
+    competition = competition or match_sample.get('competition_name', '')
+    comp_label = competition_label(competition)
+    hashtag_line = build_hashtags(home_team, away_team, competition)
+
+    formation = scraper_data.get('matchFormation') or {}
+    home_xi = _summarise_xi(formation.get('team_A'))
+    away_xi = _summarise_xi(formation.get('team_B'))
+    lead_team = home_team if str(first).lower() == 'home' else away_team
+    venue = str(formation.get('venue_name') or '').strip()
+
+    records_block = ''
+    if records:
+        records_block = ('- Records/Storylines at stake:\n'
+                         + '\n'.join(f'  • {r}' for r in records))
+
+    prompt = f"""You are a football content writer for an Instagram page covering {comp_label}.
+
+Write a short, engaging Instagram caption for a TEAM NEWS post: a two-slide carousel showing both starting XIs, {lead_team} on the first slide.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+UNICODE FONT STYLES — use ONLY these two (never script/calligraphic):
+  1. Bold Italic Sans (e.g. 𝙏𝙝𝙚 𝙦𝙪𝙞𝙘𝙠 𝙗𝙧𝙤𝙬𝙣 𝙛𝙤𝙭)          → punchy secondary lines
+  2. Bold Serif       (e.g. 𝐓𝐡𝐞 𝐪𝐮𝐢𝐜𝐤 𝐛𝐫𝐨𝐰𝐧 𝐟𝐨𝐱)             → the headline, team names
+Within a single word use ONE style for every letter — never mix styled and plain characters inside a word.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CAPTION RULES:
+- Open with a bold styled headline announcing the team news / line-ups.
+- THE MATCH HAS NOT KICKED OFF. Never mention a score, a result, goals, or anything that happened in the game — none of it exists yet. Write only about the line-ups and the anticipation.
+- Very short: hard cap 60 words / 450 characters excluding hashtags, at most 5 short lines.
+- Pick at most ONE talking point from the XIs — a formation change, a big name starting or benched, a debut. If nothing stands out, ride the anticipation instead of forcing a fact.
+- Do NOT list the line-ups in the text; the slides already show them.
+- Mention swiping for the other team's XI once, naturally.
+- Refer to teams the way fans do; a flag emoji for national sides, colour/nickname emojis for clubs.
+- Emojis are welcome but tasteful — never 3+ in a row.
+- Every sentence on its own line, with a BLANK LINE after each one.
+- Tone: passionate football fan building up to kickoff — not corporate, not clickbait.
+
+HASHTAGS — end the caption with a blank line, then this line copied EXACTLY as written, character for character:
+{hashtag_line}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Match Details:
+- Fixture: {home_team} vs {away_team} ({comp_label}){(' at ' + venue) if venue else ''}
+- First slide: {lead_team}
+- {home_team} XI — {home_xi}
+- {away_team} XI — {away_xi}
+{records_block}
+
+Return ONLY the caption text — no labels, no explanations, no markdown formatting."""
+
+    for model in GEMINI_MODELS:
+        try:
+            response = client.models.generate_content(model=model, contents=prompt)
+            print(f"[caption] Lineup caption generated via {model}")
+            return _space_out_lines(_ensure_hashtags(response.text, hashtag_line))
+        except Exception as e:
+            print(f"[caption] {model} failed: {e} — trying next model...")
+
+    print("[caption] All Gemini models failed — using fallback lineup caption")
+    return _fallback_lineup_caption(home_team, away_team, lead_team, hashtag_line)
+
+
+def _fallback_lineup_caption(home, away, lead, hashtag_line) -> str:
+    """Deterministic team-news caption — no talking point, no invention."""
+    other = away if lead == home else home
+    return (
+        f"TEAM NEWS: {home} vs {away}\n"
+        f"\n"
+        f"{lead}'s starting XI is in. ⚽\n"
+        f"\n"
+        f"Swipe for {other} 👉\n"
+        f"\n"
+        f"{hashtag_line}"
+    )
 
 
 def _group_match_facts(match: dict) -> str:

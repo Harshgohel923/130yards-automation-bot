@@ -39,10 +39,14 @@ HEADS  = {
 }
 
 PRE_MATCH_WINDOW_SECS = 30 * 60   # start worker 30 min before kickoff
+# Fixtures with a team-news post start earlier: lineups are published around
+# an hour out, and the worker must already be polling to catch them. Only
+# those fixtures pay for the longer Actions run.
+LINEUP_PRE_MATCH_WINDOW_SECS = 75 * 60
 DISPATCH_LOOKAHEAD    = 15 * 60   # how far ahead this dispatcher looks
 
 # How long after kickoff a fixture stops being of any possible use. A worker
-# gives up at kickoff + 210 min (MAX_MATCH_DURATION), so by six hours there is
+# gives up at kickoff + 290 min (MAX_MATCH_DURATION), so by six hours there is
 # nothing left that could still act on the entry.
 PRUNE_AFTER_HOURS = 6
 
@@ -448,7 +452,9 @@ def main():
             print(f'[dispatcher] Bad kickoff_utc for {match_id}: {e}')
             continue
 
-        window_open = kickoff - timedelta(seconds=PRE_MATCH_WINDOW_SECS)
+        lead = (LINEUP_PRE_MATCH_WINDOW_SECS if entry.get('post_lineups')
+                else PRE_MATCH_WINDOW_SECS)
+        window_open = kickoff - timedelta(seconds=lead)
         fire_by     = window_open + timedelta(seconds=DISPATCH_LOOKAHEAD)
 
         if window_open <= now <= fire_by:

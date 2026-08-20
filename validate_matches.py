@@ -82,8 +82,8 @@ AUTO_FIELDS = ('match_id', 'kickoff_utc', 'home_team', 'away_team', 'competition
 # end. Only reordered when a fixture is actually filled, to keep diffs quiet.
 FIELD_ORDER = ('match_id', 'scraper_url', 'desktop_url', 'kickoff_utc',
                'kickoff_local', 'home_team', 'away_team', 'competition',
-               'post_ht', 'post_ft_stats', 'knockout_match', 'carousel_group',
-               'records')
+               'post_ht', 'post_ft_stats', 'post_lineups', 'lineups_first',
+               'coaches', 'knockout_match', 'carousel_group', 'records')
 
 # Instagram will not accept more slides than this in one post, and a carousel
 # group is one slide per match.
@@ -412,6 +412,44 @@ def _check_structure(matches: list) -> list[str]:
             problems.append(
                 f"match {match_id}: post_ft_stats must be true or false, got "
                 f"{entry['post_ft_stats']!r}.")
+
+        if 'post_lineups' in entry and not isinstance(entry['post_lineups'], bool):
+            problems.append(
+                f"match {match_id}: post_lineups must be true or false, got "
+                f"{entry['post_lineups']!r}.")
+
+        if 'lineups_first' in entry:
+            first = entry['lineups_first']
+            if not isinstance(first, str) or first.strip().lower() not in ('home', 'away'):
+                problems.append(
+                    f"match {match_id}: lineups_first must be \"home\" or "
+                    f"\"away\", got {first!r}. It decides which team's XI is "
+                    f"slide one.")
+            elif not entry.get('post_lineups'):
+                problems.append(
+                    f"match {match_id}: lineups_first is set but post_lineups "
+                    f"is not, so no line-up post would be made. Add "
+                    f"\"post_lineups\": true, or drop lineups_first.")
+
+        if 'coaches' in entry:
+            coaches = entry['coaches']
+            if not isinstance(coaches, dict):
+                problems.append(
+                    f"match {match_id}: coaches must be an object like "
+                    f'{{"home": "M. Arteta", "away": "P. Guardiola"}}, got '
+                    f"{coaches!r}.")
+            else:
+                stray = [k for k in coaches if k not in ('home', 'away')]
+                if stray:
+                    problems.append(
+                        f"match {match_id}: coaches has unknown key(s) "
+                        f"{', '.join(map(repr, stray))} — only \"home\" and "
+                        f"\"away\" are used.")
+                for role, name in coaches.items():
+                    if role in ('home', 'away') and not isinstance(name, str):
+                        problems.append(
+                            f"match {match_id}: coaches.{role} must be a name, "
+                            f"got {name!r}.")
 
         if 'carousel_group' in entry:
             group = entry['carousel_group']
