@@ -7,10 +7,17 @@ on:
         description: 'match_id from matches.json'
         required: true
         type: string
+      label:
+        description: 'Optional "Home vs Away" text, shown in the run name'
+        required: false
+        default: ''
+        type: string
 
-# Run name includes match_id so the dispatcher can detect active workers
-# by scanning run names — no external state needed.
-run-name: match-${{ inputs.match_id }}
+# Run name starts with match-{id} so the dispatcher can detect active workers
+# by scanning run names — no external state needed. The team names after it are
+# purely for humans reading the Actions list; anything parsing this name must
+# stop at the first space.
+run-name: match-${{ inputs.match_id }}${{ inputs.label && format(' · {0}', inputs.label) }}
 
 # A worker that finishes a carousel match nudges the dispatcher to publish the
 # group now rather than at its next 15-minute tick.

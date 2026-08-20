@@ -3,9 +3,10 @@ Reads matches.json, finds matches whose pre-match window opens within
 the next 15 minutes, and triggers a match_bot.yml workflow run for each —
 unless a worker for that match is already running.
 
-Dedup strategy: match_bot.yml sets run-name to "match-{match_id}".
+Dedup strategy: match_bot.yml sets run-name to "match-{match_id} · Home vs Away".
 We list all in-progress runs of that workflow and extract match IDs from
-their names — zero external state required.
+their names — zero external state required. The team names are there so the
+Actions list is readable; only the first token carries meaning.
 
 It also publishes completed carousel groups (see carousel.py) and prunes
 finished fixtures out of matches.json, committing the trimmed file back to
@@ -66,6 +67,31 @@ MATCHES_FILE = os.path.join(REPO_ROOT, 'matches.json')
 GIT_AUTHOR_NAME  = '130 Yards Bot'
 GIT_AUTHOR_EMAIL = 'bot@users.noreply.github.com'
 
+# The run name can't say what a tick did — GitHub renders it before the job
+# starts, when the dispatcher hasn't looked at the registry yet. The step
+# summary is written afterwards, so it can name the fixtures by team.
+_SUMMARY: list[str] = []
+
+
+def note(line: str) -> None:
+    """Add a line to the run's step summary."""
+    _SUMMARY.append(line)
+
+
+def write_summary() -> None:
+    """Flush the collected lines to the run's summary page.
+
+    Best-effort: unset outside Actions, and a summary that fails to write must
+    never fail a tick that dispatched correctly."""
+    path = os.environ.get('GITHUB_STEP_SUMMARY')
+    if not path or not _SUMMARY:
+        return
+    try:
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write('\n'.join(_SUMMARY) + '\n')
+    except Exception as e:
+        print(f'[dispatcher] WARNING: could not write step summary: {e}')
+
 
 def active_match_ids() -> set:
     """Return match IDs that already have an in-progress match_bot run."""
@@ -80,21 +106,26 @@ def active_match_ids() -> set:
     for run in resp.json().get('workflow_runs', []):
         name = run.get('name', '')
         if name.startswith('match-'):
-            ids.add(name[len('match-'):])
+            # "match-54493172 · Rayo Vallecano vs Deportivo" -> "54493172"
+            ids.add(name[len('match-'):].split(' ', 1)[0])
     return ids
 
 
-def trigger_worker(match_id: str):
+def trigger_worker(match_id: str, label: str = ''):
     resp = requests.post(
         f'{API}/repos/{REPO}/actions/workflows/match_bot.yml/dispatches',
         headers=HEADS,
-        json={'ref': 'master', 'inputs': {'match_id': match_id}},
+        json={'ref': 'master',
+              'inputs': {'match_id': match_id, 'label': label}},
         timeout=10,
     )
     if resp.status_code == 204:
         print(f'[dispatcher] Triggered worker for match {match_id}')
     else:
         print(f'[dispatcher] ERROR triggering {match_id}: {resp.status_code} {resp.text}')
+        note(f'- ❌ **{label or match_id}** — could not start its worker '
+             f'({resp.status_code})')
+        write_summary()   # the tick dies here, so flush what it managed first
         sys.exit(1)
 
 
@@ -159,6 +190,7 @@ def publish_carousel_groups(registry: list):
             publish_group(group, entries)
         except Exception as e:
             print(f'[dispatcher] ERROR publishing carousel {group}: {e}')
+            note(f'- ❌ carousel **{group}** failed to post — {e}')
             try:
                 from telegram_notify import send_alert
                 send_alert(
@@ -394,6 +426,11 @@ def main():
     running = active_match_ids()
     print(f'[dispatcher] {now.isoformat(timespec="seconds")}  active workers: {running or "none"}')
 
+    note(f'### Dispatcher tick — {now:%Y-%m-%d %H:%M} UTC')
+    note('')
+
+    upcoming = []
+    header_lines = len(_SUMMARY)
     fired_any = False
     for entry in registry:
         match_id = entry['match_id']
@@ -402,6 +439,7 @@ def main():
 
         if match_id in running:
             print(f'[dispatcher] {match_id} ({home} vs {away}) — already running, skip')
+            note(f'- 🟢 **{home} vs {away}** — worker already running')
             continue
 
         try:
@@ -415,13 +453,24 @@ def main():
 
         if window_open <= now <= fire_by:
             print(f'[dispatcher] {match_id} ({home} vs {away}) — window open, firing worker')
-            trigger_worker(match_id)
+            trigger_worker(match_id, f'{home} vs {away}')
+            note(f'- 🚀 **{home} vs {away}** — worker fired (kickoff '
+                 f'{kickoff:%H:%M} UTC)')
             fired_any = True
         elif now < window_open:
             mins = int((window_open - now).total_seconds() / 60)
             print(f'[dispatcher] {match_id} ({home} vs {away}) — opens in ~{mins} min')
+            upcoming.append((mins, f'{home} vs {away}'))
         else:
             print(f'[dispatcher] {match_id} ({home} vs {away}) — window passed, skip')
+
+    if len(_SUMMARY) == header_lines:
+        note('- 💤 Nothing to dispatch this tick.')
+    if upcoming:
+        soonest, label = min(upcoming)
+        note('')
+        note(f'Next up: **{label}**, worker opens in ~{soonest} min '
+             f'({len(upcoming)} fixture(s) waiting).')
 
     # Keep the photo-intake Telegram bot up whenever any worker is active.
     # Its watchdog shuts it down once the last match worker finishes.
@@ -446,6 +495,10 @@ def main():
                    else 'chore: update fixtures and match log\n\n'
                         + '\n\n'.join(s.strip() for s in subjects) + '\n')
         _push(paths, message)
+        note('')
+        note(f'Housekeeping: {", ".join(s.strip().splitlines()[0] for s in subjects)}.')
+
+    write_summary()
 
 
 if __name__ == '__main__':

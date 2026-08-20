@@ -583,6 +583,60 @@ def _events_match_score(scraper_data: dict) -> bool:
     return goals >= total_score
 
 
+# Event types the scorecard prints under a team — kept in step with
+# scorecard._extract_scorer_lines. Goals move the score, but a red card or a
+# missed penalty changes the card without touching it, so the score alone can't
+# tell whether a card that is already live has gone stale.
+CARD_EVENT_TYPES = ('goal', 'penalty_goal', 'own_goal',
+                    'red_card', 'penalty_missed')
+
+
+def _card_events(scraper_data: dict) -> list[str]:
+    """
+    The displayed events as stable keys, sorted so two polls compare directly.
+
+    Only fields the mobile scraper reports are used. The desktop enrichment's
+    stoppage offset (minute_extra) is deliberately left out: it is best-effort,
+    so it can appear and vanish between polls, and a card must never be
+    reposted over a detail that flapped.
+    """
+    events = scraper_data.get('events', [])
+    if not isinstance(events, list):
+        return []
+    return sorted(
+        f"{ev.get('type')}|{ev.get('team')}|{ev.get('player')}|{ev.get('minute')}"
+        for ev in events if ev.get('type') in CARD_EVENT_TYPES
+    )
+
+
+def _early_card_stale(stored_score, stored_events,
+                      current_score, current_events) -> str | None:
+    """
+    Why a live early card no longer matches the match, or None if it still does.
+
+    The string is for the log and the return value is the decision, so both
+    reasons read the same way at the call site.
+
+    stored_events is None for an early post made before this state key existed
+    (a worker resumed mid-match across the upgrade). Only the score is compared
+    then — the old behaviour, rather than a repost triggered by a baseline that
+    was never recorded.
+    """
+    if stored_score and tuple(current_score) != tuple(stored_score):
+        return (f'score {stored_score[0]}-{stored_score[1]}'
+                f'→{current_score[0]}-{current_score[1]}')
+    if stored_events is None:
+        return None
+    added = [e for e in current_events if e not in stored_events]
+    if added:
+        return 'new event: ' + ', '.join(e.replace('|', ' ') for e in added)
+    # An event that only vanished is almost always the scraper dropping it for a
+    # poll or two, and reposting on that would delete a correct card — and then
+    # delete it again when the event came back. Nothing is done until something
+    # is actually added, or the score moves.
+    return None
+
+
 def _wait_for_scorers(match_id: str, lagging: bool) -> bool:
     """
     Bounded wait while the scraper's events list catches up with the score.
@@ -750,9 +804,11 @@ def match_worker(entry: dict):
             'early_ht_ig_id':         None,
             'early_ht_cloudinary_id': None,
             'early_ht_score':         None,
+            'early_ht_events':        None,
             'early_ft_ig_id':         None,
             'early_ft_cloudinary_id': None,
             'early_ft_score':         None,
+            'early_ft_events':        None,
             'scraper_failing_since':  None,
             'photo_reminded_ht':      False,
             'photo_reminded_ft':      False,
@@ -842,6 +898,10 @@ def match_worker(entry: dict):
         if raw_status in ('HT', 'FT', 'ET', 'AP') or minute >= 43:
             enrich_with_desktop(scraper_data, match_id)
 
+        # What a card rendered from this poll would show, for comparison against
+        # whatever a live early post is showing right now.
+        current_events = _card_events(scraper_data)
+
         # ── Normalise status ──────────────────────────────────────────────────
         if raw_status == 'FT':
             new_status = 'ft'
@@ -867,6 +927,8 @@ def match_worker(entry: dict):
             early_ft_ig_id  = s.get('early_ft_ig_id')
             early_ht_score  = tuple(s['early_ht_score']) if s.get('early_ht_score') else None
             early_ft_score  = tuple(s['early_ft_score']) if s.get('early_ft_score') else None
+            early_ht_events = s.get('early_ht_events')
+            early_ft_events = s.get('early_ft_events')
 
         print(f"[{match_id}] status={raw_status} minute={minute} score={current_score[0]}-{current_score[1]}"
               f"  ht_posted={ht_posted}  ft_posted={ft_posted}"
@@ -920,12 +982,14 @@ def match_worker(entry: dict):
                         s['early_ht_ig_id']         = ig_id
                         s['early_ht_cloudinary_id'] = cids
                         s['early_ht_score']         = list(current_score)
+                        s['early_ht_events']        = current_events
                         _save_state()
 
             elif early_ht_posted and early_ht_ig_id and early_ht_score:
-                if (current_score != early_ht_score
-                        and not _wait_for_scorers(match_id, lagging)):
-                    print(f"[{match_id}] HT score changed {early_ht_score}→{current_score} — correcting…")
+                stale = _early_card_stale(early_ht_score, early_ht_events,
+                                          current_score, current_events)
+                if stale and not _wait_for_scorers(match_id, lagging):
+                    print(f"[{match_id}] Early HT card is out of date ({stale}) — correcting…")
                     _delete_early_post(entry, 'HT')
                     cids, ig_id = _early_pipeline(entry, 'HT', scraper_data)
                     if cids and ig_id:
@@ -934,6 +998,7 @@ def match_worker(entry: dict):
                             s['early_ht_ig_id']         = ig_id
                             s['early_ht_cloudinary_id'] = cids
                             s['early_ht_score']         = list(current_score)
+                            s['early_ht_events']        = current_events
                             _save_state()
 
         # ══════════════════════════════════════════════════════════════════════
@@ -986,21 +1051,25 @@ def match_worker(entry: dict):
                             s['early_ft_ig_id']         = ig_id
                             s['early_ft_cloudinary_id'] = cids
                             s['early_ft_score']         = list(current_score)
+                            s['early_ft_events']        = current_events
                             _save_state()
 
             elif early_ft_ig_id and early_ft_score:
-                if current_score != early_ft_score:
-                    if is_knockout and is_draw:
+                stale = _early_card_stale(early_ft_score, early_ft_events,
+                                          current_score, current_events)
+                if stale:
+                    if is_knockout and is_draw and current_score != early_ft_score:
                         # Equalized — delete, don't repost; ET flow takes over.
                         # No scorer-lag guard: removing a wrong card needs no events.
                         print(f"[{match_id}] Score equalized {early_ft_score}→{current_score}"
                               f" in knockout — deleting early FT post.")
                         _delete_early_post(entry, 'FT')
                         with STATE_LOCK:
-                            MATCH_STATE[match_id]['early_ft_score'] = list(current_score)
+                            MATCH_STATE[match_id]['early_ft_score']  = list(current_score)
+                            MATCH_STATE[match_id]['early_ft_events'] = current_events
                             _save_state()
                     elif not _wait_for_scorers(match_id, lagging):
-                        print(f"[{match_id}] FT score changed {early_ft_score}→{current_score} — correcting…")
+                        print(f"[{match_id}] Early FT card is out of date ({stale}) — correcting…")
                         _delete_early_post(entry, 'FT')
                         cids, ig_id = _early_pipeline(entry, 'FT', scraper_data)
                         if cids and ig_id:
@@ -1009,6 +1078,7 @@ def match_worker(entry: dict):
                                 s['early_ft_ig_id']         = ig_id
                                 s['early_ft_cloudinary_id'] = cids
                                 s['early_ft_score']         = list(current_score)
+                                s['early_ft_events']        = current_events
                                 _save_state()
 
         # ══════════════════════════════════════════════════════════════════════
@@ -1064,9 +1134,12 @@ def match_worker(entry: dict):
             home_s, away_s = current_score
             is_draw        = (home_s == away_s)
             with STATE_LOCK:
-                active_ft_ig   = MATCH_STATE[match_id].get('early_ft_ig_id')
-                early_ft_score = (tuple(MATCH_STATE[match_id]['early_ft_score'])
-                                  if MATCH_STATE[match_id].get('early_ft_score') else None)
+                active_ft_ig    = MATCH_STATE[match_id].get('early_ft_ig_id')
+                early_ft_score  = (tuple(MATCH_STATE[match_id]['early_ft_score'])
+                                   if MATCH_STATE[match_id].get('early_ft_score') else None)
+                early_ft_events = MATCH_STATE[match_id].get('early_ft_events')
+            et_stale = _early_card_stale(early_ft_score, early_ft_events,
+                                         current_score, current_events)
 
             if raw_status == 'AP':
                 # A shootout is under way. Any early ET card is now wrong — drop
@@ -1094,10 +1167,10 @@ def match_worker(entry: dict):
                                     s['early_ft_ig_id']         = ig_id
                                     s['early_ft_cloudinary_id'] = cids
                                     s['early_ft_score']         = list(current_score)
+                                    s['early_ft_events']        = current_events
                                     _save_state()
-                    elif (early_ft_score and current_score != early_ft_score
-                            and not _wait_for_scorers(match_id, lagging)):
-                        print(f"[{match_id}] ET score changed {early_ft_score}→{current_score} — correcting…")
+                    elif et_stale and not _wait_for_scorers(match_id, lagging):
+                        print(f"[{match_id}] Early ET card is out of date ({et_stale}) — correcting…")
                         _delete_early_post(entry, 'FT')
                         cids, ig_id = _early_pipeline(entry, 'FT', scraper_data)
                         if cids and ig_id:
@@ -1106,6 +1179,7 @@ def match_worker(entry: dict):
                                 s['early_ft_ig_id']         = ig_id
                                 s['early_ft_cloudinary_id'] = cids
                                 s['early_ft_score']         = list(current_score)
+                                s['early_ft_events']        = current_events
                                 _save_state()
                 else:
                     print(f"[{match_id}] ET still level at minute={minute} — waiting.")
