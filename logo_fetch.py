@@ -162,6 +162,8 @@ NICKNAMES = {
     'rayo': 'rayo-vallecano',
     'rcd-mallorca': 'mallorca',
     'rcd-espanyol': 'espanyol',
+    'deportivo-alaves': 'deportivo',
+    'alaves': 'deportivo',
     # ── clubs: Mexico / MLS ──
     'atletico-san-luis': 'atletico-de-san-luis',
     'inter-miami-cf': 'inter-miami',

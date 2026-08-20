@@ -1,1 +1,58 @@
-[]
+[
+  {
+    "match_id": "54493172",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/rayo-vallecano-vs-alaves/54493172",
+    "desktop_url": "https://www.allfootballapp.com/match/54493172",
+    "kickoff_utc": "2026-08-20T19:00:00Z",
+    "kickoff_local": "Thu 20 Aug 2026, 21:00 CEST",
+    "home_team": "Rayo Vallecano",
+    "away_team": "Deportivo",
+    "competition": "La Liga",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  },
+  {
+    "match_id": "54533571",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/al-riyadh-vs-al-nassr/54533571",
+    "desktop_url": "https://www.allfootballapp.com/match/54533571",
+    "kickoff_utc": "2026-08-21T16:00:00Z",
+    "kickoff_local": "Fri 21 Aug 2026, 18:00 CEST",
+    "home_team": "Al Riyadh",
+    "away_team": "Al-Nassr",
+    "competition": "Saudi Pro League",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  },
+  {
+    "match_id": "54483541",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/arsenal-vs-coventry-city/54483541",
+    "desktop_url": "https://www.allfootballapp.com/match/54483541",
+    "kickoff_utc": "2026-08-21T19:00:00Z",
+    "kickoff_local": "Fri 21 Aug 2026, 21:00 CEST",
+    "home_team": "Arsenal",
+    "away_team": "Coventry City",
+    "competition": "Premier League",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  },
+  {
+    "match_id": "54493166",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/real-betis-vs-real-sociedad/54493166",
+    "desktop_url": "https://www.allfootballapp.com/match/54493166",
+    "kickoff_utc": "2026-08-21T19:00:00Z",
+    "kickoff_local": "Fri 21 Aug 2026, 21:00 CEST",
+    "home_team": "Real Betis",
+    "away_team": "Real Sociedad",
+    "competition": "La Liga",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  }
+]
