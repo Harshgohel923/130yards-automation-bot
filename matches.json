@@ -1,16 +1,1 @@
-[
-  {
-    "match_id": "54329154",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/philadelphia-union-vs-inter-miami/54329154",
-    "desktop_url": "https://www.allfootballapp.com/match/54329154",
-    "kickoff_utc": "2026-08-19T23:30:00Z",
-    "home_team": "Philadelphia Union",
-    "away_team": "Inter Miami",
-    "competition": "MLS",
-    "post_ht": false,
-    "post_ft_stats": true,
-    "knockout_match": false,
-    "records": [],
-    "kickoff_local": "Thu 20 Aug 2026, 01:30 CEST"
-  }
-]
+[]
