@@ -1,0 +1,59 @@
+name: CI
+
+# Production has no staging step — code reaches a live match by being pushed to
+# master. This is the only gate between a typo and a fixture that fails to post.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    env:
+      # caption.py builds a Gemini client in its module body and dispatcher.py
+      # reads GH_TOKEN at import, so both need *a* value to be importable.
+      # Placeholders: nothing in the suite reaches the network.
+      GEMINI_API_KEY: ci-placeholder-not-a-real-key
+      GH_TOKEN: ci-placeholder-not-a-real-token
+      GITHUB_REPOSITORY: ${{ github.repository }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      # The error-level rules only: undefined names, broken f-strings, syntax
+      # errors — the things that are bugs rather than opinions. This codebase
+      # catches exceptions broadly on purpose, so the full ruleset would be a
+      # wall of noise that nobody reads and a red tick nobody trusts.
+      - name: Lint for errors
+        run: ruff check --select=E9,F63,F7,F82,F601,F811 --exclude=venv .
+
+      # Modules that run work in their body can't be imported, so prove they at
+      # least parse. tests/test_imports.py covers everything else properly.
+      - name: Compile-check the entry-point scripts
+        run: |
+          python -m py_compile \
+            match_worker_runner.py \
+            telegram_bot.py \
+            setup_token.py \
+            find_chat_id.py \
+            pick_coords.py \
+            .github/scripts/bot_watchdog.py
+
+      - name: Run tests
+        run: pytest -q

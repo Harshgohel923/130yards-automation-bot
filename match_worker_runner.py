@@ -8,6 +8,11 @@ Looks up the entry in matches.json and runs the full match_worker loop:
 Everything here runs through _worker_safe, so a crash sends a Telegram alert
 before the process dies. In production this file *is* the worker — a failure
 that only shows up as a red Actions run is a failure nobody sees.
+
+Nothing retries a dead worker. The dispatcher fires only inside a fixture's
+15-minute pre-kickoff window, so once that has passed a crash is final until
+someone re-runs match_bot.yml by hand; the alerts say so rather than implying
+a recovery that will not come.
 """
 
 import json
@@ -55,8 +60,12 @@ except Exception as e:
                     level=matchlog.ERROR, match_id=target_id)
     send_alert(
         f"❌ The bot could not start following the match with id {target_id}.\n\n"
-        f"No scorecards will go out for it. It will try again within a few "
-        f"minutes, as long as the match is still on.\n\n"
+        f"Nothing will go out for it, and nothing will restart it on its own — "
+        f"the dispatcher only starts a worker in the few minutes around "
+        f"kickoff.\n\n"
+        f"Nothing was posted, so it is safe to retry: run the 'Match Worker' "
+        f"action manually with match id {target_id}, as long as the match is "
+        f"still on.\n\n"
         f"Technical detail: {e}"
     )
     sys.exit(1)

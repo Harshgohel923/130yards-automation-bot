@@ -45,9 +45,10 @@ Production is **GitHub Actions**, not a server:
 
 | Workflow | Trigger | Job |
 |---|---|---|
-| `.github/workflows/dispatcher.yml` | external cron + `schedule` every 15 min | Runs `.github/scripts/dispatcher.py`; spawns a `match_bot.yml` run per match whose window is open. Detects already-running workers by scanning run names (`match-<id>`) — no external state. Also **publishes carousel groups** that are complete and **prunes finished fixtures** from `matches.json`, so it carries the same secrets a worker does, needs `contents: write`, and runs under a `concurrency` group to stay a single writer. |
-| `.github/workflows/match_bot.yml` | `workflow_dispatch` (from dispatcher) | Runs `match_worker_runner.py <match_id>` for one match. Timeout 245 min (30 min dispatch lead + 210 min max match + buffer). |
+| `.github/workflows/dispatcher.yml` | external cron + `schedule` every 15 min | Runs `.github/scripts/dispatcher.py`; spawns a `match_bot.yml` run per match whose window is open. Detects already-running workers by scanning the run names (`match-<id>`) of every **queued or in-progress** run — no external state. Queued counts: a run it just triggered sits queued for minutes, and two ticks inside one fixture's window would otherwise dispatch a duplicate worker. Also **publishes carousel groups** that are complete and **prunes finished fixtures** from `matches.json`, so it carries the same secrets a worker does, needs `contents: write`, and runs under a `concurrency` group to stay a single writer. |
+| `.github/workflows/match_bot.yml` | `workflow_dispatch` (from dispatcher) | Runs `match_worker_runner.py <match_id>` for one match. Job timeout 360 min (GitHub's hard ceiling, measured from job start); the worker's own ceiling is `MAX_MATCH_DURATION` = 290 min, measured from kickoff. |
 | `.github/workflows/telegram_bot.yml` | `workflow_dispatch` (from dispatcher) | Runs the photo-intake Telegram bot under `.github/scripts/bot_watchdog.py` while matches are active. |
+| `.github/workflows/ci.yml` | push to master, PR | Lints for errors, compile-checks the entry-point scripts and runs the test suite. See [Tests and CI](#tests-and-ci). |
 
 GitHub's own `schedule:` cron is unreliable, so an **external cron job** also
 fires the dispatcher every 15 minutes on the dot via the `workflow_dispatch`
@@ -132,7 +133,7 @@ chore: remove 3 finished fixtures
 A fixture is only dropped when **all** of these hold:
 
 - **kickoff + 6 hours has passed** (`PRUNE_AFTER_HOURS`). A worker gives up at
-  kickoff + 210 min, so by six hours nothing can still act on the entry.
+  kickoff + 290 min, so by six hours nothing can still act on the entry.
 - **no worker is running for it** — the same in-progress scan used for dispatch.
 - **it isn't holding up a carousel.** `publish_group()` reads a group's
   membership straight from `matches.json`, so pruning a member early would
@@ -882,6 +883,15 @@ logo is skipped).
 - Grouped matches don't post early and don't get corrected. That's deliberate —
   the group post happens once, after every result is final, so a wrong scoreline
   never goes up in the first place.
+- **A crashed worker is not restarted.** The dispatcher only fires inside a
+  fixture's 15-minute pre-kickoff window, so once that has passed nothing will
+  pick the match back up. The crash alert says so, and names what had already
+  been posted — a manually re-run worker starts with no memory of the first
+  attempt, so anything already on the page would go up again.
+- **The `bot.db` idempotency guard is per-run, not per-match.** It is gitignored
+  and every Actions run checks out fresh, so `posted_events` only ever
+  deduplicates within one process. Dispatcher-level dedup is what actually
+  prevents double posts; the database is an audit trail and a within-run guard.
 
 ---
 
@@ -893,6 +903,36 @@ python -m venv venv && venv/bin/pip install -r requirements.txt
 venv/bin/python validate_matches.py --check
 venv/bin/python main.py          # run the full bot loop locally
 ```
+
+### Tests and CI
+
+`.github/workflows/ci.yml` runs on every push to master and on pull requests.
+Production has no staging step — code reaches a live match by being pushed —
+so this is the only gate between a typo and a fixture that fails to post.
+
+```bash
+venv/bin/pip install -r requirements-dev.txt
+venv/bin/pytest -q                 # the whole suite, no credentials needed
+venv/bin/ruff check --select=E9,F63,F7,F82,F601,F811 --exclude=venv .
+```
+
+Three things run in CI:
+
+| Step | Catches |
+|---|---|
+| `ruff` on the error-level rules | undefined names, broken f-strings, syntax errors. Deliberately *not* the full ruleset: this codebase catches exceptions broadly on purpose, and 100-plus style findings would make a red tick meaningless. |
+| `py_compile` on the entry-point scripts | `match_worker_runner.py`, `telegram_bot.py` and friends do work in their module body, so they can't be imported — only parsed. |
+| `pytest` | the phase and early-posting logic, dispatcher dedup and pruning, scraper event classification, and that every other module imports. |
+
+The suite covers pure functions only, so it needs no credentials and touches no
+network. `conftest.py` puts placeholder values in the environment before the
+first import, because `caption.py` builds a Gemini client in its module body and
+`dispatcher.py` reads `GH_TOKEN` at import — both would otherwise fail to import
+without secrets.
+
+Richer registry checks — crest coverage, URL shapes, carousel sizes — stay in
+`validate_matches.py`, which needs Cloudinary credentials and remains a local
+tool. CI only asserts that `matches.json` is structurally sound.
 
 Useful one-offs:
 

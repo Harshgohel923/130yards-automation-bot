@@ -4,8 +4,8 @@ the next 15 minutes, and triggers a match_bot.yml workflow run for each —
 unless a worker for that match is already running.
 
 Dedup strategy: match_bot.yml sets run-name to "match-{match_id} · Home vs Away".
-We list all in-progress runs of that workflow and extract match IDs from
-their names — zero external state required. The team names are there so the
+We list every queued or in-progress run of that workflow and extract match IDs
+from their names — zero external state required. The team names are there so the
 Actions list is readable; only the first token carries meaning.
 
 It also publishes completed carousel groups (see carousel.py) and prunes
@@ -98,20 +98,33 @@ def write_summary() -> None:
 
 
 def active_match_ids() -> set:
-    """Return match IDs that already have an in-progress match_bot run."""
-    resp = requests.get(
-        f'{API}/repos/{REPO}/actions/workflows/match_bot.yml/runs',
-        params={'status': 'in_progress', 'per_page': 50},
-        headers=HEADS,
-        timeout=10,
-    )
-    resp.raise_for_status()
+    """
+    Return match IDs that already have a match_bot run queued or in progress.
+
+    'queued' matters as much as 'in_progress'. A run this dispatcher just
+    triggered sits queued until a runner picks it up, which can take minutes.
+    Meanwhile the external cron and GitHub's own schedule both fire every 15
+    minutes, and the concurrency group queues those ticks rather than dropping
+    them — so two ticks landing inside one fixture's 15-minute dispatch window
+    is routine. Counting only in_progress runs would leave the second tick
+    blind to the worker the first one started, and it would dispatch a
+    duplicate: two workers on one match means two early cards and two final
+    ones, with nothing downstream to deduplicate them.
+    """
     ids = set()
-    for run in resp.json().get('workflow_runs', []):
-        name = run.get('name', '')
-        if name.startswith('match-'):
-            # "match-54493172 · Rayo Vallecano vs Deportivo" -> "54493172"
-            ids.add(name[len('match-'):].split(' ', 1)[0])
+    for status in ('in_progress', 'queued'):
+        resp = requests.get(
+            f'{API}/repos/{REPO}/actions/workflows/match_bot.yml/runs',
+            params={'status': status, 'per_page': 50},
+            headers=HEADS,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        for run in resp.json().get('workflow_runs', []):
+            name = run.get('name', '')
+            if name.startswith('match-'):
+                # "match-54493172 · Rayo Vallecano vs Deportivo" -> "54493172"
+                ids.add(name[len('match-'):].split(' ', 1)[0])
     return ids
 
 

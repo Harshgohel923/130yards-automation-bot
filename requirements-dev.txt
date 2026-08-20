@@ -1,0 +1,7 @@
+# Test and lint tooling. Not installed in production — match_bot.yml and
+# dispatcher.yml install requirements.txt only.
+#
+# Pinned deliberately: CI that quietly changes behaviour when a new ruff lands
+# is worse than no CI, because a green tick stops meaning the same thing.
+pytest==8.3.4
+ruff==0.16.4

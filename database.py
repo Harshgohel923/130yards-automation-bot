@@ -9,8 +9,17 @@ Two tables:
                      successfully posted to Instagram.
                      event_type is 'LINEUPS' (the pre-match starting XI
                      carousel), 'HT' or 'FT'.
-                     This is the idempotency guard: even if the process
-                     restarts mid-match, we never post the same card twice.
+                     Guards against a double post *within a run*: the worker
+                     checks it before every card, so a retry inside the poll
+                     loop can't repeat one.
+
+                     It does NOT survive a restart in production. bot.db is
+                     gitignored and every Actions run checks out fresh, so this
+                     table starts empty each time. What actually stops a match
+                     being posted twice is the dispatcher refusing to start a
+                     second worker (active_match_ids in .github/scripts/
+                     dispatcher.py). Making this guard real would mean storing
+                     it off-box — Cloudinary already holds the match data.
 """
 
 import sqlite3

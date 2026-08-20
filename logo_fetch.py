@@ -200,7 +200,7 @@ NICKNAMES = {
     'psv-eindhoven': 'psv',
     'afc-ajax': 'ajax',
     # ── clubs: rest of world ──
-    'inter-miami-cf': 'inter-miami',
+    # (inter-miami-cf is listed with the MLS clubs above)
     'boca': 'boca-juniors',
     'alnassr': 'al-nassr',
     'al-nassr-fc': 'al-nassr',          # the scraper's own spelling

@@ -1358,6 +1358,34 @@ def match_worker(entry: dict):
     matchlog.finish('worker exited', 'nothing further to do for this match')
 
 
+def _posted_so_far(match_id: str) -> str:
+    """One line naming what this worker already put on the page, for a crash alert.
+
+    A restart cannot work this out for itself — state.json and bot.db are both
+    local to the run — so the alert has to carry it while the knowledge still
+    exists.
+    """
+    with STATE_LOCK:
+        s = dict(MATCH_STATE.get(match_id, {}))
+    done = [label for key, label in (
+        ('lineups_posted',  'the line-ups'),
+        ('early_ht_posted', 'a half-time card'),
+        ('ht_posted',       'the half-time card'),
+        ('early_ft_posted', 'a full-time card'),
+        ('ft_posted',       'the full-time card'),
+    ) if s.get(key)]
+    if not done:
+        return "Nothing had been posted for it yet."
+    # Dedupe the early/confirmed pairs: both flags set means one card is live.
+    seen, unique = set(), []
+    for label in done:
+        stem = label.split(' ', 1)[-1]
+        if stem not in seen:
+            seen.add(stem)
+            unique.append(label)
+    return f"Already posted: {', '.join(unique)}."
+
+
 def _worker_safe(entry: dict) -> bool:
     """
     Run match_worker and alert if it crashes — a dead worker is silent.
@@ -1380,9 +1408,14 @@ def _worker_safe(entry: dict) -> bool:
         send_alert(
             f"❌ {_label(entry)}: the bot stopped following this match "
             f"unexpectedly.\n\n"
-            f"No scorecards will go out for it right now. The bot tries to pick "
-            f"it back up within a few minutes, as long as the match is still "
-            f"on.\n\n"
+            f"Nothing else will go out for it, and nothing will restart it on "
+            f"its own — the dispatcher only starts a worker in the few minutes "
+            f"around kickoff, and that window has passed.\n\n"
+            f"{_posted_so_far(match_id)}\n\n"
+            f"To pick it back up: run the 'Match Worker' action manually with "
+            f"match id {match_id}. A restarted worker has no memory of this "
+            f"run, so check the page first — anything listed above as already "
+            f"posted would go up a second time.\n\n"
             f"Technical detail: {e}"
         )
         return False
