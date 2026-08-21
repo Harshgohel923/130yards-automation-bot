@@ -25,7 +25,9 @@
     "post_ht": false,
     "post_ft_stats": true,
     "knockout_match": false,
-    "records": []
+    "records": [],
+    "post_lineups": true,
+    "lineups_first": "home"
   },
   {
     "match_id": "54493166",
