@@ -56,6 +56,7 @@ from dotenv import load_dotenv
 from PIL import Image
 from telegram import (
     BotCommand,
+    ForceReply,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     MenuButtonCommands,
@@ -165,6 +166,22 @@ BUTTON_FILTER = filters.Text(BUTTON_TEXTS)
 # Free text inside /card. Buttons and commands are excluded so tapping Cancel
 # mid-flow cancels instead of being recorded as a team called "🚫 Cancel".
 MANUAL_TEXT_FILTER = filters.TEXT & ~filters.COMMAND & ~BUTTON_FILTER
+
+
+def _typed_reply(placeholder: str) -> ForceReply:
+    """Ask for a typed answer, with the field labelled by what it wants.
+
+    Telegram gives a bot no way to disable, hide, or grey out the message box —
+    there is no such field in the Bot API, and a bot cannot restrict what a
+    client lets someone type. ForceReply is the whole of what is available: it
+    focuses the box, shows this placeholder inside it, and marks the reply as
+    belonging to the question. So the steps that want typing say so, and the
+    steps that don't carry inline buttons instead.
+
+    A message may carry one reply_markup, so a step offering a button (the
+    scorer lists, the theme) keeps the button — worth more than a hint.
+    """
+    return ForceReply(input_field_placeholder=placeholder)
 
 # /foo for any foo the bot doesn't implement. Telegram allows @botname suffixes
 # in groups, hence the optional tail.
@@ -665,6 +682,7 @@ async def _card_intro(msg, context: ContextTypes.DEFAULT_TYPE,
         f"_Just the name, as it should read on the card — up to "
         f"{manual_match.MAX_TEAM_NAME} characters. e.g. Arsenal_",
         parse_mode='Markdown',
+        reply_markup=_typed_reply('Arsenal'),
     )
     return M_HOME
 
@@ -734,6 +752,7 @@ async def card_event(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"_Two numbers with a dash between them: `2-1`, `0-0`. "
         f"`2:1` and `2 – 1` work too._",
         parse_mode='Markdown',
+        reply_markup=_typed_reply('2-1'),
     )
     return M_SCORE
 
@@ -752,6 +771,7 @@ async def card_score(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "_The name as it should read on the card: `Premier League`, "
         "`Champions League`, `Club Friendly`._",
         parse_mode='Markdown',
+        reply_markup=_typed_reply('Premier League'),
     )
     return M_COMPETITION
 
@@ -778,6 +798,7 @@ async def _ask_date(msg) -> int:
         "Day comes before month. This is what goes in the card's top-right "
         "corner._",
         parse_mode='Markdown',
+        reply_markup=_typed_reply('21/08/2026'),
     )
     return M_DATE
 
@@ -1051,7 +1072,7 @@ async def _after_badge(msg, context: ContextTypes.DEFAULT_TYPE,
     if target == 'home':
         await msg.reply_text(
             "And the *away team*?\n_Same again — the name only._",
-            parse_mode='Markdown')
+            parse_mode='Markdown', reply_markup=_typed_reply('Manchester City'))
         return M_AWAY
     if target == 'away':
         return await _ask_moment(msg, context)
@@ -1099,7 +1120,8 @@ async def badge_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
                   'competition': 'The *competition*, then.'}[target]
         await query.message.reply_text(
             f"{prompt}\n_Official names work best — `Tottenham Hotspur` "
-            f"rather than `Spurs`._", parse_mode='Markdown')
+            f"rather than `Spurs`._", parse_mode='Markdown',
+            reply_markup=_typed_reply('Tottenham Hotspur'))
         return BADGE_RETRY[target]
 
     await query.edit_message_text(
@@ -1676,8 +1698,24 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def stray_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Anything that reached no other handler. Answer, don't ignore."""
+    """Anything that reached no other handler. Answer, don't ignore.
+
+    Except during /card. Handlers in different groups every get a turn at the
+    same update, so while that flow is running this one sees every answer to
+    every question — and used to reply "I only understand photos and the
+    buttons below" to a perfectly good team name, immediately after the
+    conversation had accepted it. That message is true everywhere else and
+    wrong here, and being told you are typing nonsense while correctly
+    answering a question is worse than not being answered at all.
+
+    The conversation's own handlers cover every message while it is live: a
+    valid answer advances, an invalid one is rejected with a reason, and
+    anything else re-asks the step (card_wrong_input). Nothing gets ignored by
+    stepping aside.
+    """
     if not _allowed(update) or not update.message:
+        return
+    if context.user_data.get('manual') is not None:
         return
     context.chat_data['menu_shown'] = True
     await update.message.reply_text(

@@ -226,3 +226,85 @@ def test_the_preview_still_warns_about_an_accepted_mismatch():
                                          ('away', tb.M_AWAY_SCORERS)])
 def test_each_side_maps_to_its_own_state(side, state):
     assert tb.SCORER_STATE[side] == state
+
+
+# ── The catch-all must not talk over the card flow ────────────────────────────
+
+class TestStrayDuringCard:
+    """Handlers in different groups every get a turn at the same update.
+
+    The group-1 catch-all exists because outside /card typed text means
+    nothing, and a bot that stays silent looks like a bot that is down. But it
+    sees *every* message, including every answer to every /card question — and
+    was replying "I only understand photos and the buttons below" to a
+    perfectly good team name, right after the conversation had accepted it.
+
+    Being told you are typing nonsense while correctly answering a question is
+    worse than not being answered at all.
+    """
+
+    class Msg:
+        def __init__(self, text):
+            self.text = text
+            self.replies = []
+
+        async def reply_text(self, text, **kw):
+            self.replies.append(text)
+            return self
+
+    class Update:
+        def __init__(self, msg):
+            self.message = msg
+            self.effective_user = type('U', (), {'id': 7})()
+
+    @pytest.fixture(autouse=True)
+    def _authorized(self, monkeypatch):
+        """No allowlist, so `_allowed` can't be what makes these pass.
+
+        The real .env sets TELEGRAM_ALLOWED_USER_IDS, and without this the
+        "stays quiet" cases would pass because the stub user is not authorized
+        — which is not the behaviour under test.
+        """
+        monkeypatch.setenv('TELEGRAM_ALLOWED_USER_IDS', '')
+
+    def _run(self, text, user_data):
+        msg = self.Msg(text)
+        ctx = type('C', (), {})()
+        ctx.user_data = user_data
+        ctx.chat_data = {}
+        asyncio.run(tb.stray_message(self.Update(msg), ctx))
+        return msg.replies
+
+    def test_it_stays_quiet_while_a_card_is_being_built(self):
+        assert self._run('Arsenal', {'manual': {'owner': '7'}}) == []
+
+    def test_it_stays_quiet_even_on_a_freshly_opened_flow(self):
+        """_card_intro sets the key before the first question is asked, so the
+        very first answer is covered too."""
+        assert self._run('Arsenal', {'manual': {}}) == []
+
+    def test_it_still_answers_outside_the_flow(self):
+        """The behaviour it exists for. A stray message with no conversation
+        running must not be ignored."""
+        replies = self._run('hello?', {})
+        assert replies and 'buttons' in replies[0]
+
+    def test_it_answers_again_once_the_card_is_finished(self):
+        """Every exit from the flow pops 'manual' — cancel, discard, post. If
+        one stopped doing that, the bot would go permanently mute to text."""
+        assert self._run('hello?', {'manual': None}) != []
+
+
+def test_every_typed_step_is_reachable_by_the_catch_all():
+    """The filter itself is unchanged and still matches — the suppression is
+    deliberate behaviour in the handler, not an accident of the filter. If this
+    ever stops matching, the guard above has become dead code."""
+    import datetime
+
+    from telegram import Chat, Message, Update, User
+    user = User(id=7, first_name='H', is_bot=False)
+    chat = Chat(id=7, type=Chat.PRIVATE)
+    for text in ('Arsenal', '2-1', '23 Saka', "Arsenal's last five"):
+        msg = Message(message_id=1, chat=chat, from_user=user, text=text,
+                      date=datetime.datetime.now(datetime.timezone.utc))
+        assert tb.STRAY_FILTER.check_update(Update(update_id=1, message=msg))

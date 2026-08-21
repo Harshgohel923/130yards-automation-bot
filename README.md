@@ -711,6 +711,15 @@ photos, the commands, and the buttons that mirror them. Anything else gets the
 help text back rather than being parsed or ignored — a bot that stays silent is
 indistinguishable from a bot that is down.
 
+**Inside `/card` that catch-all steps aside.** Handlers in different groups each
+get a turn at the same update, so the group-1 catch-all sees every answer to
+every question — and would otherwise reply "I only understand photos and the
+buttons below" to a perfectly good team name, immediately after the
+conversation had accepted it. `stray_message` returns early while
+`user_data['manual']` exists. Nothing is ignored by that: the conversation's own
+handlers cover every message while it is live — a valid answer advances, an
+invalid one is rejected with a reason, and anything else re-asks the step.
+
 | | Published to Telegram's ☰ menu | Button |
 |---|---|---|
 | `/start`, `/newphoto` | Pick a match and upload a photo | 📸 New photo |
@@ -885,6 +894,21 @@ legitimately show fewer scorers than goals.
 Rendering runs off the event loop (`asyncio.to_thread`), so a slow crest
 download doesn't freeze the bot. If it fails, nothing is posted and you stay in
 step 9 to try a different background.
+
+#### The message box
+
+Steps that want typing use `ForceReply` with a placeholder, so the box is
+focused and labelled with what it wants — `Arsenal`, `2-1`, `21/08/2026`.
+
+Telegram gives a bot **no way to disable, hide, or grey out the message box**.
+There is no such field in the Bot API and a bot cannot restrict what a client
+lets someone type, so `ForceReply` is the whole of what's available. The
+complement is that steps which *don't* want typing carry inline buttons
+instead, and typing at one of them re-asks rather than being swallowed.
+
+A message may carry only one `reply_markup`, so a step that already offers a
+button — the scorer lists, the theme — keeps the button. A tappable exit is
+worth more than a hint.
 
 #### Counted against the score
 
