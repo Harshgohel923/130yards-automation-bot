@@ -85,6 +85,11 @@ MAX_TEAM_NAME = 40
 MAX_COMPETITION = 60
 MAX_PLAYER_NAME = 40
 
+# One line telling the caption writer what a carousel *is*. Long enough for
+# "Every North London derby since 2020", short enough that it stays a framing
+# rather than becoming the caption itself.
+MAX_THEME = 120
+
 # 90 plus extra time plus a generous margin. Anything beyond is a typo, and a
 # card is the wrong place to discover one.
 MAX_MINUTE = 130
@@ -178,6 +183,34 @@ def parse_competition(text: str) -> str:
     """A competition name, as it should read on the card."""
     return _parse_name(text, 'the competition', MAX_COMPETITION,
                        '`Premier League` or `Club Friendly`')
+
+
+def parse_theme(text: str) -> str:
+    """What a carousel is about, in the writer's own words.
+
+    Deliberately not run through `_parse_name`: a theme is a phrase, not a
+    name, so "looks like a date" is not a mistake here — `Every match in
+    August 2026` is a perfectly good theme.
+    """
+    theme = ' '.join((text or '').split())
+    if not theme:
+        raise ParseError(
+            "That was empty. Tell me what this set of matches is — "
+            "`Arsenal's last five`, say."
+        )
+    if not _has_letter(theme):
+        raise ParseError(
+            f"“{theme}” has no letters in it.\n\n"
+            f"I'm after a phrase like `Arsenal's last five` or "
+            f"`Every North London derby since 2020`."
+        )
+    if len(theme) > MAX_THEME:
+        raise ParseError(
+            f"That's {len(theme)} characters and the limit is {MAX_THEME} — "
+            f"it's meant to be a one-line framing, not the caption itself.\n\n"
+            f"Something like `Arsenal's last five`."
+        )
+    return theme
 
 
 # ── Field parsers ─────────────────────────────────────────────────────────────

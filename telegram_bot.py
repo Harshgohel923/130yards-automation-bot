@@ -99,7 +99,7 @@ SELECT_MATCH, SELECT_EVENT, WAIT_PHOTO = range(3)
 # never be read as belonging to the other conversation.
 (M_HOME, M_AWAY, M_EVENT, M_SCORE, M_COMPETITION, M_DATE,
  M_HOME_SCORERS, M_AWAY_SCORERS, M_BACKGROUND, M_CONFIRM,
- M_BADGE) = range(10, 21)
+ M_BADGE, M_THEME) = range(10, 22)
 
 # Touched on every update the bot handles; read by .github/scripts/bot_watchdog.py.
 #
@@ -556,6 +556,22 @@ SCORER_HELP = (
     "missing._"
 )
 
+# Always a way out of a scorer step without typing. A team that didn't score
+# and had nobody sent off has nothing to enter, and "send the word none" is a
+# thing you have to have read — a button is a thing you can see.
+SCORERS_NONE_KEYBOARD = InlineKeyboardMarkup([
+    [InlineKeyboardButton("Nothing to add", callback_data="scorers:none")],
+])
+
+# Shown when the goals entered don't match the score already given.
+SCORERS_MISMATCH_KEYBOARD = InlineKeyboardMarkup([
+    [InlineKeyboardButton("✅ That's right, carry on", callback_data="scorers:ok")],
+    [InlineKeyboardButton("✏️ Let me redo them", callback_data="scorers:redo")],
+])
+
+SCORER_STATE = {'home': M_HOME_SCORERS, 'away': M_AWAY_SCORERS}
+
+
 def _confirm_keyboard(count: int, room: bool) -> InlineKeyboardMarkup:
     """What to do with the card just built.
 
@@ -775,46 +791,18 @@ async def card_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     data = _manual(context)
     data['when'] = when
-    await update.message.reply_text(
-        f"{manual_match.format_card_date(when)}.\n\n"
-        f"Now *{data['home_team']}* — goals and cards.\n\n{SCORER_HELP}",
-        parse_mode='Markdown',
-    )
-    return M_HOME_SCORERS
+    await update.message.reply_text(f"{manual_match.format_card_date(when)}.")
+    return await _ask_scorers(update.message, context, 'home')
 
 
-async def card_home_scorers(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    data = _manual(context)
-    try:
-        data['home_events'] = manual_match.parse_scorers(
-            update.message.text, data['home_team'])
-    except manual_match.ParseError as e:
-        await _reject(update.message, e)
-        return M_HOME_SCORERS
-
-    await update.message.reply_text(
-        f"*{data['away_team']}* — same again.\n\n"
-        "Own goals go in the column you want them to *appear* in, which is "
-        "normally the team they counted for.",
-        parse_mode='Markdown',
-    )
-    return M_AWAY_SCORERS
-
-
-async def card_away_scorers(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    data = _manual(context)
-    try:
-        data['away_events'] = manual_match.parse_scorers(
-            update.message.text, data['away_team'])
-    except manual_match.ParseError as e:
-        await _reject(update.message, e)
-        return M_AWAY_SCORERS
-
+async def _ask_background(msg) -> int:
+    """Step 9, split out because the scorer steps can reach it from a button
+    as well as from a typed list."""
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("Use the standard template",
                              callback_data="manual:nobg")
     ]])
-    await update.message.reply_text(
+    await msg.reply_text(
         "Last thing: send the *background photo*.\n\n"
         "As a file/document keeps full quality; under 20 MB either way. "
         "Or skip it and the card goes on the usual template.",
@@ -822,6 +810,126 @@ async def card_away_scorers(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         reply_markup=keyboard,
     )
     return M_BACKGROUND
+
+
+# ── Scorers: asked with an exit, and counted against the score ────────────────
+# The count check runs here rather than only at the preview because here is
+# where it can still be acted on cheaply: the list is the last thing typed, and
+# fixing it is one message. At the preview it is three steps back and the
+# natural response to a warning is to post anyway.
+#
+# Red cards and missed penalties are deliberately not counted — they are not
+# goals, and a card shown to a team that didn't score is perfectly normal.
+
+async def _ask_scorers(msg, context: ContextTypes.DEFAULT_TYPE, side: str) -> int:
+    """Ask one team's goals and cards, tailored to whether they scored."""
+    data = _manual(context)
+    data['scorer_side'] = side
+    team = data[f'{side}_team']
+    scored = int(data[f'{side}_score'])
+
+    if scored == 0:
+        lead = (f"*{team}* didn't score, so there are no goals to enter.\n\n"
+                f"If anyone was sent off or missed a penalty, add it — "
+                f"otherwise tap the button.")
+    else:
+        lead = (f"*{team}* — the {scored} goal{'s' if scored != 1 else ''}, "
+                f"plus any red cards or missed penalties.")
+    if side == 'away':
+        lead += ("\n\nOwn goals go in the column you want them to *appear* "
+                 "in, which is normally the team they counted for.")
+
+    await msg.reply_text(f"{lead}\n\n{SCORER_HELP}", parse_mode='Markdown',
+                         reply_markup=SCORERS_NONE_KEYBOARD)
+    return SCORER_STATE[side]
+
+
+async def _after_scorers(msg, context: ContextTypes.DEFAULT_TYPE, side: str) -> int:
+    """Whatever comes after this team's list is settled."""
+    if side == 'home':
+        return await _ask_scorers(msg, context, 'away')
+    return await _ask_background(msg)
+
+
+async def _scorers_entered(msg, context: ContextTypes.DEFAULT_TYPE,
+                           side: str, events: list[dict]) -> int:
+    """Store one team's events, then count the goals against the score."""
+    data = _manual(context)
+    data[f'{side}_events'] = events
+    team = data[f'{side}_team']
+    goals = manual_match.goal_count(events, team)
+    expected = int(data[f'{side}_score'])
+
+    if goals == expected:
+        return await _after_scorers(msg, context, side)
+
+    # A mismatch is nearly always a typo, but not always: a scorer can be
+    # genuinely unknown, and a card can legitimately show fewer names than
+    # goals. So it asks rather than refuses.
+    if goals < expected:
+        gap = expected - goals
+        detail = (f"you've given me {goals}, which is {gap} short. A goal "
+                  f"missing from the list, or a minute that didn't parse?")
+    else:
+        detail = (f"you've given me {goals}, which is more than that. An extra "
+                  f"line, or something marked as a goal that wasn't?")
+
+    counted = '\n'.join(
+        f"• {e['minute']} {e['player']}" for e in events
+        if e['type'] in manual_match.GOAL_TYPES) or '• nothing'
+
+    await msg.reply_text(
+        f"⚠️ The score says *{team}* scored {expected}, but {detail}\n\n"
+        f"Goals I counted:\n{counted}\n\n"
+        f"_Red cards and missed penalties aren't counted — only goals, "
+        f"penalties and own goals entered in this column._\n\n"
+        f"Send the list again to replace it, or use the buttons.",
+        parse_mode='Markdown',
+        reply_markup=SCORERS_MISMATCH_KEYBOARD,
+    )
+    return SCORER_STATE[side]
+
+
+async def _scorers_text(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                        side: str) -> int:
+    data = _manual(context)
+    try:
+        events = manual_match.parse_scorers(update.message.text,
+                                            data[f'{side}_team'])
+    except manual_match.ParseError as e:
+        await _reject(update.message, e)
+        return SCORER_STATE[side]
+    return await _scorers_entered(update.message, context, side, events)
+
+
+async def card_home_scorers(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    return await _scorers_text(update, context, 'home')
+
+
+async def card_away_scorers(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    return await _scorers_text(update, context, 'away')
+
+
+async def scorers_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """The buttons on a scorer step: nothing to add, accept, or redo."""
+    query = update.callback_query
+    await query.answer()
+    data = _manual(context)
+    side = data.get('scorer_side', 'home')
+    action = query.data.rsplit(':', 1)[1]
+
+    if action == 'none':
+        await query.edit_message_text("Nothing to add.")
+        # Still counted: tapping this when the score says two goals is exactly
+        # the mistake worth catching.
+        return await _scorers_entered(query.message, context, side, [])
+
+    if action == 'redo':
+        await query.edit_message_text("Send the list again.")
+        return await _ask_scorers(query.message, context, side)
+
+    await query.edit_message_text("Taking your word for it.")
+    return await _after_scorers(query.message, context, side)
 
 
 # ── Badges: the check that has to happen while the name can still be fixed ────
@@ -1271,7 +1379,7 @@ def _keep_card(context: ContextTypes.DEFAULT_TYPE) -> dict:
 
 # ── Posting ───────────────────────────────────────────────────────────────────
 
-def _post_batch(cards: list[dict]) -> tuple[str, str | None]:
+def _post_batch(cards: list[dict], theme: str | None = None) -> tuple[str, str | None]:
     """Publish the pile. Blocking — call in a thread.
 
     One card is an ordinary image post captioned like any other match; two or
@@ -1289,23 +1397,27 @@ def _post_batch(cards: list[dict]) -> tuple[str, str | None]:
 
     urls = [c['image_url'] for c in cards]
     if len(cards) == 1:
+        # A single card is an ordinary match post, and the ordinary caption
+        # already knows what the match was. A theme has nothing to add.
         card = cards[0]
         caption = generate_caption(card['scraper_data'],
                                    event_type=card.get('event_type', 'FT'),
                                    competition=card.get('competition'))
         media_id = post_to_instagram(urls[0], caption)
     else:
-        media_id = post_carousel_to_instagram(urls, generate_group_caption(cards))
+        media_id = post_carousel_to_instagram(
+            urls, generate_group_caption(cards, theme=theme))
     return media_id, get_post_permalink(media_id)
 
 
 async def _publish(msg, context: ContextTypes.DEFAULT_TYPE,
-                   cards: list[dict], owner: str) -> None:
+                   cards: list[dict], owner: str,
+                   theme: str | None = None) -> None:
     """Post the pile and clear it. Raises nothing — it answers in the chat."""
     await msg.reply_text(
         f"Posting {'a carousel of ' + str(len(cards)) if len(cards) > 1 else 'it'}…")
     try:
-        media_id, permalink = await asyncio.to_thread(_post_batch, cards)
+        media_id, permalink = await asyncio.to_thread(_post_batch, cards, theme)
     except Exception as e:
         log.exception("Manual card post failed")
         await msg.reply_text(
@@ -1320,6 +1432,79 @@ async def _publish(msg, context: ContextTypes.DEFAULT_TYPE,
         f"/card to start another post.",
         reply_markup=MAIN_KEYBOARD,
     )
+
+
+# ── The theme: what a carousel is *about* ─────────────────────────────────────
+# Asked at post time and nowhere earlier, because it is the one thing you can
+# only answer once the set is complete. A pile of results tells the caption
+# writer that some matches happened; it cannot tell it that these are Arsenal's
+# last five. Without that the model writes the matchday post the scraped
+# carousel_group flow wants, which is the wrong post for a retrospective.
+#
+# Single-card posts never ask: the ordinary match caption already knows what
+# the match was.
+
+SKIP_THEME_KEYBOARD = InlineKeyboardMarkup([
+    [InlineKeyboardButton("Skip — just post it", callback_data="theme:skip")],
+])
+
+
+async def _ask_theme(msg, context: ContextTypes.DEFAULT_TYPE,
+                     cards: list[dict], owner: str) -> int:
+    """Last question before a carousel goes out."""
+    data = _manual(context)
+    data['pending_post'] = {'owner': owner, 'count': len(cards)}
+    await msg.reply_text(
+        f"Last thing — *what is this post?*\n\n"
+        f"One line, in your words: `Arsenal's last five`, "
+        f"`Every North London derby since 2020`, `Matchweek 3`.\n\n"
+        f"_The caption writer sees {len(cards)} results and nothing else, so "
+        f"without this it writes a matchday round-up. Skip and you'll get "
+        f"exactly that._",
+        parse_mode='Markdown',
+        reply_markup=SKIP_THEME_KEYBOARD,
+    )
+    return M_THEME
+
+
+async def _publish_pending(msg, context: ContextTypes.DEFAULT_TYPE,
+                           theme: str | None) -> int:
+    """Post the pile the theme question was asked about.
+
+    The cards are re-read rather than carried through the question: it is a
+    round trip to a human, and the pile is the authority on what is in the post.
+    """
+    pending = _manual(context).pop('pending_post', None)
+    if not pending:
+        await msg.reply_text("That post is gone — /batch to see what's waiting.")
+        return ConversationHandler.END
+
+    owner = pending['owner']
+    cards = await asyncio.to_thread(_card_batch().pending, owner)
+    if not cards:
+        await msg.reply_text("That pile is already empty — nothing was posted.")
+        return ConversationHandler.END
+
+    context.user_data.pop('manual', None)
+    await _publish(msg, context, cards, owner, theme)
+    return ConversationHandler.END
+
+
+async def card_theme(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """The typed answer to the theme question."""
+    try:
+        theme = manual_match.parse_theme(update.message.text)
+    except manual_match.ParseError as e:
+        await _reject(update.message, e)
+        return M_THEME
+    return await _publish_pending(update.message, context, theme)
+
+
+async def theme_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("No framing, then — a straight round-up.")
+    return await _publish_pending(query.message, context, None)
 
 
 async def card_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1369,6 +1554,8 @@ async def card_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         return await _card_intro(query.message, context, owner)
 
     cards = await asyncio.to_thread(_card_batch().pending, owner)
+    if len(cards) > 1:
+        return await _ask_theme(query.message, context, cards, owner)
     context.user_data.pop('manual', None)
     await _publish(query.message, context, cards, owner)
     return ConversationHandler.END
@@ -1419,27 +1606,44 @@ async def batch_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return await _card_intro(query.message, context, _owner(update))
 
 
-async def batch_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """The /batch post and clear buttons. Outside the conversation handlers, so
-    a pile can be posted without starting a card first."""
+async def batch_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/batch's Clear button. The only one that needs no conversation."""
     query = update.callback_query
     await query.answer()
-    action = query.data.rsplit(':', 1)[1]
     owner = _owner(update)
+    removed = await asyncio.to_thread(_card_batch().clear, owner)
+    await query.edit_message_text(
+        f"Cleared {removed} card{'s' if removed != 1 else ''}. "
+        f"Nothing was posted.")
 
-    if action == 'clear':
-        removed = await asyncio.to_thread(_card_batch().clear, owner)
-        await query.edit_message_text(
-            f"Cleared {removed} card{'s' if removed != 1 else ''}. "
-            f"Nothing was posted.")
-        return
 
+async def batch_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """/batch's Post button — an entry point of the card conversation.
+
+    It has to be one for the same reason "Add another card" does: a carousel is
+    asked for its theme first, and only a conversation handler can hold the
+    answer.
+    """
+    query = update.callback_query
+    await query.answer()
+    if not _allowed(update):
+        return ConversationHandler.END
+
+    owner = _owner(update)
     cards = await asyncio.to_thread(_card_batch().pending, owner)
     if not cards:
         await query.edit_message_text("That pile is already empty.")
-        return
-    await query.edit_message_text(f"Posting {len(cards)}…")
+        return ConversationHandler.END
+
+    _manual(context)['owner'] = owner
+    if len(cards) > 1:
+        await query.edit_message_text(f"{len(cards)} cards, then.")
+        return await _ask_theme(query.message, context, cards, owner)
+
+    await query.edit_message_text("Posting it…")
+    context.user_data.pop('manual', None)
     await _publish(query.message, context, cards, owner)
+    return ConversationHandler.END
 
 
 async def card_wrong_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1544,6 +1748,7 @@ def main() -> None:
             CommandHandler('card', card_start),
             MessageHandler(BTN_CARD_FILTER, card_start),
             CallbackQueryHandler(batch_add, pattern=r'^batch:add$'),
+            CallbackQueryHandler(batch_post, pattern=r'^batch:post$'),
         ],
         states={
             M_HOME:         [MessageHandler(MANUAL_TEXT_FILTER, card_home)],
@@ -1559,14 +1764,26 @@ def main() -> None:
             M_SCORE:        [MessageHandler(MANUAL_TEXT_FILTER, card_score)],
             M_COMPETITION:  [MessageHandler(MANUAL_TEXT_FILTER, card_competition)],
             M_DATE:         [MessageHandler(MANUAL_TEXT_FILTER, card_date)],
-            M_HOME_SCORERS: [MessageHandler(MANUAL_TEXT_FILTER, card_home_scorers)],
-            M_AWAY_SCORERS: [MessageHandler(MANUAL_TEXT_FILTER, card_away_scorers)],
+            M_HOME_SCORERS: [
+                MessageHandler(MANUAL_TEXT_FILTER, card_home_scorers),
+                CallbackQueryHandler(scorers_choice,
+                                     pattern=r'^scorers:(none|ok|redo)$'),
+            ],
+            M_AWAY_SCORERS: [
+                MessageHandler(MANUAL_TEXT_FILTER, card_away_scorers),
+                CallbackQueryHandler(scorers_choice,
+                                     pattern=r'^scorers:(none|ok|redo)$'),
+            ],
             M_BACKGROUND:   [
                 MessageHandler(PHOTO_ENTRY_FILTER, card_background),
                 CallbackQueryHandler(card_no_background, pattern=r'^manual:nobg$'),
             ],
             M_CONFIRM:      [CallbackQueryHandler(
                 card_confirm, pattern=r'^manual:(post|add|discard)$')],
+            M_THEME:        [
+                MessageHandler(MANUAL_TEXT_FILTER, card_theme),
+                CallbackQueryHandler(theme_skip, pattern=r'^theme:skip$'),
+            ],
         },
         fallbacks=common_fallbacks + [
             CommandHandler('card', card_start),
@@ -1606,8 +1823,7 @@ def main() -> None:
     app.add_handler(MessageHandler(BTN_HELP_FILTER, help_cmd))
     app.add_handler(MessageHandler(BTN_CANCEL_FILTER, cancel))
     app.add_handler(CommandHandler('batch', batch_cmd))
-    app.add_handler(CallbackQueryHandler(batch_action,
-                                         pattern=r'^batch:(post|clear)$'))
+    app.add_handler(CallbackQueryHandler(batch_clear, pattern=r'^batch:clear$'))
     # Group -1 runs first and consumes nothing — see keep_alive.
     app.add_handler(MessageHandler(filters.ALL, keep_alive), group=-1)
     app.add_handler(CallbackQueryHandler(keep_alive), group=-1)

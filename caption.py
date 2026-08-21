@@ -468,7 +468,7 @@ def _group_match_facts(match: dict) -> str:
     return ' | '.join(bits)
 
 
-def generate_group_caption(matches: list[dict]) -> str:
+def generate_group_caption(matches: list[dict], theme: str | None = None) -> str:
     """
     Caption for a carousel covering several matches.
 
@@ -479,6 +479,14 @@ def generate_group_caption(matches: list[dict]) -> str:
 
     It returns the caption plus the match ids it chose, and those matches' teams
     become the hashtags, so the tags always describe what the caption is about.
+
+    theme: what this particular set of matches *is*, in the writer's own words —
+    "Arsenal's last five", "every North London derby since 2020". Without one
+    the only thing the model can infer from a pile of results is that they
+    happened, so it writes the matchday post that the scraped `carousel_group`
+    flow wants and a hand-built retrospective does not. Optional precisely so
+    that flow keeps working unchanged: it always has a matchday, and never has
+    anyone to ask.
     """
     if not matches:
         return ''
@@ -490,10 +498,20 @@ def generate_group_caption(matches: list[dict]) -> str:
         if label and label not in competitions:
             competitions.append(label)
 
+    # Stated twice on purpose, at the top and again beside the facts: the
+    # first frames what is being written, the second stops a long prompt from
+    # burying it by the time the model reaches the results.
+    theme = (theme or '').strip()
+    theme_intro = (f'\n\nWhat this set IS: {theme}. That framing is the point '
+                   f'of the post — write to it, not to "here are some results".'
+                   if theme else '')
+    theme_reminder = (f'\n\nRemember, this carousel is: {theme}'
+                      if theme else '')
+
     prompt = f"""You are a football content writer for an Instagram page.
 
 This is a CAROUSEL post collecting the full-time scorecards of {len(matches)} matches
-({', '.join(competitions) or 'football'}). Write ONE caption for the whole post.
+({', '.join(competitions) or 'football'}). Write ONE caption for the whole post.{theme_intro}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 UNICODE FONT STYLES — use ONLY these two, no others (never script/calligraphic):
@@ -530,7 +548,7 @@ CAPTION RULES:
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 The matches in this carousel:
-{facts}
+{facts}{theme_reminder}
 
 Return ONLY JSON with exactly these two keys:
   "caption"            — the caption text
@@ -569,7 +587,7 @@ Return ONLY JSON with exactly these two keys:
             print(f"[caption] {model} failed: {e} — trying next model...")
 
     print("[caption] All Gemini models failed — using fallback group caption")
-    return _fallback_group_caption(matches)
+    return _fallback_group_caption(matches, theme)
 
 
 def _group_hashtag_line(matches: list[dict], highlight_ids: list[str]) -> str:
@@ -589,14 +607,22 @@ def _group_hashtag_line(matches: list[dict], highlight_ids: list[str]) -> str:
     return build_group_hashtags(teams)
 
 
-def _fallback_group_caption(matches: list[dict]) -> str:
-    """Deterministic group caption — no scores, matching the model's brief."""
+def _fallback_group_caption(matches: list[dict], theme: str | None = None) -> str:
+    """Deterministic group caption — no scores, matching the model's brief.
+
+    With a theme it says what the set is; without one it falls back to the
+    matchday wording, which is right for the only flow that has no theme.
+    """
     count = len(matches)
+    theme = (theme or '').strip()
+    lead = (f"{theme.rstrip('.')}.\n\nAll {count} of them."
+            if theme else
+            f"Every result from {'today' if count > 1 else 'the day'}, "
+            f"all {count} of them.")
     return (
         f"FULL TIME.\n"
         f"\n"
-        f"Every result from {'today' if count > 1 else 'the day'}, "
-        f"all {count} of them.\n"
+        f"{lead}\n"
         f"\n"
         f"Swipe through 👉\n"
         f"\n"

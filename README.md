@@ -778,10 +778,11 @@ same question and nothing typed earlier is lost.
 | 4 | **Score**, home first | `2-1`. Separator may be `-`, `–`, `—`, `:` or `x`; spaces ignored; one or two digits a side | anything else — `3`, `two-one`, `2-1-1` |
 | 5 | **Competition** | A name, 1–60 characters, at least one letter. `Premier League`, `Club Friendly` | as team name, with the longer limit. **Then the competition badge is checked** |
 | 6 | **Date** | `21/08/2026` (day first), `2026-08-21`, `21-08-2026`, `21.08.2026`, `21 Aug 2026`, `21 August 2026`, `21/08/26` | unparseable; before 1900; or more than two days in the future — a result can't be entered for a match that hasn't been played, so that's a transposed year |
-| 7 | **Home scorers** | `minute name (type)`, one per line — see below. Or `none` | any line that doesn't fit, quoted back with what was wrong with it |
+| 7 | **Home scorers** | `minute name (type)`, one per line — see below. Or `none`, or the **Nothing to add** button | any line that doesn't fit, quoted back with what was wrong with it. Then the goals are counted against the score |
 | 8 | **Away scorers** | as above | as above |
 | 9 | **Background photo** | a photo, an image document, or the *Use the standard template* button | a non-image document; over 20 MB (refused before the download, since Telegram won't serve it to a bot) |
 | 10 | The card, then the readback and the buttons | 📤 Post / ➕ Add another card / 🗑 Discard this card | typing anything here re-asks instead of abandoning the card |
+| 11 | **Theme** — only when Post was tapped on a pile of two or more | One line, 1–120 characters, at least one letter. `Arsenal's last five` | empty; no letters; over 120 characters. A date-like phrase is *fine* here — `Every match in August 2026` is a good theme — so the wrong-step check doesn't run |
 
 Every check **rejects rather than guesses or truncates**, names the value it
 couldn't use, and says what it wanted instead. The state is unchanged, so the
@@ -884,6 +885,56 @@ legitimately show fewer scorers than goals.
 Rendering runs off the event loop (`asyncio.to_thread`), so a slow crest
 download doesn't freeze the bot. If it fails, nothing is posted and you stay in
 step 9 to try a different background.
+
+#### Counted against the score
+
+The goals entered are checked against the score you already gave, on the step
+that entered them:
+
+```
+⚠️ The score says Man City scored 2, but you've given me 1, which is
+1 short. A goal missing from the list, or a minute that didn't parse?
+
+Goals I counted:
+• 23' Haaland
+
+Red cards and missed penalties aren't counted — only goals, penalties
+and own goals entered in this column.
+
+Send the list again to replace it, or use the buttons.
+
+[✅ That's right, carry on]
+[✏️ Let me redo them]
+```
+
+Here rather than only at the preview, because here it can still be acted on
+cheaply — the list is the last thing typed and fixing it is one message. At the
+preview it's three steps back, and the natural response to a warning that late
+is to post anyway. The preview keeps its own copy of the check as a backstop.
+
+It **asks rather than refuses**: a scorer can be genuinely unknown, and a card
+can legitimately show fewer names than goals. Only goals count — a red card or
+a missed penalty for a team that didn't score is perfectly normal, and counting
+either would flag every match that had one. Penalties and own goals do count,
+since both put a number on the scoreboard.
+
+#### A team that didn't score
+
+The step is still asked — a 0-2 loss can still have a sending-off — but it says
+so, and every scorer step carries a **Nothing to add** button:
+
+```
+Arsenal didn't score, so there are no goals to enter.
+
+If anyone was sent off or missed a penalty, add it — otherwise tap
+the button.
+
+[Nothing to add]
+```
+
+`none` has always worked, but it's a thing you have to have read; a button is a
+thing you can see. The button doesn't bypass the count check — tapping it when
+the score says two goals is exactly the mistake worth catching.
 
 ### Badges — checked while the name can still be fixed
 
@@ -1011,14 +1062,48 @@ a card is joining one already in progress.
 
 | | |
 |---|---|
-| `/batch` | What's waiting, in order, with **Post**, **Add another** and **Clear** |
+| `/batch` | What's waiting, in order, with **Post**, **Add another** and **Clear**. Posting from here asks for the theme too |
 | `🗑 Discard this card` | Drops the card just built. The pile is untouched |
 | `/cancel` | Ends the conversation only — saved cards are **not** binned, since that would silently throw away several matches' worth of typing. `/batch` → Clear is the deliberate way |
 
-Captions follow the same split: a single card gets the ordinary match caption,
-a carousel gets `caption.generate_group_caption()` — the same writer the
-scraped `carousel_group` posts use, which is explicitly forbidden from stating
-a scoreline because the cards already carry every result.
+### Captions, and the theme
+
+A single card gets the ordinary match caption. A carousel gets
+`caption.generate_group_caption()` — the same writer the scraped
+`carousel_group` posts use, which is explicitly forbidden from stating a
+scoreline because the cards already carry every result.
+
+Before a carousel goes out, one last question:
+
+```
+Last thing — what is this post?
+
+One line, in your words: Arsenal's last five, Every North London
+derby since 2020, Matchweek 3.
+
+The caption writer sees 3 results and nothing else, so without this
+it writes a matchday round-up. Skip and you'll get exactly that.
+
+[Skip — just post it]
+```
+
+That's the **theme**, and it's asked at post time and nowhere earlier because
+it's the one thing you can only answer once the set is complete. A pile of
+results tells the model that some matches happened; it can't tell it that these
+are one team's last five. The theme is stated twice in the prompt — once
+framing the task, once beside the results, since a long prompt otherwise buries
+the framing — and it drives the deterministic fallback too:
+
+| | Fallback opening |
+|---|---|
+| With a theme | `Arsenal's last five.` / `All 5 of them.` |
+| Without | `Every result from today, all 5 of them.` |
+
+`theme` is optional on `generate_group_caption`, and that's the point: the
+scraped `carousel_group` flow passes nothing and is completely unchanged by
+this. A matchday post has its framing by definition, and no human to ask.
+Single-card posts are never asked either — the ordinary match caption already
+knows what the match was.
 
 ### What's different about the output
 
@@ -1292,7 +1377,7 @@ Three things run in CI:
 |---|---|
 | `ruff` on the error-level rules | undefined names, broken f-strings, syntax errors. Deliberately *not* the full ruleset: this codebase catches exceptions broadly on purpose, and 100-plus style findings would make a red tick meaningless. |
 | `py_compile` on the entry-point scripts | `match_worker_runner.py`, `telegram_bot.py` and friends do work in their module body, so they can't be imported — only parsed. |
-| `pytest` | the phase and early-posting logic, dispatcher dedup and pruning, scraper event classification, the manual-match parsers (`tests/test_manual_match.py` — the one place data arrives typed rather than scraped), the badge check that stands in for `validate_matches.py` on a typed-in name, the pending-card manifest, and that every other module imports. |
+| `pytest` | the phase and early-posting logic, dispatcher dedup and pruning, scraper event classification, the manual-match parsers (`tests/test_manual_match.py` — the one place data arrives typed rather than scraped), the badge check that stands in for `validate_matches.py` on a typed-in name, the pending-card manifest, the carousel theme (including that the scraped group flow is unaffected by it), the goals-against-score check, and that every other module imports. |
 
 The suite covers pure functions only, so it needs no credentials and touches no
 network. `conftest.py` puts placeholder values in the environment before the
