@@ -11,11 +11,15 @@ reports renders without a per-formation template.
 
 Design notes
 ────────────
-  * The layout is a pixel-measured copy of the reference team-sheet card
-    (football-lineup-example.png): a 1080x1080 square, crests either side of
-    VS with STARTING XI beneath, BENCH and REFEREE down the left, the XI as
-    numbered discs with fixed-width name plates, and the brand strip along
-    the bottom. Every box below was read off that file, not eyeballed.
+  * The layout follows the reference team-sheet card
+    (football-lineup-example.png) — crests either side of VS with STARTING XI
+    beneath, BENCH and REFEREE down the left, the XI as numbered discs with
+    fixed-width name plates, and the brand strip along the bottom — re-laid
+    on the 3:4 canvas the scorecard and the stats page already use, so a
+    lineup slide and a scorecard slide are the same shape in the feed. The
+    reference's own proportions were kept: everything is the width it was on
+    the square, and the extra height went into the header's breathing room,
+    a deeper pitch and a longer bench column.
   * Each player is a numbered disc — white circle, ring and number in the
     team's own colour — with the name on a colour plate beneath it. The
     team's colour is curated in `overlay_scorebar.TEAM_COLORS`, sampled from
@@ -24,8 +28,8 @@ Design notes
     team's second colour, then to a darkened version of itself.
   * Same template background as the scorecard and the stats page (via
     `scorecard.load_template`, seeded by match_id, so every slide of a match
-    shares a look), cropped to the square, blurred and veiled dark the way
-    the reference's stadium is.
+    shares a look), blurred and veiled dark the way the reference's stadium
+    is.
   * The pitch is a trapezoid, and every row is spread across the width *at
     its own depth*, so the far rows narrow the way they do on television.
   * Columns are placed nearly evenly with a slight pull toward their nominal
@@ -46,39 +50,40 @@ from scorecard import (COLOR_TITLE, FONT_BOLD, _draw_centered_text,
                        _fit_font_to_box, _font, _shadow_of, load_template)
 
 # ── CANVAS ───────────────────────────────────────────────────────────────────
-# The reference card is a 1080x1080 square. The shared 1086x1448 template is
-# cropped to it — centre band, full width — so the match's background carries
-# over from the other slides without stretching.
-CANVAS_W, CANVAS_H = 1080, 1080
+# 3:4, the shape of the shared 1086x1448 template — the same canvas the
+# scorecard and the stats page are drawn on, used whole rather than cropped.
+CANVAS_W, CANVAS_H = 1086, 1448
 
-# ── BOUNDING BOXES (x1, y1, x2, y2), measured off the reference ─────────────
-# The header and pitch share one axis at x=609 — the bench column takes the
+# ── BOUNDING BOXES (x1, y1, x2, y2) ─────────────────────────────────────────
+# The header and pitch share one axis at x=612 — the bench column takes the
 # left edge, so the pitch (and everything above it) sits right of centre.
-HOME_CREST_BOX = (340, 41, 481, 182)       # home always left of the VS…
-AWAY_CREST_BOX = (737, 41, 878, 182)       # …away always right, on both slides
-VS_BOX         = (539, 56, 679, 140)       # 'VS', cap height 67 in the reference
-TITLE_BOX      = (489, 146, 729, 178)      # 'STARTING XI', cap height 18
+HOME_CREST_BOX = (332, 66, 492, 226)       # home always left of the VS…
+AWAY_CREST_BOX = (732, 66, 892, 226)       # …away always right, on both slides
+VS_BOX         = (532, 92, 692, 196)       # 'VS'
+TITLE_BOX      = (472, 228, 752, 268)      # 'STARTING XI'
 
 # The bench column, and the referee beneath it.
-COL_L, COL_R      = 40, 280
-BENCH_LABEL_BOX   = (COL_L, 218, COL_R, 266)   # 'BENCH', cap height 32
-BENCH_TOP         = 287                    # first name's band starts here
-BENCH_LINE_H      = 50                     # the reference's rhythm, at its roomiest
-BENCH_NAMES_MAX_Y = 830                    # the rhythm compresses past here instead
-BENCH_PLATE_W     = 176                    # one plate width for the whole column
-REF_GAP           = 48                     # last bench name → 'REFEREE'
-REF_LABEL_H       = 42
-REF_NAME_GAP      = 8
+COL_L, COL_R      = 44, 292
+BENCH_LABEL_BOX   = (COL_L, 300, COL_R, 356)   # 'BENCH'
+BENCH_TOP         = 382                    # first name's band starts here
+BENCH_LINE_H      = 62                     # the column's rhythm, at its roomiest
+BENCH_NAMES_MAX_Y = 1040                   # the rhythm compresses past here instead
+BENCH_PLATE_W     = 190                    # one plate width for the whole column
+REF_GAP           = 56                     # last bench name → 'REFEREE'
+REF_LABEL_H       = 48
+REF_NAME_GAP      = 10
 
-# The pitch, as a trapezoid: narrower at the far end.
-PITCH_TOP, PITCH_BOTTOM = 218, 910
-PITCH_CX                = 609
-PITCH_TOP_HALF_W        = 273
-PITCH_BOTTOM_HALF_W     = 406
+# The pitch, as a trapezoid: narrower at the far end. Taller than it was on
+# the square — the 3:4 canvas' extra height is mostly pitch, which is also
+# what a real pitch seen end-on looks like.
+PITCH_TOP, PITCH_BOTTOM = 308, 1278
+PITCH_CX                = 612
+PITCH_TOP_HALF_W        = 268
+PITCH_BOTTOM_HALF_W     = 402
 
-FOOTER_CY       = 1006                     # centreline of the brand strip
-FOOTER_LOGO_H   = 46
-FOOTER_GAP      = 18                       # between the wordmark and the logo
+FOOTER_CY       = 1372                     # centreline of the brand strip
+FOOTER_LOGO_H   = 52
+FOOTER_GAP      = 20                       # between the wordmark and the logo
 
 # ── COLOURS ──────────────────────────────────────────────────────────────────
 COLOR_NAME       = (240, 244, 250, 255)
@@ -90,18 +95,18 @@ COLOR_SIDE_VEIL  = (6, 9, 15, 150)         # darkest point of the left gradient
 # ── BACKGROUND ───────────────────────────────────────────────────────────────
 BG_BLUR    = 16    # same treatment as the stats page, for the same reason
 BG_DARKEN  = 138   # alpha of the flat veil — the reference is nearly night
-VEIL_WIDTH = 400   # how far the left gradient reaches before it is gone
+VEIL_WIDTH = 420   # how far the left gradient reaches before it is gone
 
 # ── FONT SIZE LIMITS ─────────────────────────────────────────────────────────
-VS_FONT_MAX     = 96
-TITLE_FONT_MAX  = 27
-TITLE_FONT_MIN  = 14
-BENCH_HEAD_MAX  = 46
-BENCH_FONT_MAX  = 27
-BENCH_FONT_MIN  = 15
-PLAYER_FONT_MAX = 25
-PLAYER_FONT_MIN = 16
-FOOTER_FONT_MAX = 39
+VS_FONT_MAX     = 112
+TITLE_FONT_MAX  = 32
+TITLE_FONT_MIN  = 16
+BENCH_HEAD_MAX  = 54
+BENCH_FONT_MAX  = 30
+BENCH_FONT_MIN  = 17
+PLAYER_FONT_MAX = 28
+PLAYER_FONT_MIN = 18
+FOOTER_FONT_MAX = 44
 
 # ── PITCH GEOMETRY ───────────────────────────────────────────────────────────
 # Depths as fractions of the pitch height, widths as fractions of the pitch's
@@ -129,24 +134,24 @@ SLOT_ANCHOR = {'L': 0.09, 'CL': 0.30, 'C': 0.50, 'CR': 0.70, 'R': 0.91}
 SLOT_ORDER  = {'L': 0, 'CL': 1, 'C': 2, 'CR': 3, 'R': 4}
 ANCHOR_PULL = 0.15  # the reference back four: an even spread, nudged outward
 
-ROW_TOP_MARGIN    = 0.118  # of pitch height — the reference's front row at cy 300
-ROW_BOTTOM_MARGIN = 0.106  # of pitch height — the reference's keeper at cy 837
+ROW_TOP_MARGIN    = 0.118  # of pitch height — clear of the far penalty area
+ROW_BOTTOM_MARGIN = 0.125  # of pitch height — the keeper, clear of his own box
 ROW_SIDE_INSET    = 0.03   # of the row's width, so nobody stands on a touchline
-DISC_MAX_D        = 107    # the reference disc, exactly
+DISC_MAX_D        = 120    # the reference disc, scaled to this canvas
 DISC_RING         = 0.065  # ring stroke, as a fraction of the diameter
 DISC_NUMBER_H     = 0.60   # number font, as a fraction of the diameter
-LABEL_GAP         = 11     # disc bottom → plate top, per the reference
-LABEL_H           = 37
-LABEL_W           = 150    # the reference plate is fixed-width, every player
-LABEL_PAD_X       = 8
-LABEL_GUTTER      = 10     # kept clear between one player's plate and the next
+LABEL_GAP         = 12     # disc bottom → plate top, per the reference
+LABEL_H           = 42
+LABEL_W           = 168    # the reference plate is fixed-width, every player
+LABEL_PAD_X       = 9
+LABEL_GUTTER      = 12     # kept clear between one player's plate and the next
 DISC_FILL         = 0.72   # of its column, so discs in a row never touch
 PALE_ACCENT_LUM   = 195    # above this a colour cannot carry a white disc
 DARK_INK_LUM      = 150    # above this a plate needs dark text on it, not white
 
-SHEET_DISC_MAX_D = 64      # the no-positions fallback's smaller disc
-SHEET_FONT_MAX   = 34
-SHEET_NAME_GAP   = 24
+SHEET_DISC_MAX_D = 72      # the no-positions fallback's smaller disc
+SHEET_FONT_MAX   = 40
+SHEET_NAME_GAP   = 28
 
 
 # ── Small helpers ────────────────────────────────────────────────────────────
@@ -631,12 +636,20 @@ def draw_footer(img, draw):
 
 # ── Main public function ─────────────────────────────────────────────────────
 
-def _square_background(competition, match_id):
-    """The shared match template, cropped to the reference's square canvas and
-    pushed back to night: blur, then a heavy flat veil."""
+def _card_background(competition, match_id):
+    """The shared match template at the card's own size, pushed back to night:
+    blur, then a heavy flat veil.
+
+    The templates are already 1086x1448, so this is normally a straight open;
+    anything a different size is centre-cropped, or scaled up first when it is
+    too small to crop from."""
     img = load_template(competition, match_id)
-    x0 = max(0, (img.width - CANVAS_W) // 2)
-    y0 = max(0, (img.height - CANVAS_H) // 2)
+    if img.width < CANVAS_W or img.height < CANVAS_H:
+        scale = max(CANVAS_W / img.width, CANVAS_H / img.height)
+        img = img.resize((max(CANVAS_W, int(img.width * scale)),
+                          max(CANVAS_H, int(img.height * scale))), Image.LANCZOS)
+    x0 = (img.width - CANVAS_W) // 2
+    y0 = (img.height - CANVAS_H) // 2
     img = img.crop((x0, y0, x0 + CANVAS_W, y0 + CANVAS_H))
     img = img.filter(ImageFilter.GaussianBlur(BG_BLUR))
     img = Image.alpha_composite(img, Image.new('RGBA', img.size,
@@ -683,7 +696,7 @@ def generate_lineup_card(scraper_data: dict, side: str = 'home',
     rows = build_rows(players) if placed else []
 
     competition = competition or match_sample.get('competition_name')
-    img = _square_background(competition, match_id)
+    img = _card_background(competition, match_id)
 
     crest = _load_crest_image(team)
     accent = _accent_color(_team_palette(team, crest))
