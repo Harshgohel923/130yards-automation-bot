@@ -161,10 +161,10 @@ def telegram_bot_running() -> bool:
     return False
 
 
-def ensure_telegram_bot():
+def ensure_telegram_bot(reason: str = 'a match worker is active'):
     """Start the photo-intake Telegram bot if it isn't already running.
     Best-effort: a bot failure must never block match worker dispatching.
-    The bot's own watchdog shuts it down once no match workers remain."""
+    The bot's own watchdog shuts it down once it has nothing left to do."""
     try:
         if telegram_bot_running():
             print('[dispatcher] Telegram bot already running')
@@ -176,12 +176,66 @@ def ensure_telegram_bot():
             timeout=10,
         )
         if resp.status_code == 204:
-            print('[dispatcher] Triggered Telegram bot')
+            print(f'[dispatcher] Triggered Telegram bot — {reason}')
         else:
             print(f'[dispatcher] WARNING: could not trigger Telegram bot: '
                   f'{resp.status_code} {resp.text}')
     except Exception as e:
         print(f'[dispatcher] WARNING: Telegram bot check failed: {e}')
+
+
+def telegram_message_waiting() -> bool:
+    """Is there an unread message sitting in the bot's update queue?
+
+    This is what makes /card work when nothing is playing. The bot only exists
+    while an Actions job holds it, so a message sent to a stopped bot goes
+    nowhere until something starts one — and the bot cannot start itself,
+    because it isn't running to hear the request. The dispatcher is already
+    awake every fifteen minutes, so it does the listening.
+
+    Two things make the peek safe:
+
+      * No `offset`. Telegram only confirms (discards) updates when getUpdates
+        is called with an offset above their id, so the default read leaves the
+        queue exactly as it found it and the bot still receives the message.
+        A negative offset would *not* be safe — that form forgets everything
+        before the update it returns.
+      * The caller must have established that no bot is running. Two pollers on
+        one token fight over the same queue, and the live bot would start
+        losing updates to this one.
+
+    Any pending message counts, not just /card: a photo sent to a stopped bot
+    deserves an answer just as much, and the bot's own handlers decide what to
+    do with whatever it turns out to be.
+    """
+    token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    if not token:
+        return False
+    try:
+        resp = requests.get(
+            f'https://api.telegram.org/bot{token}/getUpdates',
+            params={'limit': 1, 'timeout': 0},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return bool(resp.json().get('result'))
+    except Exception as e:
+        print(f'[dispatcher] WARNING: could not check for Telegram messages: {e}')
+        return False
+
+
+def wake_telegram_bot_if_messaged():
+    """Start the bot when someone has messaged it while it was down."""
+    try:
+        if telegram_bot_running():
+            return
+        if not telegram_message_waiting():
+            return
+        print('[dispatcher] A message is waiting for the Telegram bot')
+        note('- 💬 **Telegram** — a message was waiting, starting the bot')
+        ensure_telegram_bot('a message is waiting')
+    except Exception as e:
+        print(f'[dispatcher] WARNING: Telegram wake check failed: {e}')
 
 
 def publish_carousel_groups(registry: list):
@@ -495,6 +549,12 @@ def main():
     # Its watchdog shuts it down once the last match worker finishes.
     if running or fired_any:
         ensure_telegram_bot()
+    else:
+        # Nothing is playing, so nothing would normally hold the bot open. If a
+        # message is waiting for it — a /card, a stray photo — start it anyway.
+        # Only in this branch: peeking at the queue while the bot is polling it
+        # would take updates out of its mouth.
+        wake_telegram_bot_if_messaged()
 
     # Publish any carousel group that is now complete. Runs after dispatching so
     # a slow or failing post can never delay a worker for a kicking-off match.

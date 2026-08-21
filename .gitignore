@@ -15,6 +15,7 @@ output/
 data/
 bot.db
 state.json
+.bot_session
 
 # macOS
 .DS_Store

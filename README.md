@@ -47,7 +47,7 @@ Production is **GitHub Actions**, not a server:
 |---|---|---|
 | `.github/workflows/dispatcher.yml` | external cron + `schedule` every 15 min | Runs `.github/scripts/dispatcher.py`; spawns a `match_bot.yml` run per match whose window is open. Detects already-running workers by scanning the run names (`match-<id>`) of every **queued or in-progress** run — no external state. Queued counts: a run it just triggered sits queued for minutes, and two ticks inside one fixture's window would otherwise dispatch a duplicate worker. Also **publishes carousel groups** that are complete and **prunes finished fixtures** from `matches.json`, so it carries the same secrets a worker does, needs `contents: write`, and runs under a `concurrency` group to stay a single writer. |
 | `.github/workflows/match_bot.yml` | `workflow_dispatch` (from dispatcher) | Runs `match_worker_runner.py <match_id>` for one match. Job timeout 360 min (GitHub's hard ceiling, measured from job start); the worker's own ceiling is `MAX_MATCH_DURATION` = 290 min, measured from kickoff. |
-| `.github/workflows/telegram_bot.yml` | `workflow_dispatch` (from dispatcher) | Runs the photo-intake Telegram bot under `.github/scripts/bot_watchdog.py` while matches are active. |
+| `.github/workflows/telegram_bot.yml` | `workflow_dispatch` (from dispatcher) | Runs the Telegram bot under `.github/scripts/bot_watchdog.py` — while matches are active, and while someone is mid-conversation with it. Carries the Instagram and Gemini secrets too, because `/card` posts from here. |
 | `.github/workflows/ci.yml` | push to master, PR | Lints for errors, compile-checks the entry-point scripts and runs the test suite. See [Tests and CI](#tests-and-ci). |
 
 GitHub's own `schedule:` cron is unreliable, so an **external cron job** also
@@ -231,7 +231,9 @@ fixture list rather than at full time.
 | `matches.json` | The fixture registry — the **single source of truth** for team names, competition, and kickoff. Hand-edited, then validated. Finished fixtures are pruned automatically — see *Registry cleanup*. |
 | `football_scraper_dom.py` | Scrapes allfootballapp's **mobile** match pages: match phase, teams, scores (HT/FT/pens), event timeline (goals, assists, cards, subs), statistics, formations. **The single source of truth** — status, live data and competition name all come from here. Only the `m.` host carries the data blob; `www.` returns nothing. |
 | `allfootball_desktop.py` | **Secondary, strictly additive.** Reads the desktop match page for two things mobile lacks: `minute_extra` (stoppage-time offset — mobile reports both a 90th-minute and a 90+3 booking as `90'`) and the `tendencies` momentum series, archived with the match data. Its `format_minute()` is what both renderers use to draw scorer minutes, so a stoppage-time goal reads `90+3'` instead of `90'`; events without an offset are returned unchanged, so it is safe to call unconditionally. Best-effort throughout: every failure path leaves the match data untouched, so it can never affect posting. Fetched only once a post is in prospect (HT/FT/ET/AP, or minute ≥ 43), to avoid doubling request volume against the same site. |
-| `telegram_bot.py` | Photo intake: you send a match photo via Telegram, it lands in Cloudinary keyed by match id, and the pipeline switches to the photo-overlay card style. |
+| `telegram_bot.py` | Photo intake: you send a match photo via Telegram, it lands in Cloudinary keyed by match id, and the pipeline switches to the photo-overlay card style. Also hosts `/card` — see *Manual match cards*. |
+| `manual_match.py` | Turns typed-in details into the same `scraper_data` dict the scraper returns, so a hand-entered match renders and captions through the ordinary pipeline. Parsers only — no I/O. |
+| `card_batch.py` | The pile of hand-built cards waiting to go out as one post, stored on Cloudinary under `manual_cards/<telegram user id>/` so it outlives the bot process. Same idea as `carousel.py`, minus the deadline and the POSTED marker — this one is told when it's complete. |
 
 ### Rendering
 
@@ -694,6 +696,368 @@ rendered. The Markdown in git is the permanent copy.
 
 ---
 
+## The Telegram bot, step by step
+
+`telegram_bot.py` runs three flows. Two attach a photo to a fixture the scraper
+is already covering; the third builds a whole match from nothing. This section
+is the exhaustive reference — every prompt, everything each step accepts, what
+it does when it can't read you, and where it goes next. The *why* behind the
+manual flow is in [Manual match cards](#manual-match-cards) below.
+
+### What it accepts at all
+
+Outside `/card`, the vocabulary is fixed and free text has no meaning anywhere:
+photos, the commands, and the buttons that mirror them. Anything else gets the
+help text back rather than being parsed or ignored — a bot that stays silent is
+indistinguishable from a bot that is down.
+
+| | Published to Telegram's ☰ menu | Button |
+|---|---|---|
+| `/start`, `/newphoto` | Pick a match and upload a photo | 📸 New photo |
+| `/card` | Build a match card from details you type in | 🆕 Manual card |
+| `/batch` | Cards waiting to be posted together | — |
+| `/cancel` | Abandon whatever is in progress | 🚫 Cancel |
+| `/help` | What this bot accepts | ❓ Help |
+
+`TELEGRAM_ALLOWED_USER_IDS` gates every entry point. Unset means anyone who
+finds the bot can use it, which for a bot that overwrites match photos and
+posts to Instagram is worth not doing.
+
+**In every state**, `/cancel`, `/help`, `/batch` and `/card` keep working —
+they are registered as fallbacks on both conversations, so a button tap mid-flow
+does what it says instead of being swallowed as an answer. `/help` and `/batch`
+answer *without* disturbing the state you were in.
+
+### Flow A — photo for a scraped match
+
+Renders that match's next card in the photo-overlay style instead of on the
+template. The photo is stored as `match_photos/<match_id>_<HT|FT>` with
+`overwrite=True`, so re-sending simply replaces it.
+
+| Step | Prompt | Accepts | Otherwise | Next |
+|---|---|---|---|---|
+| 1 | "Select the match:" — one inline button per fixture in `matches.json`, plus Cancel | a tap | an empty registry ends the flow with "No matches found in matches.json." | 2 |
+| 2 | "Which scorecard is this photo for?" — Half Time / Full Time / Cancel | a tap | a match id that vanished from the registry mid-flow ends with "Match not found" | 3 |
+| 3 | "Now send the photo." — with the tip to send it as a file/document for full quality | a photo or an image document | a non-image document is told so and the step repeats | upload |
+
+At the upload: anything over Telegram's own 20 MB ceiling is refused *before*
+the download, with a message saying so rather than a generic failure. Anything
+over 9 MB or longer than 2560px on its long edge is downscaled first, because
+Cloudinary rejects oversized images and the overlay renders at the photo's own
+resolution anyway. A failed upload answers in the chat and leaves you in step 3
+to try again — a silent failure here is the worst outcome available, since the
+photo looks sent and the card goes out on the plain template hours later with
+nobody having been told.
+
+### Flow B — a photo sent with no conversation
+
+Sending a bare photo *starts* a conversation around it: "Got the photo. Which
+match is it for?" → match → HT/FT → uploaded immediately, since the photo is
+already in hand.
+
+This path exists because the bot restarts often and conversation state lives
+only in memory. If it restarted between picking the match and sending the
+picture, the photo belongs to no conversation at all — and the only thing worse
+than asking which match it is would be dropping it. The same fallback catches a
+photo that arrives in step 3 after the state was lost: it re-asks rather than
+discarding.
+
+### Flow C — `/card`, a match typed in
+
+Ten steps. Every field is parsed the moment it arrives, so a bad value is
+caught on the message that contained it rather than at render time; a rejected
+field leaves the state unchanged, so the next message is another attempt at the
+same question and nothing typed earlier is lost.
+
+| # | Asks | Expected format | Rejected when |
+|---|---|---|---|
+| 0 | Opens with what this is, whether the card is joining a pile already in progress, and how to stop | — | — |
+| 1 | **Home team** | A name, 1–40 characters, containing at least one letter. `Arsenal`, `Real Betis`, `FC Schalke 04`, `Зенит` | empty; no letters (`1234`); over 40 characters; or it parses as a score or a date, which means the answer belongs to a later step. **Then the crest is checked** — see below |
+| 2 | **Away team** | as above | as above |
+| 3 | **HT or FT** | a button tap | — (typed text re-asks) |
+| 4 | **Score**, home first | `2-1`. Separator may be `-`, `–`, `—`, `:` or `x`; spaces ignored; one or two digits a side | anything else — `3`, `two-one`, `2-1-1` |
+| 5 | **Competition** | A name, 1–60 characters, at least one letter. `Premier League`, `Club Friendly` | as team name, with the longer limit. **Then the competition badge is checked** |
+| 6 | **Date** | `21/08/2026` (day first), `2026-08-21`, `21-08-2026`, `21.08.2026`, `21 Aug 2026`, `21 August 2026`, `21/08/26` | unparseable; before 1900; or more than two days in the future — a result can't be entered for a match that hasn't been played, so that's a transposed year |
+| 7 | **Home scorers** | `minute name (type)`, one per line — see below. Or `none` | any line that doesn't fit, quoted back with what was wrong with it |
+| 8 | **Away scorers** | as above | as above |
+| 9 | **Background photo** | a photo, an image document, or the *Use the standard template* button | a non-image document; over 20 MB (refused before the download, since Telegram won't serve it to a bot) |
+| 10 | The card, then the readback and the buttons | 📤 Post / ➕ Add another card / 🗑 Discard this card | typing anything here re-asks instead of abandoning the card |
+
+Every check **rejects rather than guesses or truncates**, names the value it
+couldn't use, and says what it wanted instead. The state is unchanged, so the
+next message is another attempt at the same question and nothing typed earlier
+is lost:
+
+```
+you  →  2-1
+bot  →  "2-1" looks like a score, not the team name — I think that
+        answer is meant for a later step.
+
+        Right now I need the team name, like Arsenal or Real Betis.
+        The score and date come after this.
+```
+
+That last check exists because ten questions in a row is exactly the shape of
+interaction where an answer lands one step early or late. Without it a
+scoreline typed into "home team" becomes a team called `2-1`, renders, and
+posts. Silently trimming an over-long name would be the same class of bug: it
+would put a wrong name on a public post, where saying "that's 45 characters and
+the limit is 40" costs one message and gets the right one.
+
+**Step 3 before step 4** is deliberate: asking for a *final* score and then
+being told it was a half-time card reads as a contradiction, and the two draw
+from different fields — a half-time card stores `hts_*`, a full-time one `fs_*`.
+
+**Steps 7–8, the scorer grammar.** One event per line, minute first. Plain
+lines are goals:
+
+```
+23 Saka                 goal
+45+2 Havertz (pen)      penalty, in first-half stoppage time
+67 Rice (og)            own goal
+88 Odegaard (red)       red card
+90 Martinelli (miss)    penalty missed
+```
+
+The trailing apostrophe people naturally type (`23' Saka`) is optional, as is
+the separator (`23. Saka`, `23 - Saka`). Suffixes are case-insensitive and have
+aliases — `(pen)`, `(penalty)`, `(pk)`; `(og)`, `(own goal)`; `(red)`, `(rc)`,
+`(sent off)`; `(miss)`, `(missed penalty)`. `none`, `-`, `n/a` and `nil` all
+mean the team had none.
+
+Each line is bounded as well as parsed, because the grammar alone accepts
+things that aren't facts about a football match:
+
+| Rejected | Because |
+|---|---|
+| `900 Rice` | there's no 900th minute — minutes run 1–130 |
+| `0 Saka` | same |
+| `45+99 Saka` | more than 30 minutes of stoppage time |
+| `23 123` | `123` isn't a name |
+| `23 <41+ characters>` | the name wouldn't fit the column |
+| `23 Saka (assist)` | `assist` isn't a type — only `pen`, `og`, `red`, `miss` |
+
+A line that can't be read **rejects the whole block** rather than being
+skipped, and the message quotes back exactly which lines failed and why:
+
+```
+I couldn't read these lines:
+
+• 900 Rice  ← there's no 900th minute
+
+The format is one event per line: minute, name, then an optional
+type in brackets.
+…
+```
+
+A half-read list is worse than a rejected one: the card would go out looking
+complete with a goal quietly missing from it. Own goals appear in whichever
+column you enter them under, which is normally the team they counted for.
+
+**Step 9, the background.** Optional. Send one and the card renders in the
+photo-overlay style; skip it and it goes on the usual template — whose design
+is seeded by the generated match id, so re-entering the same match on the same
+date lands on the same one. Oversized photos are downscaled exactly as in
+Flow A.
+
+**Step 10, what you get.** The card arrives twice — as a photo to look at, and
+as the uncompressed PNG to keep — because the card is the deliverable and
+posting is optional. Under it, a readback of what you typed:
+
+```
+Arsenal 3–1 Man City
+Premier League · Full time · 21 AUG 2026
+Background: standard template
+
+⚠️ The scorers add up to 1–1, not 3–1. Worth a look before posting.
+
+This post would be a carousel of 2, in this order:
+1. Arsenal 3–1 Man City
+2. this one
+```
+
+It repeats the input rather than describing the picture: the picture is right
+there, so what is worth checking is whether the bot understood you. The
+scorers-vs-scoreline mismatch is a **warning, not a block** — a card can
+legitimately show fewer scorers than goals.
+
+Rendering runs off the event loop (`asyncio.to_thread`), so a slow crest
+download doesn't freeze the bot. If it fails, nothing is posted and you stay in
+step 9 to try a different background.
+
+### Badges — checked while the name can still be fixed
+
+A scraped fixture has its crests guaranteed before kickoff by
+`validate_matches.py`. A typed-in name has no such guarantee, and a missing
+crest is not cosmetic: it is a blank hole in the middle of the card, which
+without this check you would discover at step 10, when the name that caused it
+is eight messages back.
+
+So the same check runs the moment a name is entered, against the same
+functions — `logo_fetch.normalize_team_name`, then `fetch_logo`, then
+`config.get_crest_url` as a fallback. Three outcomes:
+
+| | What you see |
+|---|---|
+| Crest already on Cloudinary, or `logo_fetch` finds and uploads it | Nothing. The flow moves to the next question |
+| The name resolves to a different official spelling | "Found it — filed as **Tottenham Hotspur**, so that's what goes on the card." The card and the crest lookup then both use the official name — the same rewrite `validate_matches.py` applies to `matches.json` |
+| Nothing found | The flow stops and asks |
+
+That last case:
+
+```
+I can't find a badge for Wingate & Finchley FC, so that side of the
+card would have a blank space where the crest goes.
+
+Three ways out:
+• Send me a PNG of the badge now and I'll save it — it'll be there
+  for every future card too
+• Fix the spelling — badges are filed under official names, so try
+  Tottenham Hotspur rather than Spurs
+• Carry on without it
+
+[✏️ Let me fix the spelling]
+[➡️ Carry on without it]
+```
+
+Sending a PNG runs `logo_fetch.upload_local_crest`, which writes it to the
+deterministic public id every renderer already looks at — so the badge is there
+for every future card, and for scraped fixtures with that team too.
+
+**The upload is never forced.** `upload_local_crest` refuses when a badge
+already sits at the public id the name resolves to, and that refusal is
+honoured rather than overridden: the lookup that sent you to this question
+searches a different table from the one deciding where an uploaded file lands,
+so a name it could not resolve can still slugify onto a real club's crest.
+Forcing it would break every future card for a team nobody was talking about.
+When something is already there, it's a better badge than the one being
+offered — the bot says so and uses it.
+
+**A competition badge is milder.** `get_competition_logo_url` falls back to the
+130 Yards mark, so a missing one is genuinely cosmetic and the question says
+so — but it still asks, because a silent fallback looks deliberate.
+
+**None of this fires a Telegram alert.** `get_crest_url(alert=True)` normally
+sends one telling you to run `validate_matches.py`; here the bot is already
+talking to you about that exact team, so every lookup passes `alert=False`.
+
+### The three buttons at step 10
+
+| Button | What happens |
+|---|---|
+| **➕ Add another card** | Uploads this card to the pile, confirms "Card *n* saved. Nothing has been posted", and reopens step 1 for the next match |
+| **📤 Post** | Uploads this card to the pile, then publishes the whole pile — one card as an ordinary image post, two or more as a carousel — and clears it. The label counts: "Post these 3 cards" |
+| **🗑 Discard this card** | Drops the card just built. The pile is untouched |
+
+Both keeping paths **save the card before doing anything else**, so an upload
+failure is discovered while the render still exists and can be retried, rather
+than after it has been deleted. If the bot restarted between the render and the
+tap, the card is gone and it says so plainly — anything already on the pile is
+unaffected.
+
+### `/batch` — the pile
+
+Its own command rather than a step, because the case it exists for is the
+conversation having ended without you and the cards outliving it.
+
+```
+2 cards waiting — this would post as a carousel, in this order:
+
+1. Arsenal 3–1 Man City
+2. Arsenal 2–0 Chelsea
+
+[📤 Post all 2 now]
+[➕ Add another card]  [🗑 Clear]
+```
+
+**Add another card** here is registered as an *entry point* of the card
+conversation, not an ordinary callback — only a conversation handler can put
+you into a state, so a plain handler could ask the first question and then have
+nowhere to put the answer.
+
+### Staying alive
+
+Every update the bot handles touches `.bot_session` (a handler in group −1 that
+consumes nothing and exists only for the timestamp). The watchdog keeps the bot
+running while that file is under 20 minutes old, so it cannot shut down
+mid-scoreline. See [Waking the bot](#waking-the-bot).
+
+---
+
+## Manual match cards
+
+Some fixtures are simply not on allfootball — a friendly, a lower division, an
+old game worth reposting. `/card` in the Telegram bot builds one from details
+you type in, renders it, and sends it to you; posting is a separate tap that
+never happens on its own.
+
+The steps are documented above in
+[The Telegram bot, step by step](#the-telegram-bot-step-by-step). This section
+is the reasoning behind them.
+
+### Building a carousel
+
+**➕ Add another card** is how a set of results becomes one post — the last
+five matches of a team, a night's fixtures — instead of five separate ones.
+Each card goes on a pile; **📤 Post** publishes the whole pile at once: one
+card as an ordinary image post, two or more as a carousel, up to Instagram's
+ceiling of ten. Carousel order is the order you added them, so it's yours to
+choose.
+
+The pile lives on Cloudinary, not in the bot's memory, because the bot shuts
+down twenty minutes after your last message and a five-card batch is easily
+twenty minutes of typing. So it survives a restart, and `/card` tells you when
+a card is joining one already in progress.
+
+| | |
+|---|---|
+| `/batch` | What's waiting, in order, with **Post**, **Add another** and **Clear** |
+| `🗑 Discard this card` | Drops the card just built. The pile is untouched |
+| `/cancel` | Ends the conversation only — saved cards are **not** binned, since that would silently throw away several matches' worth of typing. `/batch` → Clear is the deliberate way |
+
+Captions follow the same split: a single card gets the ordinary match caption,
+a carousel gets `caption.generate_group_caption()` — the same writer the
+scraped `carousel_group` posts use, which is explicitly forbidden from stating
+a scoreline because the cards already carry every result.
+
+### What's different about the output
+
+Exactly one thing: the **date in the top-right corner**, in the same face and
+colour as the FULL TIME headline, mirroring the brand mark on the left. Live
+fixtures post within minutes of the whistle, where a date is noise; a match
+typed in weeks later needs to say when it was played.
+
+That is carried by `matchSample['card_date']`, which only
+`manual_match.build_scraper_data()` sets. Both renderers draw it if and only if
+it is present, which is how scraped fixtures stay free of one. Everything else
+— crests, competition logo, scorer symbols, caption, hashtags — runs through
+the ordinary pipeline unchanged and unaware. That is deliberate: if a manual
+card looks wrong, the automated one is wrong the same way.
+
+### Waking the bot
+
+The bot only exists while an Actions job holds it, and the watchdog normally
+stops it as soon as the last match worker finishes — which is precisely when
+`/card` gets used. Two changes make it reachable anyway:
+
+- **The dispatcher listens.** On a tick with no workers running, it peeks at
+  the bot's Telegram update queue and starts `telegram_bot.yml` if anything is
+  waiting. So: message the bot, wait for the next tick (≤ 15 min), and it wakes
+  up and answers. The peek passes no `offset`, which is what makes it
+  non-destructive — Telegram only discards updates when `getUpdates` is called
+  with an offset above their id, so the message is still there for the bot. It
+  only runs when no bot is running: two pollers on one token fight over the
+  same queue. Any pending message counts, not just `/card` — a photo sent to a
+  stopped bot deserves an answer too.
+- **The watchdog waits.** `telegram_bot.py` touches `.bot_session` on every
+  update it handles; the watchdog keeps the bot alive while that file is less
+  than `SESSION_IDLE` (20 min) old, so it can't shut down mid-scoreline.
+
+Running `python telegram_bot.py` locally works the same way and skips all of
+this — the local `.env` already has every credential `/card` needs.
+
+---
+
 ## Telegram alerts
 
 Every failure point alerts you with a plain-language description and its
@@ -794,15 +1158,21 @@ codebase: no module names, no field names (`post_ft_stats`, `kickoff_utc`), no
 | `IG_USER_ID` | Instagram business account id |
 | `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | Cloudinary |
 | `GEMINI_API_KEY` | Caption generation |
-| `TELEGRAM_BOT_TOKEN` | Photo bot + alerts |
+| `TELEGRAM_BOT_TOKEN` | Photo bot + alerts + the dispatcher's wake check |
 | `TELEGRAM_ALLOWED_USER_IDS` | Who may talk to the bot (also default alert target) |
 | `TELEGRAM_ALERT_CHAT_ID` | Optional explicit alert chat |
 | `FB_APP_ID` / `FB_APP_SECRET` | **Local only** — used by `setup_token.py` |
 
-Every secret except the Facebook app pair is now needed by **both**
-`match_bot.yml` and `dispatcher.yml`, since the dispatcher publishes carousel
-groups. `dispatcher.yml` installs the full `requirements.txt` for the same
-reason, and `match_bot.yml` grants `actions: write` so a worker can nudge it.
+Every secret except the Facebook app pair is now needed by `match_bot.yml`,
+`dispatcher.yml` **and** `telegram_bot.yml` — the dispatcher publishes carousel
+groups, and the bot's `/card` flow renders and posts a whole card on its own.
+`dispatcher.yml` installs the full `requirements.txt` for the same reason, and
+`match_bot.yml` grants `actions: write` so a worker can nudge it.
+
+If the Instagram or Gemini secrets are missing from `telegram_bot.yml`, the bot
+still starts and still takes photos: the posting stack is imported inside the
+handler that needs it, so only `/card`'s final step fails, and it says so in
+the chat.
 
 ### `config.py`
 
@@ -922,7 +1292,7 @@ Three things run in CI:
 |---|---|
 | `ruff` on the error-level rules | undefined names, broken f-strings, syntax errors. Deliberately *not* the full ruleset: this codebase catches exceptions broadly on purpose, and 100-plus style findings would make a red tick meaningless. |
 | `py_compile` on the entry-point scripts | `match_worker_runner.py`, `telegram_bot.py` and friends do work in their module body, so they can't be imported — only parsed. |
-| `pytest` | the phase and early-posting logic, dispatcher dedup and pruning, scraper event classification, and that every other module imports. |
+| `pytest` | the phase and early-posting logic, dispatcher dedup and pruning, scraper event classification, the manual-match parsers (`tests/test_manual_match.py` — the one place data arrives typed rather than scraped), the badge check that stands in for `validate_matches.py` on a typed-in name, the pending-card manifest, and that every other module imports. |
 
 The suite covers pure functions only, so it needs no credentials and touches no
 network. `conftest.py` puts placeholder values in the environment before the
@@ -937,6 +1307,19 @@ tool. CI only asserts that `matches.json` is structurally sound.
 Useful one-offs:
 
 ```bash
+# render a manual card locally, without the bot or a post
+venv/bin/python - <<'PY'
+import manual_match as mm
+from scorecard import generate_scorecard
+data = mm.build_scraper_data(
+    home_team='Arsenal', away_team='Man City',
+    home_score='3', away_score='1', competition='Premier League',
+    when=mm.parse_date('21/08/2026'), event_type='FT',
+    home_events=mm.parse_scorers("23 Saka\n45+2 Havertz (pen)", 'Arsenal'),
+    away_events=mm.parse_scorers('67 Rice (og)', 'Man City'))
+print(generate_scorecard(data, event_type='FT', competition='Premier League'))
+PY
+
 # render a card from an archived scrape without posting
 venv/bin/python - <<'PY'
 import json

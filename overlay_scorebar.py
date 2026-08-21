@@ -398,10 +398,13 @@ def _draw_scorer_lines(img, draw, lines, box, align, font_size, step):
 def add_scorecard_overlay(image_path, output_path, home_team, away_team,
                            home_score, away_score, event_type='FT',
                            penalties=None, home_events=None, away_events=None,
-                           competition=None):
+                           competition=None, match_date=None):
     """
     penalties: optional (home_pen, away_pen) strings shown as
                'PENALTIES: h - a' below the final score.
+    match_date: optional '21 AUG 2026', stamped in the top-right corner
+               opposite the brand mark. Only hand-entered matches pass one —
+               see manual_match.py.
     """
     home_events = home_events or []
     away_events = away_events or []
@@ -514,11 +517,28 @@ def add_scorecard_overlay(image_path, output_path, home_team, away_team,
     _draw_scorer_lines(img, draw, away_events, away_box, 'right', scorer_size, line_step)
 
     # ── 130 Yards brand logo, small, top-left of the photo ────────────────
-    brand_logo = _load_brand_logo(int(h * 0.034))
+    margin_x, margin_y = int(w * 0.035), int(h * 0.025)
+    logo_h = int(h * 0.034)
+    brand_logo = _load_brand_logo(logo_h)
     if brand_logo:
-        bx, by = int(w * 0.035), int(h * 0.025)
-        img.alpha_composite(_drop_shadow(brand_logo), (bx, by))
-        img.alpha_composite(brand_logo, (bx, by))
+        img.alpha_composite(_drop_shadow(brand_logo), (margin_x, margin_y))
+        img.alpha_composite(brand_logo, (margin_x, margin_y))
+        draw = ImageDraw.Draw(img)
+
+    # ── Match date, top-right, opposite the brand mark ────────────────────
+    # Same treatment as the FULL TIME label — gold, letter-spaced — because it
+    # is the same kind of thing: a caption on the moment, not part of it.
+    # This one sits on the bare photo rather than the glass panel, so it draws
+    # its own shadow; without it a date lands invisibly on a pale sky.
+    if match_date:
+        date_font = _font(int(h * 0.019))
+        date_pos = (w - margin_x, margin_y + logo_h // 2)
+        spaced_date = ' '.join(str(match_date).upper())
+        shadow_off = max(2, int(h * 0.002))
+        draw.text((date_pos[0] + shadow_off, date_pos[1] + shadow_off),
+                  spaced_date, font=date_font, fill=(0, 0, 0, 150), anchor='rm')
+        draw.text(date_pos, spaced_date, font=date_font,
+                  fill=COLOR_LABEL, anchor='rm')
 
     img.convert('RGB').save(output_path, quality=95)
     print(f"Saved: {output_path} ({w}x{h}, panel {panel_h}px, {n_lines} scorer lines)")
@@ -592,6 +612,9 @@ def _render_from_scraper_data(data, image_path, output_path, event_type='FT',
         home_events=_extract_scorer_lines(filtered, raw_home),
         away_events=_extract_scorer_lines(filtered, raw_away),
         competition=competition or sample.get('competition_name'),
+        # Set by manual_match.build_scraper_data() and nothing else, so a
+        # scraped fixture never grows a date it didn't ask for.
+        match_date=str(sample.get('card_date') or '').strip() or None,
     )
 
 

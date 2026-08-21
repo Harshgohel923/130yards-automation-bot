@@ -23,6 +23,11 @@ from logo_fetch import COMPETITION_DISPLAY, resolve_competition
 # Picked with pick_coords.py on the 1086x1448 templates (vertical centre x=543).
 EVENT_TITLE_BOX  = (284, 183, 802, 289)     # 'FULL TIME' / 'HALF TIME'
 BRAND_LOGO_BOX   = (56, 70, 120, 135)       # 130 Yards mark
+# Match date, mirroring the brand mark across the top of the card. Given as
+# (right_edge_x, centre_y) rather than a box: the text is right-aligned to the
+# same margin the logo keeps on the left, so it stays pinned to the corner
+# whatever the month's name does to its width.
+MATCH_DATE_ANCHOR = (1030, 102)
 COMP_LOGO_BOX    = (474, 307, 612, 445)     # competition logo
 GROUP_STAGE_BOX  = (362, 460, 724, 493)     # center-aligned text
 HOME_CREST_BOX   = (133, 630, 305, 802)     # centred image paste
@@ -61,6 +66,9 @@ STAGE_FONT_MAX  = 40
 STAGE_FONT_MIN  = 10
 TITLE_FONT_MAX  = 180
 TITLE_FONT_MIN  = 24
+# Same face and colour as the headline — subordinate in size, because it is a
+# caption on the card, not the thing the card is announcing.
+DATE_FONT_SIZE  = 44
 EVENT_TITLE_MAP = {'HT': 'HALF TIME', 'FT': 'FULL TIME'}
 SCORER_FONT_MAX  = 40
 SCORER_FONT_MIN  = 12
@@ -148,6 +156,16 @@ def _draw_centered_text(draw, text, box, font_path, max_size, min_size, color):
     """Fit text into box and draw it centered both horizontally and vertically."""
     size = _fit_font_to_box(draw, text, box, font_path, max_size, min_size)
     _draw_text_at_size(draw, text, box, font_path, size, color)
+
+
+def _draw_right_aligned_text(draw, text, anchor, font_path, size, color):
+    """Draw text with its right edge and vertical centre at `anchor`.
+
+    A corner label wants an anchor, not a box: centring inside a box drifts the
+    text away from the corner as the string gets shorter, which is exactly what
+    a date does between 'MAY' and 'AUGUST'.
+    """
+    draw.text(anchor, text, font=_font(font_path, size), fill=color, anchor='rm')
 
 
 def _shift(box, dy):
@@ -563,6 +581,15 @@ def generate_scorecard(scraper_data: dict, event_type: str = 'FT', match_id_over
         title_text = EVENT_TITLE_MAP.get(event_type.upper(), event_type.upper())
         _draw_centered_text(draw, title_text, EVENT_TITLE_BOX,
                             FONT_BOLD, TITLE_FONT_MAX, TITLE_FONT_MIN, COLOR_TITLE)
+
+    # ── Match date, top-right ─────────────────────────────────────────────────
+    # Only hand-entered matches set this (see manual_match.py). A scraped
+    # fixture posts within minutes of the whistle, where the date is noise;
+    # a match typed in weeks later needs to say when it was played.
+    card_date = str(match_sample.get('card_date') or '').strip()
+    if card_date:
+        _draw_right_aligned_text(draw, card_date, MATCH_DATE_ANCHOR,
+                                 FONT_BOLD, DATE_FONT_SIZE, COLOR_TITLE)
 
     # ── Scorer lines: decide the fit before anything is positioned ────────────
     # Use raw (un-normalized) names because event['team'] reflects the scraper value.

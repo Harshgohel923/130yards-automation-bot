@@ -134,3 +134,98 @@ class TestPruneWindow:
         stale = fixture(hours_ago=dispatcher.PRUNE_AFTER_HOURS
                         + dispatcher.PRUNE_CATCHUP_HOURS + 1)
         assert dispatcher._prune_window_open([(stale, 'x')], NOW) is True
+
+
+class TestTelegramWake:
+    """Starting the bot for a message that arrived while it was down.
+
+    The bot only exists while an Actions job holds it, so a message sent to a
+    stopped bot goes nowhere until something starts one — and the bot cannot
+    start itself, because it isn't running to hear the request. This is what
+    makes /card usable when no match is playing.
+    """
+
+    @pytest.fixture
+    def telegram(self, monkeypatch):
+        """Capture the getUpdates call and serve a canned result."""
+        calls = []
+
+        def install(result):
+            class Resp:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return {'ok': True, 'result': result}
+
+            def fake_get(url, params=None, timeout=None, **kw):
+                calls.append((url, params))
+                return Resp()
+
+            monkeypatch.setenv('TELEGRAM_BOT_TOKEN', 'test-token')
+            monkeypatch.setattr(dispatcher.requests, 'get', fake_get)
+            return calls
+        return install
+
+    def test_a_waiting_message_is_seen(self, telegram):
+        telegram([{'update_id': 1, 'message': {'text': '/card'}}])
+        assert dispatcher.telegram_message_waiting() is True
+
+    def test_an_empty_queue_is_not(self, telegram):
+        telegram([])
+        assert dispatcher.telegram_message_waiting() is False
+
+    def test_the_peek_sends_no_offset(self, telegram):
+        """Telegram only discards updates when getUpdates is called with an
+        offset above their id. Sending one here — a negative one especially,
+        which forgets everything before the update it returns — would take the
+        message out of the bot's mouth before it ever started."""
+        calls = telegram([])
+        dispatcher.telegram_message_waiting()
+        [(url, params)] = calls
+        assert url.endswith('/getUpdates')
+        assert 'offset' not in params
+
+    def test_a_telegram_outage_does_not_wake_anything(self, monkeypatch):
+        """A failed check must read as 'no message'. The alternative is
+        starting a runner every fifteen minutes for as long as Telegram is
+        unreachable."""
+        monkeypatch.setenv('TELEGRAM_BOT_TOKEN', 'test-token')
+
+        def boom(*a, **kw):
+            raise dispatcher.requests.RequestException('down')
+
+        monkeypatch.setattr(dispatcher.requests, 'get', boom)
+        assert dispatcher.telegram_message_waiting() is False
+
+    def test_no_token_means_no_check(self, monkeypatch):
+        monkeypatch.delenv('TELEGRAM_BOT_TOKEN', raising=False)
+        monkeypatch.setattr(dispatcher.requests, 'get', lambda *a, **kw: pytest.fail(
+            'should not have called Telegram without a token'))
+        assert dispatcher.telegram_message_waiting() is False
+
+    def test_the_queue_is_not_touched_while_the_bot_is_running(self, monkeypatch):
+        """Two pollers on one token fight over the same queue, and the live bot
+        would start losing updates to this one."""
+        monkeypatch.setattr(dispatcher, 'telegram_bot_running', lambda: True)
+        monkeypatch.setattr(dispatcher, 'telegram_message_waiting', lambda: pytest.fail(
+            'peeked at the queue while the bot was polling it'))
+        monkeypatch.setattr(dispatcher, 'ensure_telegram_bot', lambda *a: pytest.fail(
+            'started a second bot'))
+        dispatcher.wake_telegram_bot_if_messaged()
+
+    def test_the_bot_is_started_for_a_waiting_message(self, monkeypatch):
+        started = []
+        monkeypatch.setattr(dispatcher, 'telegram_bot_running', lambda: False)
+        monkeypatch.setattr(dispatcher, 'telegram_message_waiting', lambda: True)
+        monkeypatch.setattr(dispatcher, 'ensure_telegram_bot',
+                            lambda reason='': started.append(reason))
+        dispatcher.wake_telegram_bot_if_messaged()
+        assert started
+
+    def test_nothing_waiting_leaves_the_bot_down(self, monkeypatch):
+        monkeypatch.setattr(dispatcher, 'telegram_bot_running', lambda: False)
+        monkeypatch.setattr(dispatcher, 'telegram_message_waiting', lambda: False)
+        monkeypatch.setattr(dispatcher, 'ensure_telegram_bot', lambda *a: pytest.fail(
+            'started the bot with nothing to do'))
+        dispatcher.wake_telegram_bot_if_messaged()
