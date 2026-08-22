@@ -16,6 +16,11 @@ shut the bot down in the middle of someone typing in a scoreline.
 A startup grace period covers the race where the dispatcher fires the first
 match worker and the bot in the same cycle: the worker may still be queued
 (or not yet visible in the API) when this watchdog first checks.
+
+There is a third way this ends, and on a busy Saturday it is the usual one:
+MAX_RUNTIME. An Actions job cannot outlive six hours and a full card of
+fixtures does, so the bot stops itself just under the cap and the successor the
+dispatcher has already queued takes the token over — see ensure_telegram_bot.
 """
 
 import os
@@ -40,9 +45,19 @@ STARTUP_GRACE = 10 * 60    # don't check at all for the first 10 minutes
 # Written by telegram_bot.py on every update it handles. Long enough that
 # thinking about a scoreline, or finding the right photo, doesn't end the
 # session; short enough that a forgotten conversation doesn't hold an Actions
-# runner open for the full 350-minute job timeout.
+# runner open until MAX_RUNTIME.
 SESSION_FILE = '.bot_session'
 SESSION_IDLE = 20 * 60
+
+# The job's own cap is 350 minutes (telegram_bot.yml). Stopping under our own
+# power a little before it means two things: the run ends green instead of being
+# marked failed by a platform kill, and it ends at a moment the dispatcher can
+# anticipate — it queues a successor at 325 minutes (BOT_HANDOFF_AFTER_SECS),
+# which is pending by now and starts within about a minute of this exit.
+#
+# A matchday longer than one Actions job is the normal case, not an edge one:
+# a full Saturday runs ten hours of continuous worker activity.
+MAX_RUNTIME = 340 * 60
 
 
 def match_workers_active() -> bool:
@@ -72,6 +87,14 @@ def session_active() -> bool:
         return False
 
 
+def stop(bot) -> None:
+    bot.terminate()
+    try:
+        bot.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        bot.kill()
+
+
 def main():
     # A session file left behind by an earlier run on a reused runner would
     # read as a conversation that is already over.
@@ -80,6 +103,7 @@ def main():
     except OSError:
         pass
 
+    deadline = time.monotonic() + MAX_RUNTIME
     bot = subprocess.Popen([sys.executable, 'telegram_bot.py'])
     print(f'[watchdog] Bot started (pid {bot.pid}). First check in {STARTUP_GRACE // 60} min.')
     time.sleep(STARTUP_GRACE)
@@ -88,6 +112,15 @@ def main():
         if bot.poll() is not None:
             print(f'[watchdog] Bot exited on its own (code {bot.returncode}).')
             sys.exit(bot.returncode or 1)
+
+        if time.monotonic() >= deadline:
+            # Not a failure: the job is simply out of time. The successor the
+            # dispatcher queued starts as soon as this one lets go of the
+            # concurrency slot.
+            print(f'[watchdog] {MAX_RUNTIME // 60} minutes reached — stopping '
+                  f'cleanly so the queued successor can take over.')
+            stop(bot)
+            return
 
         try:
             active = match_workers_active()
@@ -104,14 +137,12 @@ def main():
         if not active:
             print('[watchdog] No active match workers, nobody talking '
                   '— shutting down bot.')
-            bot.terminate()
-            try:
-                bot.wait(timeout=30)
-            except subprocess.TimeoutExpired:
-                bot.kill()
+            stop(bot)
             return
 
-        time.sleep(CHECK_EVERY)
+        # Never sleep past the deadline: overshooting it would hand the job
+        # back to the platform timeout, which is the red tick this avoids.
+        time.sleep(max(0, min(CHECK_EVERY, deadline - time.monotonic())))
 
 
 if __name__ == '__main__':

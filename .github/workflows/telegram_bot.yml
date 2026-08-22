@@ -22,7 +22,10 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 350   # if matches outlast this, the dispatcher relaunches within 15 min
+    # Backstop only. bot_watchdog stops the bot at MAX_RUNTIME (340 min) so the
+    # run ends green and the successor the dispatcher queued at 325 min takes
+    # over within about a minute. Reaching 350 means that did not happen.
+    timeout-minutes: 350
 
     steps:
       - uses: actions/checkout@v4

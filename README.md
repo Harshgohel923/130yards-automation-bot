@@ -1852,6 +1852,45 @@ stops it as soon as the last match worker finishes — which is precisely when
 Running `python telegram_bot.py` locally works the same way and skips all of
 this — the local `.env` already has every credential `/card` needs.
 
+### Handing the token over at the six-hour wall
+
+An Actions job cannot outlive six hours. A full Saturday does: 2026-08-22 was
+one unbroken **10.6 hours** of continuous match-worker activity, because
+workers start 30 minutes before kickoff (75 with a team-news post) and the
+fixtures overlap end to end. So the bot holding the token is *guaranteed* to be
+cut mid-matchday — this is the normal case, not an edge one.
+
+It used to be cut by the platform, which marks the run failed, and the chat
+then went quiet until a later tick noticed nobody was there. Three numbers now
+make the change of hands orderly:
+
+| | | |
+|---|---|---|
+| `BOT_HANDOFF_AFTER_SECS` | 310 min | dispatcher queues a successor |
+| `bot_watchdog.MAX_RUNTIME` | 340 min | watchdog stops the bot, run ends green |
+| `timeout-minutes` | 350 min | platform backstop — reaching it means the above failed |
+
+The lever is the `concurrency` group already on `telegram_bot.yml`. With
+`cancel-in-progress: false`, a run dispatched while another is in progress does
+not run alongside it and is not refused — it waits as **pending** and starts the
+moment the incumbent exits. Queue it before the watchdog's deadline and the
+token changes hands in about a minute.
+
+The 30-minute window between 310 and 340 is deliberately **two dispatcher ticks
+wide**. One tick wide would work only if the schedule never ran late; miss the
+window and no successor is queued at all, which is silently the old behaviour
+with none of the symptoms. `tests/test_bot_handoff.py` pins that ordering,
+since the three numbers live in three different files and mean nothing apart.
+
+A bot on a quiet night is never handed off, only stopped: the handoff lives in
+`ensure_telegram_bot()`, which is called only when a worker is active or a
+message is waiting.
+
+**What still doesn't survive.** A new job is a new process, so in-memory
+`user_data` dies at the seam — a half-finished `/event` or `/card` at the
+340-minute mark is lost. The seam is a second wide instead of fifteen minutes,
+but it is still a seam. Staged photos are safe; they live on Cloudinary.
+
 ---
 
 ## Telegram alerts

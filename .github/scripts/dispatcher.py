@@ -45,6 +45,15 @@ PRE_MATCH_WINDOW_SECS = 30 * 60   # start worker 30 min before kickoff
 LINEUP_PRE_MATCH_WINDOW_SECS = 75 * 60
 DISPATCH_LOOKAHEAD    = 15 * 60   # how far ahead this dispatcher looks
 
+# When to queue a relief bot behind the one holding the token. The gap between
+# this and the watchdog's own deadline (bot_watchdog.MAX_RUNTIME, 340 min) is
+# the window a dispatcher tick has to land in; miss it and no successor is
+# queued at all, which is silently the old behaviour. So the window is two
+# ticks wide, not one — a schedule that runs a few minutes late must not be
+# able to step over it. Queueing early is close to free: a pending run holds
+# no runner and starts only when the incumbent lets the slot go.
+BOT_HANDOFF_AFTER_SECS = 310 * 60
+
 # How long after kickoff a fixture stops being of any possible use. A worker
 # gives up at kickoff + 290 min (MAX_MATCH_DURATION), so by six hours there is
 # nothing left that could still act on the entry.
@@ -146,40 +155,95 @@ def trigger_worker(match_id: str, label: str = ''):
         sys.exit(1)
 
 
+def _bot_runs(status: str) -> list:
+    resp = requests.get(
+        f'{API}/repos/{REPO}/actions/workflows/telegram_bot.yml/runs',
+        params={'status': status, 'per_page': 10},
+        headers=HEADS,
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json().get('workflow_runs', [])
+
+
+def telegram_bot_run() -> dict | None:
+    """The bot run currently holding the token, or None."""
+    runs = _bot_runs('in_progress')
+    return runs[0] if runs else None
+
+
 def telegram_bot_running() -> bool:
     """True if a telegram-bot run is queued or in progress."""
-    for status in ('in_progress', 'queued'):
-        resp = requests.get(
-            f'{API}/repos/{REPO}/actions/workflows/telegram_bot.yml/runs',
-            params={'status': status, 'per_page': 10},
-            headers=HEADS,
-            timeout=10,
-        )
-        resp.raise_for_status()
-        if resp.json().get('workflow_runs'):
-            return True
-    return False
+    return bool(_bot_runs('in_progress') or _bot_runs('queued'))
+
+
+def _bot_needs_handoff(run: dict) -> bool:
+    """Is this bot run close enough to the end of its job time to be relieved?"""
+    started = run.get('run_started_at') or run.get('created_at')
+    try:
+        began = datetime.fromisoformat(str(started).replace('Z', '+00:00'))
+    except (TypeError, ValueError):
+        # An unreadable timestamp is no reason to disturb a working bot: the
+        # job's own timeout still ends it, and the next tick still restarts it.
+        return False
+    alive = (datetime.now(timezone.utc) - began).total_seconds()
+    return alive >= BOT_HANDOFF_AFTER_SECS
+
+
+def _dispatch_bot(reason: str) -> None:
+    resp = requests.post(
+        f'{API}/repos/{REPO}/actions/workflows/telegram_bot.yml/dispatches',
+        headers=HEADS,
+        json={'ref': 'master'},
+        timeout=10,
+    )
+    if resp.status_code == 204:
+        print(f'[dispatcher] Triggered Telegram bot — {reason}')
+    else:
+        print(f'[dispatcher] WARNING: could not trigger Telegram bot: '
+              f'{resp.status_code} {resp.text}')
 
 
 def ensure_telegram_bot(reason: str = 'a match worker is active'):
     """Start the photo-intake Telegram bot if it isn't already running.
-    Best-effort: a bot failure must never block match worker dispatching.
-    The bot's own watchdog shuts it down once it has nothing left to do."""
+
+    Also relieves one that is nearly out of job time. A hosted-runner job cannot
+    outlive six hours, and any full Saturday of fixtures does — yesterday's card
+    was one unbroken 10.6 hours of worker activity — so the bot holding the
+    token is guaranteed to be cut mid-matchday.
+
+    The concurrency group in telegram_bot.yml makes the relief cheap: a run
+    dispatched while another is in progress does not run alongside it and is not
+    refused, it waits as *pending* and starts the moment the incumbent exits. So
+    the successor is queued shortly before the watchdog's own deadline and the
+    token changes hands in about a minute, rather than the chat going quiet
+    until a later tick notices nobody is there.
+
+    Only ever called when the bot is wanted — a worker is active, or a message
+    is waiting — so a bot on a quiet night is never handed off, just stopped.
+
+    Best-effort throughout: a bot failure must never block match dispatching.
+    """
     try:
-        if telegram_bot_running():
-            print('[dispatcher] Telegram bot already running')
+        run = telegram_bot_run()
+        if run is not None:
+            if not _bot_needs_handoff(run):
+                print('[dispatcher] Telegram bot already running')
+            elif _bot_runs('queued'):
+                print('[dispatcher] Telegram bot successor already queued')
+            else:
+                print('[dispatcher] Telegram bot is out of job time — queueing '
+                      'its successor behind it')
+                note('- 💬 **Telegram** — bot near its 6-hour job limit, '
+                     'successor queued to take over')
+                _dispatch_bot('handing over from a run that is out of job time')
             return
-        resp = requests.post(
-            f'{API}/repos/{REPO}/actions/workflows/telegram_bot.yml/dispatches',
-            headers=HEADS,
-            json={'ref': 'master'},
-            timeout=10,
-        )
-        if resp.status_code == 204:
-            print(f'[dispatcher] Triggered Telegram bot — {reason}')
-        else:
-            print(f'[dispatcher] WARNING: could not trigger Telegram bot: '
-                  f'{resp.status_code} {resp.text}')
+
+        if _bot_runs('queued'):
+            print('[dispatcher] Telegram bot already queued')
+            return
+
+        _dispatch_bot(reason)
     except Exception as e:
         print(f'[dispatcher] WARNING: Telegram bot check failed: {e}')
 
