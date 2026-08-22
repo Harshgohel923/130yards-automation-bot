@@ -3,6 +3,7 @@
 # falling back to the first id in TELEGRAM_ALLOWED_USER_IDS (your private chat
 # with the bot). Never raises — an alert failure must not break a pipeline.
 
+import json
 import os
 import threading
 import time
@@ -32,6 +33,34 @@ def send_alert(text: str, key: str | None = None, cooldown: int = 0) -> None:
     alerts with the same `key` (defaults to the text itself) within that
     window are dropped — use for failures that recur every poll.
     """
+    _send(text, key=key, cooldown=cooldown)
+
+
+def send_choice(text: str, options: list[tuple[str, str]],
+                key: str | None = None, cooldown: int = 0) -> None:
+    """
+    An alert with tappable answers: [(button label, callback_data), ...].
+
+    The tap is handled by telegram_bot.py, in a different process that shares
+    nothing with this one — so `callback_data` has to be something the bot can
+    resolve from scratch, and it has to fit inside Telegram's 64-byte cap. See
+    event_photos.digest for what goes in it.
+
+    One button per row: these are player names, and two names side by side on a
+    phone truncate to the point where the choice is between two prefixes.
+
+    A question nobody can answer is still worth asking, so a failure to attach
+    the keyboard is never fatal — the text goes either way.
+    """
+    keyboard = {'inline_keyboard': [[{'text': label, 'callback_data': data}]
+                                    for label, data in options]}
+    _send(text, key=key, cooldown=cooldown,
+          reply_markup=json.dumps(keyboard))
+
+
+def _send(text: str, key: str | None = None, cooldown: int = 0,
+          reply_markup: str | None = None) -> None:
+    """The one place anything is actually sent. Never raises."""
     if cooldown:
         k = key or text
         now = time.time()
@@ -47,10 +76,13 @@ def send_alert(text: str, key: str | None = None, cooldown: int = 0) -> None:
               'TELEGRAM_ALERT_CHAT_ID or TELEGRAM_ALLOWED_USER_IDS) — alert dropped:')
         print(f'[telegram_notify]   {text}')
         return
+    payload = {'chat_id': chat_id, 'text': text}
+    if reply_markup:
+        payload['reply_markup'] = reply_markup
     try:
         res = requests.post(
             f'https://api.telegram.org/bot{token}/sendMessage',
-            data={'chat_id': chat_id, 'text': text},
+            data=payload,
             timeout=10,
         )
         if not res.ok:

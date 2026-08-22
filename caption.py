@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+from event_photos import EVENT_DESCRIPTION
 from hashtags import build_group_hashtags, build_hashtags, competition_label
 from lineup_card import build_rows, formation_label
 
@@ -444,6 +445,121 @@ def _fallback_lineup_caption(home, away, lead, hashtag_line) -> str:
         f"{lead}'s starting XI is in. ⚽\n"
         f"\n"
         f"Swipe for {other} 👉\n"
+        f"\n"
+        f"{hashtag_line}"
+    )
+
+
+def generate_event_caption(scraper_data: dict, moment: dict,
+                           home_name: str | None = None,
+                           away_name: str | None = None,
+                           competition: str | None = None) -> str:
+    """
+    Caption for a picture staged against one player's in-match moment.
+
+    `moment` is an entry from event_photos.pending(): which player, which
+    event, what minute, which side. The picture itself carries no text — it is
+    posted exactly as it was uploaded — so unlike a scorecard caption this one
+    has to say what happened, not just react to it.
+
+    The match is still being played, which is the constraint the prompt spends
+    most of its words on: the score is where it stands right now, not a
+    result, and writing it as one would be wrong within the minute.
+    """
+    match_sample = scraper_data.get('matchSample', {})
+    home_team = home_name or match_sample.get('team_A_name', 'Home')
+    away_team = away_name or match_sample.get('team_B_name', 'Away')
+    competition = competition or match_sample.get('competition_name', '')
+    comp_label = competition_label(competition)
+    hashtag_line = build_hashtags(home_team, away_team, competition)
+
+    player = moment.get('player') or 'the player'
+    event_key = moment.get('event_key', '')
+    what = EVENT_DESCRIPTION.get(event_key, 'was involved')
+    minute = str(moment.get('minute') or '').strip()
+
+    # The scraper spells the side its own way; matches.json is authoritative
+    # everywhere else, so map back to it rather than printing two spellings of
+    # the same team in one caption.
+    scraped_team = str(moment.get('team') or '').strip()
+    if scraped_team == match_sample.get('team_A_name'):
+        team, opponent = home_team, away_team
+    elif scraped_team == match_sample.get('team_B_name'):
+        team, opponent = away_team, home_team
+    else:
+        team, opponent = scraped_team or home_team, ''
+
+    home_score = str(match_sample.get('fs_A') or '0')
+    away_score = str(match_sample.get('fs_B') or '0')
+    score_line = f"{home_team} {home_score}-{away_score} {away_team}"
+
+    assister = str(moment.get('assister') or '').strip()
+    goals_str = _summarise_events(scraper_data.get('events', []))
+
+    # A brace or a hat-trick is not one goal, and a caption that reacted to it
+    # as one would read as if the model had missed the other two.
+    milestone = moment.get('goal_minutes') or []
+    milestone_line = (
+        f"- {player}'s goals in this match: {', '.join(milestone)} "
+        f"({len(milestone)} goals — this post is about the whole set, not just "
+        f"the last one)" if len(milestone) > 1 else '')
+
+    prompt = f"""You are a football content writer for an Instagram page covering {comp_label}.
+
+Write a SHORT Instagram caption for a photo post celebrating ONE moment that has just happened in a match that is STILL BEING PLAYED.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+UNICODE FONT STYLES — use ONLY these two (never script/calligraphic):
+  1. Bold Italic Sans (e.g. 𝙏𝙝𝙚 𝙦𝙪𝙞𝙘𝙠 𝙗𝙧𝙤𝙬𝙣 𝙛𝙤𝙭)          → punchy secondary lines
+  2. Bold Serif       (e.g. 𝐓𝐡𝐞 𝐪𝐮𝐢𝐜𝐤 𝐛𝐫𝐨𝐰𝐧 𝐟𝐨𝐱)             → the headline, the player's name
+Within a single word use ONE style for every letter — never mix styled and plain characters inside a word.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CAPTION RULES:
+- Open with a bold styled headline naming the player and what they just did.
+- THE MATCH IS STILL IN PROGRESS. The score below is the score RIGHT NOW, not a final result. Never call it full-time, never say who won, never write about the match as finished.
+- Very short: hard cap 45 words / 350 characters excluding hashtags, at most 4 short lines.
+- The post is a photograph of this player with nothing written on it, so the caption must make clear who it is and what happened.
+- Match the tone to the moment: a goal is euphoric, a red card is dramatic, a substitution is a moment of respect or anticipation — do NOT celebrate a booking or a sending-off.
+- If this is a brace or a hat-trick, lead with THAT, not with the individual goal. It is the achievement that earns the post.
+- Emojis are welcome but tasteful — never 3+ in a row.
+- Every sentence on its own line, with a BLANK LINE after each one.
+- Tone: passionate football fan reacting live — not corporate, not clickbait.
+
+HASHTAGS — end the caption with a blank line, then this line copied EXACTLY as written, character for character:
+{hashtag_line}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The moment:
+- Player: {player}{f' ({team})' if team else ''}
+- What happened: {player} {what}{f' against {opponent}' if opponent else ''}
+- Minute: {minute or 'unknown'}
+{milestone_line}
+{f'- Assisted by: {assister}' if assister else ''}
+- Score at this moment (NOT a final result): {score_line}
+- Competition: {comp_label}
+- Goals so far in this match: {goals_str}
+
+Return ONLY the caption text — no labels, no explanations, no markdown formatting."""
+
+    for model in GEMINI_MODELS:
+        try:
+            response = client.models.generate_content(model=model, contents=prompt)
+            print(f"[caption] Event caption generated via {model}")
+            return _space_out_lines(_ensure_hashtags(response.text, hashtag_line))
+        except Exception as e:
+            print(f"[caption] {model} failed: {e} — trying next model...")
+
+    print("[caption] All Gemini models failed — using fallback event caption")
+    return _fallback_event_caption(player, what, minute, score_line, hashtag_line)
+
+
+def _fallback_event_caption(player, what, minute, score_line, hashtag_line) -> str:
+    """Deterministic caption for the moment — states it, invents nothing."""
+    return (
+        f"{minute + ' — ' if minute else ''}{player} {what}. ⚽\n"
+        f"\n"
+        f"{score_line}\n"
         f"\n"
         f"{hashtag_line}"
     )

@@ -1,13 +1,53 @@
 # telegram_bot.py — match photo intake bot.
 """
-Telegram bot for uploading the base photo used by the scorecard overlay.
+Telegram bot for the photos the pipeline posts, and for cards typed in by hand.
 
-Two ways in, because the bot restarts often in production (its watchdog stops
-it whenever no match worker is active) and conversation state lives only in
-memory:
+Two kinds of photo, and telling them apart is the whole of what the interface
+is for. Both start from a fixture in matches.json; what differs is what the
+photo becomes.
 
-  /start (or /newphoto)          →  pick match  →  pick HT/FT  →  send photo
-  just send the photo            →  pick match  →  pick HT/FT  →  uploaded
+  📸 Scorecard photo  —  /start, /newphoto, or just send a photo
+     The background the half-time or full-time card is drawn on. The renderer
+     puts the score, the crests and the scorers over the top of it. One per
+     match per moment, replaced by re-sending. No photo means the card still
+     posts, on the standard template.
+
+       /start          →  pick match  →  pick HT/FT  →  send photo
+       send a photo    →  pick match  →  pick HT/FT  →  uploaded
+
+  🎯 Event photo  —  /event
+     Held for one player's moment. Nothing is drawn on it; if that moment
+     happens during the match it is posted on its own, exactly as it was sent,
+     with a caption written from the moment it fired on. If the moment never
+     happens, nothing is posted and the photo is deleted at full time.
+
+       /event  →  pick match  →  pick ⚽ Goal  →  pick team  →  pick player
+               →  send photo
+
+     Most of the events are one timeline entry. Two are not: a brace and a
+     hat-trick are counts, so they are derived from the goals in order and
+     fire on the goal that completes them.
+
+     The extra question is the player, and it is not optional: the Cloudinary
+     name is match + event + player, so the file cannot be stored without it.
+     See event_photos.py for how it is stored and main._run_event_photos for
+     what posts it.
+
+Those are separate conversations rather than one with a branch. The scorecard
+question ("what goes under the half-time card") and the event one ("what goes
+up if Messi scores") are different questions with different answers, and
+folding seven event buttons into the HT/FT step would make the everyday case
+read the rare one's options every time. Each flow's first message names itself
+for the same reason — two buttons a row apart lead to two different posts, and
+the first message of a flow is the cheapest place to catch a wrong tap.
+
+A photo sent with no conversation is treated as a scorecard background, and
+says so. That path exists so a photo is never dropped: the bot restarts often
+in production (its watchdog stops it whenever no match worker is active) and
+conversation state lives only in memory, so a photo can easily arrive belonging
+to no conversation at all — and the only thing worse than asking which match it
+is would be silently ignoring it. The same fallback catches a photo that
+arrives after the state was lost mid-flow.
 
 A third flow, /card, does something different: it builds a whole match from
 typed-in details rather than attaching a photo to a scraped one. It exists for
@@ -16,23 +56,22 @@ worth reposting — and it ends by rendering the card, showing it in the chat,
 and posting it to Instagram once you say so. See the "Manual match" section
 below; the data assembly lives in manual_match.py.
 
-Outside /card, input is a fixed vocabulary, never free text: the commands in
-BOT_COMMANDS (published to Telegram so the ☰ menu and "/" autocomplete list
-them), the buttons on the persistent keyboard that mirror them, and photos.
-Every match and HT/FT choice is an inline button. Anything else — a typed
-message, an unknown command — gets the help text back rather than being parsed
-or ignored. /card is the sole exception, and only while it is running: it has
-to read typed text because nobody can tap a scorer's name into existence.
+Input is a fixed vocabulary, never free text: the commands in BOT_COMMANDS
+(published to Telegram so the ☰ menu and "/" autocomplete list them), the
+buttons on the persistent keyboard that mirror them, and photos. Every match,
+HT/FT and event choice is an inline button. Anything else — a typed message, an
+unknown command — gets the help text back rather than being parsed or ignored.
+Two steps read typed text, and only while they are running, because neither can
+be tapped into existence: /card's scorer lists, and the player's name in /event
+when the feed hasn't published a squad to offer buttons from.
 
-The second path exists so a photo is never dropped. If the bot restarted
-between picking the match and sending the picture, the conversation it was
-holding is gone — the photo then belongs to no conversation at all, and the
-only thing worse than asking which match it is would be silently ignoring it.
+Cloudinary holds both kinds, under deterministic public_ids, and that name is
+the only thing shared with the pipeline — no state passes between the two:
 
-The photo is uploaded to Cloudinary as  match_photos/<match_id>_<HT|FT>
-(overwrite=True, so re-sending replaces the previous photo). The public_id is
-deterministic, so the pipeline can fetch the photo for a match/event with
-fetch_match_photo() — no state is shared beyond that.
+  match_photos/<match_id>_<HT|FT>              cloudinary_utils.photo_public_id
+  event_photos/<match_id>_<KEY>_<player-slug>  event_photos.public_id
+
+Both use overwrite=True, so re-sending replaces rather than duplicates.
 
 Setup:
   1. Create a bot with @BotFather, put the token in .env as TELEGRAM_BOT_TOKEN.
@@ -74,8 +113,10 @@ from telegram.ext import (
     filters,
 )
 
+import event_photos
 import manual_match
 from cloudinary_utils import photo_public_id
+from football_scraper_dom import get_match_data
 
 load_dotenv()
 
@@ -95,6 +136,15 @@ cloudinary.config(
 MATCHES_FILE = 'matches.json'
 
 SELECT_MATCH, SELECT_EVENT, WAIT_PHOTO = range(3)
+
+# /event's states — a conversation of its own, not a branch of the one above.
+# The two flows answer different questions about the same photo and the
+# scorecard one is the everyday case; folding the seven event buttons into its
+# HT/FT step would have made the common path pay for the rare one. Numbered
+# clear of both the photo flow's and /card's so a stray state value can never
+# be read as belonging to another conversation.
+(E_MATCH, E_EVENT, E_TEAM, E_PLAYER, E_TYPE_PLAYER,
+ E_PHOTO) = range(30, 36)
 
 # /card's states. Numbered clear of the photo flow's so a stray state value can
 # never be read as belonging to the other conversation.
@@ -123,6 +173,14 @@ TELEGRAM_FILE_LIMIT_BYTES = 20 * 1024 * 1024
 UPLOAD_SOFT_LIMIT_BYTES = 9 * 1024 * 1024
 MAX_EDGE_PX = 2560
 
+# An event photo is posted exactly as it was uploaded — no overlay, no canvas
+# to sit on — so its own shape is what Instagram is asked to accept, and
+# Instagram refuses anything outside this band. A phone photo shot in portrait
+# (9:16 ≈ 0.56) is the common offender. Only a picture outside the band is
+# touched; one already in it is passed through untouched, which is the point.
+POST_ASPECT_MIN = 3 / 4      # tallest portrait Instagram takes
+POST_ASPECT_MAX = 1.91       # widest landscape Instagram takes
+
 # Sending "as a file" keeps full quality but is also how a 25 MB photo arrives.
 # Any document, not just image/*: a wrong file should be told so, not ignored.
 PHOTO_ENTRY_FILTER = filters.PHOTO | filters.Document.ALL
@@ -133,8 +191,10 @@ PHOTO_ENTRY_FILTER = filters.PHOTO | filters.Document.ALL
 # them rather than being interpreted — free text has no meaning there.
 
 BOT_COMMANDS = [
-    BotCommand('start', 'Pick a match and upload a photo'),
+    BotCommand('start', 'Send the background photo for a half-time or full-time card'),
     BotCommand('newphoto', 'Same as /start'),
+    BotCommand('event', "Stage a photo for a player's moment in a match"),
+    BotCommand('staged', 'Photos armed for a moment — tap to take one back'),
     BotCommand('card', 'Build a match card from details you type in'),
     BotCommand('batch', 'Cards waiting to be posted together'),
     BotCommand('cancel', 'Abandon whatever is in progress'),
@@ -144,27 +204,33 @@ KNOWN_COMMANDS = tuple(c.command for c in BOT_COMMANDS)
 
 # Buttons carry the same actions as a persistent keyboard, so the usual case is
 # a tap and nothing is ever typed. Their text is matched exactly.
-BTN_NEW = '📸 New photo'
+BTN_NEW = '📸 Scorecard photo'
+BTN_EVENT = '🎯 Event photo'
 BTN_CARD = '🆕 Manual card'
 BTN_CANCEL = '🚫 Cancel'
 BTN_HELP = '❓ Help'
-BUTTON_TEXTS = [BTN_NEW, BTN_CARD, BTN_HELP, BTN_CANCEL]
+BUTTON_TEXTS = [BTN_NEW, BTN_EVENT, BTN_CARD, BTN_HELP, BTN_CANCEL]
 
+# The two photo flows sit together on the top row: both end in "send a photo",
+# and which one you want is the only thing to decide between them.
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
-    [[BTN_NEW, BTN_CARD], [BTN_HELP, BTN_CANCEL]],
+    [[BTN_NEW, BTN_EVENT], [BTN_CARD], [BTN_HELP, BTN_CANCEL]],
     resize_keyboard=True,
     is_persistent=True,
     input_field_placeholder='Use the buttons below',
 )
 
 BTN_NEW_FILTER = filters.Text([BTN_NEW])
+BTN_EVENT_FILTER = filters.Text([BTN_EVENT])
 BTN_CARD_FILTER = filters.Text([BTN_CARD])
 BTN_CANCEL_FILTER = filters.Text([BTN_CANCEL])
 BTN_HELP_FILTER = filters.Text([BTN_HELP])
 BUTTON_FILTER = filters.Text(BUTTON_TEXTS)
 
-# Free text inside /card. Buttons and commands are excluded so tapping Cancel
-# mid-flow cancels instead of being recorded as a team called "🚫 Cancel".
+# Free text where a step asks for it: everything /card wants, and the player's
+# name when a squad can't be listed. Buttons and commands are excluded so
+# tapping Cancel mid-flow cancels instead of being recorded as a team called
+# "🚫 Cancel".
 MANUAL_TEXT_FILTER = filters.TEXT & ~filters.COMMAND & ~BUTTON_FILTER
 
 
@@ -189,20 +255,69 @@ UNKNOWN_COMMAND_FILTER = filters.COMMAND & ~filters.Regex(
     r'^/(' + '|'.join(KNOWN_COMMANDS) + r')(@\S+)?(\s|$)'
 )
 
+# The one message that has to teach the whole bot. Its shape is the decision it
+# exists to help with: two of the three flows take a photo, and which one you
+# want depends entirely on what the photo is meant to *do* — sit under a
+# scorecard, or be the post. That question is answered before anything else.
 HELP_TEXT = (
-    "I do two things: take the photo that goes under an automated scorecard, "
-    "and build a whole card for a match the scraper doesn't cover.\n\n"
-    "*What I accept*\n"
-    "• Send a photo — I'll ask which match and whether it's HT or FT\n"
-    f"• {BTN_NEW} / /start — pick the match first, then send the photo\n"
-    f"• {BTN_CARD} / /card — type in a match yourself: score, scorers, date, "
-    "competition, background. I render it and send it to you; posting is a "
-    "separate tap that never happens on its own\n"
-    "• /batch — the cards waiting to go out as one post, and the button that "
-    "posts them\n"
-    f"• {BTN_CANCEL} / /cancel — drop whatever is in progress\n"
-    f"• {BTN_HELP} / /help — this message\n\n"
-    "Outside /card I ignore typed text on purpose. Use the buttons below or "
+    "*What I do*\n"
+    "Three jobs. Two of them take a photo — which one you want depends on "
+    "what the photo is meant to do.\n"
+    "\n"
+    f"*{BTN_NEW}*  —  /start\n"
+    "The background the half-time or full-time card is drawn on. I put the "
+    "score, the crests and the scorers over the top of it. One per match per "
+    "moment; sending another replaces it. Send nothing and the card still "
+    "posts — on the standard template instead.\n"
+    "\n"
+    f"*{BTN_EVENT}*  —  /event\n"
+    "A photo held for one player's moment: Messi scoring, Ronaldo completing "
+    "a hat-trick, Neymar sent off. "
+    "Nothing is drawn on it. If that moment happens during the match, the "
+    "photo posts on its own with its own caption, exactly as you sent it. If "
+    "it never happens, nothing is posted and the photo is deleted at full "
+    "time.\n"
+    "\n"
+    f"*{BTN_CARD}*  —  /card\n"
+    "A whole match card typed in from scratch, for a fixture the scraper "
+    "doesn't cover. I render it and send it to you; posting is a separate tap "
+    "that never happens on its own. /batch is the pile waiting to go out "
+    "together.\n"
+    "\n"
+    "*Which photo is which*\n"
+    "The photo goes _under_ a scorecard  →  /start\n"
+    "The photo _is_ the post  →  /event\n"
+    "\n"
+    "*Staging an event photo*\n"
+    "/event → the match → what has to happen → the team → the player → the "
+    "photo.\n"
+    "Stage them as early as you like, as long as the fixture is in the list. "
+    "The squad only appears about an hour before kickoff; before that you type "
+    "the name instead, which works just as well — accents and capitals are "
+    "folded away, so `messi` finds Messi.\n"
+    "One photo per player per event. ⚽ Goal fires on their first goal; for a "
+    "second or a third there are ⚽⚽ Brace and ⚽⚽⚽ Hat-trick, which fire the "
+    "moment that goal goes in. Stage all three for one player if you want and "
+    "all three post — but each is a separate Instagram post, so stage what's "
+    "worth posting.\n"
+    "\n"
+    "*What's armed*  —  /staged\n"
+    "The photos waiting on a moment, fixture by fixture, with a ❌ on each. "
+    "Tapping it is the only safe way to take one back down — deleting the "
+    "file in Cloudinary by hand is the same thing with nothing checking which "
+    "match you're deleting from. Everything still armed at full time is "
+    "cleared automatically.\n"
+    "\n"
+    "*Sending a photo with no command*\n"
+    "It becomes a scorecard background — I'll ask which match and whether it's "
+    "half time or full time. Use /event if you meant a player's moment.\n"
+    "\n"
+    "*Anything else*\n"
+    f"{BTN_CANCEL} / /cancel drops whatever is in progress.\n"
+    f"{BTN_HELP} / /help is this message.\n"
+    "\n"
+    "Typed text only means something where a step asks for it — a player's "
+    "name, or anything /card wants. Everywhere else, use the buttons below or "
     "the ☰ menu next to the message box."
 )
 
@@ -257,14 +372,20 @@ def _allowed(update: Update) -> bool:
     return str(update.effective_user.id) in allowed_ids
 
 
-def _match_keyboard() -> InlineKeyboardMarkup | None:
+def _match_keyboard(prefix: str = 'match') -> InlineKeyboardMarkup | None:
+    """One button per fixture in matches.json, or None if it's empty.
+
+    Both photo flows offer the same list and answer it in different
+    conversations, so the callback prefix is the caller's — /event's buttons
+    must not look like the scorecard flow's to the handler that gets them.
+    """
     matches = _load_matches()
     if not matches:
         return None
     keyboard = [
         [InlineKeyboardButton(
             f"{m['home_team']} vs {m['away_team']} — {m.get('kickoff_utc', '')[:10]}",
-            callback_data=f"match:{m['match_id']}",
+            callback_data=f"{prefix}:{m['match_id']}",
         )]
         for m in matches
     ]
@@ -321,8 +442,51 @@ def _shrink_for_upload(path: str) -> bool:
     return True
 
 
+def _fit_for_post(path: str) -> str | None:
+    """Centre-crop an image in place until Instagram will take its shape.
+
+    Returns a sentence describing what was cut, or None if nothing was — which
+    is the usual answer, and the reason this is a crop rather than a pad: a
+    picture already in the band keeps every pixel it arrived with.
+
+    Best-effort, like _shrink_for_upload: an image Pillow can't open is left
+    alone and the failure is reported by whatever tries to use it next.
+    """
+    try:
+        with Image.open(path) as probe:
+            probe.load()
+            img = probe.convert('RGB')
+            w, h = img.size
+    except Exception as e:
+        print(f"[bot] Could not inspect image for cropping: {e}")
+        return None
+
+    ratio = w / h if h else 1.0
+    if POST_ASPECT_MIN <= ratio <= POST_ASPECT_MAX:
+        return None
+
+    if ratio < POST_ASPECT_MIN:          # too tall — trim top and bottom
+        new_h = round(w / POST_ASPECT_MIN)
+        top = (h - new_h) // 2
+        img = img.crop((0, top, w, top + new_h))
+    else:                                # too wide — trim left and right
+        new_w = round(h * POST_ASPECT_MAX)
+        left = (w - new_w) // 2
+        img = img.crop((left, 0, left + new_w, h))
+
+    img.save(path, 'JPEG', quality=92, optimize=True)
+    print(f"[bot] Cropped {w}x{h} → {img.size} for Instagram.")
+    return (f"I cropped it from {w}×{h} to {img.size[0]}×{img.size[1]} — "
+            f"Instagram won't accept a picture that shape, so the middle was "
+            f"kept. Send a squarer crop of your own if the framing matters.")
+
+
 async def _upload_photo(msg, context, match: dict, event_type: str,
-                        ref: tuple[str, int | None]) -> bool:
+                        ref: tuple[str, int | None], *,
+                        public_id: str | None = None,
+                        descriptor: str | None = None,
+                        meta: dict | None = None,
+                        fit_aspect: bool = False) -> bool:
     """Download from Telegram, downscale if needed, push to Cloudinary.
 
     Every failure path answers in the chat. A silent failure here is the worst
@@ -340,21 +504,24 @@ async def _upload_photo(msg, context, match: dict, event_type: str,
         )
         return False
 
-    public_id = photo_public_id(match['match_id'], event_type)
+    public_id = public_id or photo_public_id(match['match_id'], event_type)
     await msg.reply_text("Uploading to Cloudinary…")
 
-    tmp_path = None
+    tmp_path, crop_note = None, None
     try:
         with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
             tmp_path = tmp.name
         tg_file = await context.bot.get_file(file_id)
         await tg_file.download_to_drive(tmp_path)
         _shrink_for_upload(tmp_path)
+        if fit_aspect:
+            crop_note = _fit_for_post(tmp_path)
         result = cloudinary.uploader.upload(
             tmp_path,
             public_id=public_id,
             overwrite=True,
             invalidate=True,   # purge CDN cache when replacing a photo
+            **({'context': meta} if meta else {}),
         )
     except Exception as e:
         log.exception("Photo upload failed for %s", public_id)
@@ -368,10 +535,11 @@ async def _upload_photo(msg, context, match: dict, event_type: str,
 
     await msg.reply_text(
         f"Done ✅\n"
-        f"{match['home_team']} vs {match['away_team']} — {event_type}\n"
+        f"{match['home_team']} vs {match['away_team']} — {descriptor or event_type}\n"
         f"public_id: {result['public_id']}\n"
         f"{result['secure_url']}\n\n"
-        "The automation will pick it up from here. /start for another photo."
+        + (crop_note + "\n\n" if crop_note else "")
+        + "The automation will pick it up from here. /start for another photo."
     )
     return True
 
@@ -427,7 +595,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     context.user_data.clear()
     await _ensure_menu(update.message, context)
-    await update.message.reply_text("Select the match:", reply_markup=keyboard)
+    await update.message.reply_text(
+        "📸 *Scorecard photo* — the background the half-time or full-time card "
+        "is drawn on.\n"
+        "_Wanted a photo that posts on its own when a player scores? That's "
+        "/event._\n\n"
+        "Select the match:",
+        parse_mode='Markdown',
+        reply_markup=keyboard,
+    )
     return SELECT_MATCH
 
 
@@ -455,7 +631,12 @@ async def photo_first(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     context.user_data['pending'] = ref
     await _ensure_menu(update.message, context)
     await update.message.reply_text(
-        "Got the photo. Which match is it for?", reply_markup=keyboard
+        "Got the photo — I'll use it as a *scorecard background*.\n"
+        "_For a photo that posts on its own when a player scores, /cancel and "
+        "use /event._\n\n"
+        "Which match is it for?",
+        parse_mode='Markdown',
+        reply_markup=keyboard,
     )
     return SELECT_MATCH
 
@@ -492,14 +673,14 @@ async def event_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await query.edit_message_text("Cancelled.")
         return ConversationHandler.END
 
-    event_type = query.data.split(':', 1)[1]
-    context.user_data['event_type'] = event_type
-
     match = context.user_data.get('match')
     if match is None:
         # Only reachable if the process restarted between the two keyboards.
         await query.edit_message_text("That selection expired — /start to try again.")
         return ConversationHandler.END
+
+    event_type = query.data.split(':', 1)[1]
+    context.user_data['event_type'] = event_type
 
     await query.edit_message_text(
         f"{match['home_team']} vs {match['away_team']} — {event_type}"
@@ -519,6 +700,455 @@ async def event_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         parse_mode='Markdown',
     )
     return WAIT_PHOTO
+
+
+# ── /event — a photo staged against a player's moment ────────────────────────
+# Its own flow, not a branch of the scorecard one. A scorecard photo answers
+# "what goes under the card at half time"; this answers "what goes up on its
+# own if Messi scores" — different question, different post, and mixing them
+# into one keyboard would have made the everyday case read the rare one's
+# options every time.
+#
+# Same five questions in the same order as /start's two, with one more in the
+# middle: match → event → team → player → photo. The player is the addition,
+# and it is not optional — the Cloudinary name is match + event + player, so
+# the picture cannot be stored until it is known.
+
+BTN_TYPE_NAME = "✏️ Type the name instead"
+
+
+async def event_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """/event — stage a picture against a moment that hasn't happened yet."""
+    if not _allowed(update):
+        await update.message.reply_text("Not authorized.")
+        return ConversationHandler.END
+
+    keyboard = _match_keyboard('ev:match')
+    if keyboard is None:
+        await update.message.reply_text("No matches found in matches.json.")
+        return ConversationHandler.END
+
+    context.user_data.clear()
+    await _ensure_menu(update.message, context)
+    await update.message.reply_text(
+        "🎯 *Event photo* — held for one player's moment, and posted on its "
+        "own, exactly as you send it, if that moment happens.\n"
+        "_Wanted the background for a scorecard instead? That's /start._\n\n"
+        "Which match is it for?",
+        parse_mode='Markdown',
+        reply_markup=keyboard,
+    )
+    return E_MATCH
+
+
+async def event_match_chosen(update: Update,
+                             context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    if query.data == "cancel":
+        await query.edit_message_text("Cancelled.")
+        return ConversationHandler.END
+
+    match_id = query.data.split(':', 2)[2]
+    match = next((m for m in _load_matches() if str(m['match_id']) == match_id), None)
+    if not match:
+        await query.edit_message_text(
+            "Match not found — matches.json may have changed. /event to retry.")
+        return ConversationHandler.END
+
+    context.user_data['match'] = match
+    # One button per event a picture can be staged against, laid out by kind —
+    # see EVENT_KEYBOARD_ROWS. A goal's type is its own button rather than a
+    # follow-up question: a penalty and an open-play goal are different moments
+    # wanting different pictures.
+    rows = [[InlineKeyboardButton(event_photos.EVENT_LABELS[key],
+                                  callback_data=f"ev:evt:{key}")
+             for key in row]
+            for row in event_photos.EVENT_KEYBOARD_ROWS]
+    rows.append([InlineKeyboardButton("Cancel", callback_data="cancel")])
+
+    await query.edit_message_text(
+        f"{match['home_team']} vs {match['away_team']}\n"
+        f"What has to happen for this picture to post?",
+        reply_markup=InlineKeyboardMarkup(rows),
+    )
+    return E_EVENT
+
+
+async def event_event_chosen(update: Update,
+                             context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    if query.data == "cancel":
+        await query.edit_message_text("Cancelled.")
+        return ConversationHandler.END
+
+    match = context.user_data.get('match')
+    if match is None:
+        # Only reachable if the process restarted between the two keyboards.
+        await query.edit_message_text("That selection expired — /event to try again.")
+        return ConversationHandler.END
+
+    event_key = query.data.split(':', 2)[2]
+    context.user_data['event_key'] = event_key
+    await query.edit_message_text(
+        f"{match['home_team']} vs {match['away_team']} — "
+        f"{event_photos.EVENT_LABELS[event_key]}"
+    )
+    return await _ask_squad_side(query.message, context)
+
+
+# ── Which player ─────────────────────────────────────────────────────────────
+# Two ways, and the order matters: a tap on a name the feed itself published
+# can't be misspelled, so the squad is offered whenever there is one, and
+# typing is the fallback — for a picture staged before the team news drops, or
+# a name the feed spells differently from everyone else.
+
+async def _squad(context: ContextTypes.DEFAULT_TYPE) -> dict | None:
+    """The two squads for the chosen match, or None if none are published yet.
+
+    {'home': [names], 'away': [names]} — starting XI first, then the bench,
+    each in the order the feed lists them. Fetched once per conversation and
+    kept in user_data: it is a real HTTP request, and the answer does not
+    change between two taps a second apart.
+
+    Run off the event loop because the scraper is synchronous requests and a
+    slow fetch would otherwise stall every other chat the bot is handling.
+    """
+    if 'squad' in context.user_data:
+        return context.user_data['squad']
+
+    match = context.user_data.get('match') or {}
+    context.user_data['squad'] = None      # cache the miss too
+    try:
+        data = await asyncio.to_thread(get_match_data, match.get('scraper_url'))
+    except Exception as e:
+        log.warning("Squad fetch failed for %s: %s", match.get('match_id'), e)
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    formation = data.get('matchFormation')
+    if not isinstance(formation, dict):
+        return None
+
+    squad, ids = {}, {}
+    for side, key in (('home', 'team_A'), ('away', 'team_B')):
+        block = formation.get(key)
+        if not isinstance(block, dict):
+            continue
+        names = []
+        for group in ('lineups', 'sub'):
+            for p in (block.get(group) or []):
+                if not isinstance(p, dict):
+                    continue
+                name = str(p.get('person') or '').strip()
+                if not name:
+                    continue
+                names.append(name)
+                # The feed's own key for this person. Tapping a name is the
+                # one moment it is knowable for certain, so it is recorded
+                # here and stored on the picture — after which nothing
+                # downstream has to match on spelling at all.
+                ident = str(p.get('person_id') or '').strip()
+                if ident:
+                    ids.setdefault(name, ident)
+        if names:
+            squad[side] = names
+
+    context.user_data['squad_ids'] = ids
+    context.user_data['squad'] = squad or None
+    return context.user_data['squad']
+
+
+async def _ask_squad_side(msg, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Ask which team the player is in — or skip straight to typing.
+
+    The side is only ever a way to cut forty-odd names down to a list worth
+    scrolling. It is not part of the key: a picture is found by match, event
+    and player, and which shirt they were wearing never comes into it.
+    """
+    match = context.user_data['match']
+    await msg.reply_text("Looking up the squads…")
+    squad = await _squad(context)
+
+    if not squad:
+        await msg.reply_text(
+            "No team news has been published for this match yet, so I can't "
+            "list the players. That's normal more than an hour before kickoff."
+        )
+        return await _ask_typed_player(msg, context)
+
+    rows = [[InlineKeyboardButton(match[f'{side}_team'],
+                                  callback_data=f"ev:side:{side}")]
+            for side in ('home', 'away') if squad.get(side)]
+    rows.append([InlineKeyboardButton(BTN_TYPE_NAME, callback_data="ev:side:type")])
+    rows.append([InlineKeyboardButton("Cancel", callback_data="cancel")])
+    await msg.reply_text("Which team is the player in?",
+                         reply_markup=InlineKeyboardMarkup(rows))
+    return E_TEAM
+
+
+async def _ask_typed_player(msg, context: ContextTypes.DEFAULT_TYPE) -> int:
+    event_key = context.user_data.get('event_key')
+    await msg.reply_text(
+        f"Type the player's name for the "
+        f"*{event_photos.EVENT_LABELS.get(event_key, 'event')}* picture.\n\n"
+        "Spell it the way the scoreboard does — surname alone is usually "
+        "right. Accents and capitals don't matter; I fold them away before "
+        "matching.",
+        parse_mode='Markdown',
+        reply_markup=_typed_reply('Player name'),
+    )
+    # Read by stray_message in group 1, which would otherwise answer the name
+    # with "typed messages don't do anything here" the moment it is accepted.
+    context.user_data['awaiting_player'] = True
+    return E_TYPE_PLAYER
+
+
+async def event_side_chosen(update: Update,
+                            context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    if query.data == "cancel":
+        await query.edit_message_text("Cancelled.")
+        return ConversationHandler.END
+
+    if query.data == "ev:side:type":
+        await query.edit_message_text("Typing the name.")
+        return await _ask_typed_player(query.message, context)
+
+    side = query.data.split(':', 2)[2]
+    squad = (await _squad(context) or {}).get(side) or []
+    if not squad:
+        await query.edit_message_text("I don't have that squad any more.")
+        return await _ask_typed_player(query.message, context)
+
+    # Indexes, not names: callback_data is capped at 64 bytes and a name can
+    # carry anything, colons included.
+    context.user_data['squad_side'] = squad
+    rows = [[InlineKeyboardButton(name, callback_data=f"ev:player:{i}")
+             for i, name in pair]
+            for pair in _pairs(list(enumerate(squad)))]
+    rows.append([InlineKeyboardButton(BTN_TYPE_NAME, callback_data="ev:player:type")])
+    rows.append([InlineKeyboardButton("Cancel", callback_data="cancel")])
+
+    match = context.user_data['match']
+    await query.edit_message_text(
+        f"{match[f'{side}_team']} — who is the picture of?",
+        reply_markup=InlineKeyboardMarkup(rows),
+    )
+    return E_PLAYER
+
+
+def _pairs(items: list) -> list[list]:
+    """[a, b, c] → [[a, b], [c]] — two buttons to a row."""
+    return [items[i:i + 2] for i in range(0, len(items), 2)]
+
+
+async def event_player_chosen(update: Update,
+                              context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    if query.data == "cancel":
+        await query.edit_message_text("Cancelled.")
+        return ConversationHandler.END
+
+    if query.data == "ev:player:type":
+        await query.edit_message_text("Typing the name.")
+        return await _ask_typed_player(query.message, context)
+
+    if query.data == "ev:player:asis":
+        typed = context.user_data.get('typed_player')
+        if not typed:
+            await query.edit_message_text("That expired — /event to try again.")
+            return ConversationHandler.END
+        await query.edit_message_text(f"{typed} — as typed.")
+        return await _player_settled(query.message, context, typed)
+
+    squad = context.user_data.get('squad_side') or []
+    try:
+        player = squad[int(query.data.split(':', 2)[2])]
+    except (ValueError, IndexError):
+        await query.edit_message_text("That name expired — /event to try again.")
+        return ConversationHandler.END
+
+    await query.edit_message_text(player)
+    return await _player_settled(query.message, context, player)
+
+
+async def event_player_typed(update: Update,
+                             context: ContextTypes.DEFAULT_TYPE) -> int:
+    """A typed name, checked against the squad before it is believed.
+
+    This is where "Rodri" and "Rodrigo" are reconciled, and it is the only
+    place they can be: the worker matches names unattended against a live
+    match, so it has to be strict, and a name typed the way people say it out
+    loud rather than the way the team sheet prints it would simply never fire.
+    Here the person who typed it is still in the conversation and one tap
+    settles it.
+
+    Nothing is *blocked* by this. A name the squad doesn't know still stages,
+    with a warning saying so — a squad list can be incomplete, a name can be
+    right when this thinks it isn't, and refusing the upload over a guess
+    would be worse than the silence it is trying to prevent.
+    """
+    typed = (update.message.text or '').strip()
+    if not event_photos.player_slug(typed):
+        await update.message.reply_text(
+            "I can't make a name out of that — letters or numbers, please.",
+            reply_markup=_typed_reply('Player name'),
+        )
+        return E_TYPE_PLAYER
+
+    squad = await _squad(context) or {}
+    everyone = [n for side in ('home', 'away') for n in squad.get(side, [])]
+    if not everyone:
+        # No team news yet, so there is nothing to check against. Stage it and
+        # say what has to be true for it to work.
+        await update.message.reply_text(
+            f"No squads published yet, so I can't check \"{typed}\" against "
+            f"anything.\n\n"
+            f"It'll post as long as the scoreboard spells the name the same "
+            f"way. If you're not sure, run /event again once the team news is "
+            f"out — about an hour before kickoff — and pick the name from the "
+            f"list instead."
+        )
+        return await _player_settled(update.message, context, typed)
+
+    typed_slug = event_photos.player_slug(typed)
+    matches = [n for n in everyone
+               if event_photos.player_slug(n) == typed_slug]
+    if matches:
+        return await _player_settled(update.message, context, matches[0])
+
+    options = event_photos.suggest(typed, everyone)
+    if not options:
+        await update.message.reply_text(
+            f"⚠️ Nobody called \"{typed}\" is in either squad.\n\n"
+            f"I'll stage it anyway, but it will only ever post if the "
+            f"scoreboard spells the name exactly that way — so if this was a "
+            f"typo, /cancel and start again."
+        )
+        return await _player_settled(update.message, context, typed)
+
+    # Indexes into this list, same as the squad keyboard — see event_side_chosen.
+    context.user_data['squad_side'] = options
+    rows = [[InlineKeyboardButton(name, callback_data=f"ev:player:{i}")]
+            for i, name in enumerate(options)]
+    rows.append([InlineKeyboardButton(f"Neither — stage \"{typed}\" as typed",
+                                      callback_data="ev:player:asis")])
+    rows.append([InlineKeyboardButton("Cancel", callback_data="cancel")])
+    context.user_data['typed_player'] = typed
+
+    await update.message.reply_text(
+        f"I can't see \"{typed}\" in either squad. Did you mean one of these?\n\n"
+        f"The scoreboard's spelling is the one that has to match, so picking "
+        f"from this list is what makes the photo actually fire.",
+        reply_markup=InlineKeyboardMarkup(rows),
+    )
+    return E_PLAYER
+
+
+async def _player_settled(msg, context: ContextTypes.DEFAULT_TYPE,
+                          player: str) -> int:
+    """Everything is known — ask for the photo, or upload the one already held."""
+    match = context.user_data['match']
+    event_key = context.user_data['event_key']
+    context.user_data['player'] = player
+    # Only a name that came from the squad has one. A typed name that the
+    # squad didn't recognise stays un-pinned and is matched on spelling until
+    # the worker's clarification settles it — see main._clarify_staged_photos.
+    context.user_data['player_id'] = (
+        context.user_data.get('squad_ids') or {}).get(player, '')
+    context.user_data.pop('awaiting_player', None)
+
+    pending = context.user_data.get('pending')
+    if pending:
+        ok = await _upload_event_photo(msg, context, pending)
+        return ConversationHandler.END if ok else E_PHOTO
+
+    await msg.reply_text(
+        f"Staging {player} — {event_photos.EVENT_LABELS[event_key]} — for "
+        f"{match['home_team']} vs {match['away_team']}.\n\n"
+        "Now send the photo. It posts exactly as you send it, with no "
+        "scoreboard drawn on top, so send the picture you want on the page.\n\n"
+        "If the event never happens, nothing is posted and the picture is "
+        "deleted when the match ends."
+        # Deliberately not Markdown: the name is whatever was typed, and one
+        # stray underscore in it would have Telegram reject the whole message.
+    )
+    return E_PHOTO
+
+
+async def event_photo_early(update: Update,
+                            context: ContextTypes.DEFAULT_TYPE) -> None:
+    """A photo that arrived while the bot still doesn't know who it is for.
+
+    Held rather than dropped. Returning None keeps the conversation in the
+    step it was in, so the question that was asked is still the question in
+    front of you — and _player_settled uploads what is waiting the moment it
+    is answered.
+    """
+    ref = _photo_ref(update.message)
+    if ref is None:
+        await update.message.reply_text("That file isn't an image — send a JPG/PNG.")
+        return
+    context.user_data['pending'] = ref
+    await update.message.reply_text(
+        "Got the photo — I'll upload it as soon as you've told me which "
+        "player it's for."
+    )
+
+
+async def event_photo_received(update: Update,
+                               context: ContextTypes.DEFAULT_TYPE) -> int:
+    msg = update.message
+
+    ref = _photo_ref(msg)
+    if ref is None:
+        await msg.reply_text(
+            "That file isn't an image — send a JPG/PNG."
+            if msg.document else "Please send a photo (or an image file)."
+        )
+        return E_PHOTO
+
+    if not (context.user_data.get('match')
+            and context.user_data.get('event_key')
+            and context.user_data.get('player')):
+        # State lost under us. Unlike the scorecard flow there is nothing to
+        # fall back on — which match, which event and which player are three
+        # questions, and guessing any of them would stage the picture against
+        # the wrong moment.
+        await msg.reply_text(
+            "I've lost track of what that photo is for — /event to start again."
+        )
+        return ConversationHandler.END
+
+    ok = await _upload_event_photo(msg, context, ref)
+    return ConversationHandler.END if ok else E_PHOTO
+
+
+async def _upload_event_photo(msg, context: ContextTypes.DEFAULT_TYPE,
+                              ref: tuple[str, int | None]) -> bool:
+    """Stage a picture against one player's moment."""
+    match = context.user_data['match']
+    event_key = context.user_data['event_key']
+    player = context.user_data['player']
+    player_id = context.user_data.get('player_id') or ''
+    label = event_photos.EVENT_LABELS[event_key]
+    return await _upload_photo(
+        msg, context, match, event_key, ref,
+        public_id=event_photos.public_id(match['match_id'], event_key, player),
+        descriptor=f"{player}, {label}",
+        # Written onto the asset, not kept here: the worker is a different
+        # process on a different machine, and the picture is the only thing
+        # the two of them share.
+        meta={'player_id': player_id, 'player': player} if player_id else None,
+        # This one is posted as-is rather than drawn onto a card, so its own
+        # shape has to be one Instagram will take.
+        fit_aspect=True,
+    )
 
 
 async def photo_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -542,12 +1172,273 @@ async def photo_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if keyboard is None:
             await msg.reply_text("No matches found in matches.json.")
             return ConversationHandler.END
-        await msg.reply_text("Got the photo. Which match is it for?",
-                             reply_markup=keyboard)
+        await msg.reply_text(
+            "Got the photo — I'll use it as a *scorecard background*.\n\n"
+            "Which match is it for?",
+            parse_mode='Markdown', reply_markup=keyboard)
         return SELECT_MATCH
 
     ok = await _upload_photo(msg, context, match, event_type, ref)
     return ConversationHandler.END if ok else WAIT_PHOTO
+
+
+# ── /staged — what is armed, and the only safe way to take it back ───────────
+# A staged picture is invisible by design: it lives under a Cloudinary name
+# nobody sees, does nothing for hours, and then posts on its own, in public.
+# So there has to be an answer to "what did I arm?" that isn't the Cloudinary
+# console — and a way to disarm one that isn't deleting an object there by
+# hand, which is the same operation with none of the checks and a different
+# match's photo one keystroke away.
+#
+# Not a conversation. It is a list and a tap, and it has to work while /card
+# or /event is half-finished — which is also why the tap carries a digest of
+# the public_id rather than an index into a list the bot would have to
+# remember: see event_photos.digest.
+
+async def staged_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/staged — one message per fixture that has something armed."""
+    if not _allowed(update):
+        await update.message.reply_text("Not authorized.")
+        return
+
+    matches = _load_matches()
+    if not matches:
+        await update.message.reply_text("No matches found in matches.json.")
+        return
+
+    await _ensure_menu(update.message, context)
+    try:
+        # One Admin API call for the whole folder, off the event loop — it is
+        # a real HTTP request and every other chat is waiting on this thread.
+        found = await asyncio.to_thread(
+            event_photos.staged_all, [m['match_id'] for m in matches])
+    except Exception as e:
+        log.warning("Could not list staged photos: %s", e)
+        await update.message.reply_text(
+            f"I couldn't reach Cloudinary to check what's staged: {e}\n\n"
+            f"Nothing has changed — try /staged again in a moment."
+        )
+        return
+
+    armed = [m for m in matches if found.get(str(m['match_id']))]
+    if not armed:
+        await update.message.reply_text(
+            "Nothing is staged.\n\n"
+            "/event arms a photo for one player's moment. Anything armed is "
+            "listed here until it posts or the match ends."
+        )
+        return
+
+    for match in armed:
+        await update.message.reply_text(
+            **_staged_message(match, found[str(match['match_id'])]))
+
+
+def _staged_message(match: dict, staged_map: dict, note: str = '') -> dict:
+    """The listing for one fixture, as kwargs for reply_text/edit_message_text.
+
+    Deliberately not Markdown: a player's name is whatever was typed, and one
+    stray underscore in it would have Telegram reject the whole message.
+    """
+    fixture = f"{match['home_team']} vs {match['away_team']}"
+    if not staged_map:
+        return {'text': f"{note}Nothing is staged for {fixture} any more."}
+
+    lines, rows, unpinned = [], [], False
+    for pid in sorted(staged_map,
+                      key=lambda p: event_photos.describe(p, staged_map[p]) or p):
+        ctx = staged_map[pid] or {}
+        label = event_photos.describe(pid, ctx) or pid
+        if str(ctx.get('player_id') or '').strip():
+            lines.append(f"• {label}")
+        else:
+            unpinned = True
+            lines.append(f"• {label}   (by name)")
+        rows.append([InlineKeyboardButton(
+            f"❌ {label}", callback_data=f"sd:{event_photos.digest(pid)}")])
+
+    count = len(staged_map)
+    text = (f"{note}🎯 {fixture}\n"
+            f"{count} photo{'s' if count > 1 else ''} armed:\n\n"
+            + '\n'.join(lines) +
+            "\n\nTap one to take it back down. Anything left armed posts on "
+            "its own if the moment happens, and is deleted at full time either "
+            "way.")
+    if unpinned:
+        text += ("\n\n(by name) — not pinned to a player id yet, so it only "
+                 "fires if the scoreboard spells the name that way.")
+    return {'text': text, 'reply_markup': InlineKeyboardMarkup(rows)}
+
+
+async def staged_drop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """A tap on ❌ — disarm one staged picture.
+
+    The digest is resolved against a *fresh* listing rather than something
+    remembered from when the message was drawn. The bot restarts often, and a
+    button that stops working after a restart is no use in the one flow that
+    exists to undo a mistake — nor is one that deletes whatever now happens to
+    sit at the position the tap was aimed at.
+    """
+    query = update.callback_query
+    if not _allowed(update):
+        # Answered before anything is looked up: a tap from outside the
+        # allowlist should not cost a Cloudinary listing.
+        await query.answer("Not authorized.", show_alert=True)
+        return
+    await query.answer()
+
+    wanted = query.data.split(':', 1)[1]
+    matches = _load_matches()
+    try:
+        found = await asyncio.to_thread(
+            event_photos.staged_all, [m['match_id'] for m in matches])
+    except Exception as e:
+        log.warning("Could not list staged photos: %s", e)
+        await query.message.reply_text(
+            f"I couldn't reach Cloudinary: {e}\n\n"
+            f"Nothing was removed — try /staged again in a moment."
+        )
+        return
+
+    everything = {pid: ctx
+                  for per_match in found.values()
+                  for pid, ctx in per_match.items()}
+    public_id = event_photos.find_by_digest(everything, wanted)
+    if public_id is None:
+        await query.edit_message_text(
+            "That photo isn't staged any more — it has already been removed, "
+            "or the match has finished and everything was cleared.\n\n"
+            "/staged for the current list."
+        )
+        return
+
+    label = event_photos.describe(public_id, everything[public_id]) or public_id
+    try:
+        await asyncio.to_thread(event_photos.delete_one, public_id)
+    except Exception as e:
+        log.warning("Could not delete %s: %s", public_id, e)
+        await query.message.reply_text(
+            f"I couldn't remove \"{label}\": {e}\n\n"
+            f"It is still staged and will still post. /staged to try again."
+        )
+        return
+
+    match_id = event_photos.match_id_of(public_id)
+    match = next((m for m in matches if str(m['match_id']) == match_id), None)
+    remaining = {pid: ctx for pid, ctx in found.get(match_id, {}).items()
+                 if pid != public_id}
+    note = f"❌ Removed {label} — it won't post.\n\n"
+    if match is None:
+        await query.edit_message_text(note.strip())
+        return
+    await query.edit_message_text(**_staged_message(match, remaining, note))
+
+
+# ── The worker's question, answered here ─────────────────────────────────────
+# When the team sheets are published the match worker pins every staged photo
+# it can to a player id and asks about the rest — "is rodri → Rodrigo?" — as a
+# message with buttons. The worker runs in a different process on a different
+# machine and the two share nothing, so the button carries only what both can
+# compute from the picture itself: a digest of its public_id, and the id of
+# the player being offered. See event_photos.digest and main._ask_who_it_is.
+
+async def staged_clarify(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """A tap on one of the worker's "who is this?" buttons."""
+    query = update.callback_query
+    if not _allowed(update):
+        # Answered before anything is looked up: a tap from outside the
+        # allowlist should not cost a Cloudinary listing.
+        await query.answer("Not authorized.", show_alert=True)
+        return
+    await query.answer()
+
+    parts = query.data.split(':', 2)
+    if len(parts) != 3:
+        return
+    _prefix, handle, player_id = parts
+
+    matches = _load_matches()
+    try:
+        found = await asyncio.to_thread(
+            event_photos.staged_all, [m['match_id'] for m in matches])
+    except Exception as e:
+        log.warning("Could not list staged photos: %s", e)
+        await query.message.reply_text(
+            f"I couldn't reach Cloudinary: {e}\n\n"
+            f"Nothing changed — tap it again in a moment."
+        )
+        return
+
+    everything = {pid: ctx
+                  for per_match in found.values()
+                  for pid, ctx in per_match.items()}
+    public_id = event_photos.find_by_digest(everything, handle)
+    if public_id is None:
+        await query.edit_message_text(
+            "That photo isn't staged any more — it was removed, or the match "
+            "has finished and everything was cleared."
+        )
+        return
+
+    staged_as = event_photos.describe(public_id, everything[public_id]) or public_id
+
+    if player_id == '-':
+        # "Leave it as typed." Recorded on the picture rather than remembered
+        # here: the worker is what asks, and it has to stop asking.
+        try:
+            await asyncio.to_thread(event_photos.set_clarified, public_id)
+        except Exception as e:
+            log.warning("Could not mark %s clarified: %s", public_id, e)
+        await query.edit_message_text(
+            f"Left as staged: {staged_as}.\n\n"
+            f"It still posts — but only if the scoreboard spells the name that "
+            f"way. /staged takes it down if you'd rather it didn't."
+        )
+        return
+
+    match_id = event_photos.match_id_of(public_id)
+    match = next((m for m in matches if str(m['match_id']) == match_id), None)
+    name = await _named_in_squad(match, player_id)
+
+    try:
+        await asyncio.to_thread(event_photos.set_player_id,
+                                public_id, player_id, name or '')
+    except Exception as e:
+        log.warning("Could not pin %s to %s: %s", public_id, player_id, e)
+        await query.message.reply_text(
+            f"I couldn't pin it: {e}\n\n"
+            f"Nothing is lost — the photo is still staged as {staged_as} and "
+            f"still posts if the spelling matches. Tap again to retry."
+        )
+        return
+
+    parsed = event_photos.parse_public_id(public_id, match_id)
+    label = event_photos.EVENT_LABELS.get(parsed[0], '') if parsed else ''
+    await query.edit_message_text(
+        f"✅ Pinned to {name or f'player {player_id}'}"
+        f"{f' — {label}' if label else ''}.\n\n"
+        f"It now posts on their moment however the scoreboard spells the name."
+    )
+
+
+async def _named_in_squad(match: dict | None, player_id: str) -> str | None:
+    """The feed's spelling for a player id, or None if it can't be looked up.
+
+    Best-effort on purpose. The id is what makes the photo fire; the name is
+    only what the confirmation says back and what /staged shows later, so a
+    failed lookup costs a nicer sentence and nothing else.
+    """
+    if not match or not match.get('scraper_url'):
+        return None
+    try:
+        data = await asyncio.to_thread(get_match_data, match['scraper_url'])
+    except Exception as e:
+        log.warning("Squad lookup failed for %s: %s", match.get('match_id'), e)
+        return None
+    for name, ident in event_photos.squad(data if isinstance(data, dict) else {}):
+        if ident == str(player_id):
+            return name
+    return None
 
 
 # ── Manual match: /card ───────────────────────────────────────────────────────
@@ -1700,10 +2591,11 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def stray_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Anything that reached no other handler. Answer, don't ignore.
 
-    Except during /card. Handlers in different groups every get a turn at the
-    same update, so while that flow is running this one sees every answer to
-    every question — and used to reply "I only understand photos and the
-    buttons below" to a perfectly good team name, immediately after the
+    Except while a step is asking for typed text — /card throughout, and the
+    player's name for an event photo. Handlers in different groups every get a
+    turn at the same update, so while either is running this one sees every
+    answer to every question — and used to reply "I only understand photos and
+    the buttons below" to a perfectly good team name, immediately after the
     conversation had accepted it. That message is true everywhere else and
     wrong here, and being told you are typing nonsense while correctly
     answering a question is worse than not being answered at all.
@@ -1717,6 +2609,8 @@ async def stray_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     if context.user_data.get('manual') is not None:
         return
+    if context.user_data.get('awaiting_player'):
+        return          # same reason: the step asked for exactly this text
     context.chat_data['menu_shown'] = True
     await update.message.reply_text(
         "I only understand photos and the buttons below — typed messages "
@@ -1832,6 +2726,38 @@ def main() -> None:
         ],
     )
 
+    # Registered before the scorecard conversation for the same reason /card is:
+    # this one ends by waiting for a photo, and a bare photo is an entry point
+    # of the flow below. Its own entry points only match /event, so a photo
+    # sent outside it still lands in photo_first.
+    event_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler('event', event_start),
+            MessageHandler(BTN_EVENT_FILTER, event_start),
+        ],
+        states={
+            E_MATCH:  [CallbackQueryHandler(event_match_chosen,
+                                            pattern=r'^(ev:match:|cancel$)')],
+            E_EVENT:  [CallbackQueryHandler(event_event_chosen,
+                                            pattern=r'^(ev:evt:|cancel$)')],
+            # The three player steps also take a photo sent early rather than
+            # dropping it — see event_photo_early.
+            E_TEAM:   [CallbackQueryHandler(event_side_chosen,
+                                            pattern=r'^(ev:side:|cancel$)'),
+                       MessageHandler(PHOTO_ENTRY_FILTER, event_photo_early)],
+            E_PLAYER: [CallbackQueryHandler(event_player_chosen,
+                                            pattern=r'^(ev:player:|cancel$)'),
+                       MessageHandler(PHOTO_ENTRY_FILTER, event_photo_early)],
+            E_TYPE_PLAYER: [MessageHandler(MANUAL_TEXT_FILTER, event_player_typed),
+                            MessageHandler(PHOTO_ENTRY_FILTER, event_photo_early)],
+            E_PHOTO:  [MessageHandler(PHOTO_ENTRY_FILTER, event_photo_received)],
+        },
+        fallbacks=common_fallbacks + [
+            CommandHandler('event', event_start),
+            MessageHandler(BTN_EVENT_FILTER, event_start),
+        ],
+    )
+
     conv = ConversationHandler(
         entry_points=[
             CommandHandler('start', start),
@@ -1841,8 +2767,13 @@ def main() -> None:
             MessageHandler(PHOTO_ENTRY_FILTER, photo_first),
         ],
         states={
-            SELECT_MATCH: [CallbackQueryHandler(match_chosen)],
-            SELECT_EVENT: [CallbackQueryHandler(event_chosen)],
+            # Patterned, so a tap belonging to something else — a ❌ on a
+            # /staged listing — falls through to its own handler instead of
+            # being read as an answer to the question on screen.
+            SELECT_MATCH: [CallbackQueryHandler(match_chosen,
+                                                pattern=r'^(match:|cancel$)')],
+            SELECT_EVENT: [CallbackQueryHandler(event_chosen,
+                                                pattern=r'^(event:|cancel$)')],
             WAIT_PHOTO: [MessageHandler(filters.PHOTO | filters.Document.ALL, photo_received)],
         },
         # Fallbacks apply in every state, so the buttons keep working mid-flow:
@@ -1855,6 +2786,7 @@ def main() -> None:
         ],
     )
     app.add_handler(card_conv)
+    app.add_handler(event_conv)
     app.add_handler(conv)
     # Outside any conversation these still have to answer.
     app.add_handler(CommandHandler('help', help_cmd))
@@ -1862,6 +2794,12 @@ def main() -> None:
     app.add_handler(MessageHandler(BTN_CANCEL_FILTER, cancel))
     app.add_handler(CommandHandler('batch', batch_cmd))
     app.add_handler(CallbackQueryHandler(batch_clear, pattern=r'^batch:clear$'))
+    # /staged answers outside any conversation and mid-way through one:
+    # it is what you reach for when a flow has left something armed by
+    # mistake, which is precisely when a flow is in progress.
+    app.add_handler(CommandHandler('staged', staged_cmd))
+    app.add_handler(CallbackQueryHandler(staged_drop, pattern=r'^sd:'))
+    app.add_handler(CallbackQueryHandler(staged_clarify, pattern=r'^ec:'))
     # Group -1 runs first and consumes nothing — see keep_alive.
     app.add_handler(MessageHandler(filters.ALL, keep_alive), group=-1)
     app.add_handler(CallbackQueryHandler(keep_alive), group=-1)

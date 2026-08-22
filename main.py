@@ -14,6 +14,12 @@ Per-match flow
   →  ht        →  generate + post HT scorecard, keep polling
   →  ft        →  generate + post FT scorecard, worker exits
 
+Alongside that, every poll checks the timeline against the pictures staged for
+this match through the Telegram bot — "Messi, goal" — posts any whose moment
+has now happened, and takes back down any whose moment the feed has since
+withdrawn (VAR). Nothing is staged for most matches, and those cost a
+Cloudinary listing every couple of minutes and find nothing. See event_photos.py.
+
 Concurrency: one daemon thread per active match via ThreadPoolExecutor.
 State is kept in MATCH_STATE (in-memory dict) and flushed to state.json on
 every change so a restart can resume cleanly.
@@ -31,17 +37,25 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from dotenv import load_dotenv
 
 from allfootball_desktop import enrich as enrich_with_desktop
-from caption import generate_caption, generate_lineup_caption
+from caption import (generate_caption, generate_event_caption,
+                     generate_lineup_caption)
 from config import get_crest_url
 from carousel import nudge_dispatcher, submit_match
 from cloudinary_upload import upload_image, upload_match_data, delete_image
-from database import init_db, is_event_posted, mark_event_posted, upsert_match
+from database import (init_db, is_event_posted, mark_event_posted,
+                      unmark_event_posted, upsert_match)
 from football_scraper_dom import get_match_data
 from cloudinary_utils import fetch_match_photo, match_photo_exists
 from lineup_card import generate_lineup_card, has_lineups, has_positions
+import event_photos
 from instagram import (post_to_instagram, post_carousel_to_instagram,
-                       delete_instagram_post, get_post_permalink)
-from telegram_notify import send_alert as _send_alert_raw, send_music_reminder
+                       delete_instagram_post, get_post_permalink,
+                       publishing_limit)
+from telegram_notify import (
+    send_alert as _send_alert_raw,
+    send_choice as _send_choice_raw,
+    send_music_reminder,
+)
 from overlay_scorebar import generate_overlay_scorecard
 from scorecard import generate_scorecard
 from stats_card import generate_stats_card
@@ -63,6 +77,17 @@ def send_alert(text: str, key: str | None = None, cooldown: int = 0) -> None:
         level=_ALERT_LEVEL.get(str(text)[:2].strip(), matchlog.INFO),
     )
     _send_alert_raw(text, key=key, cooldown=cooldown)
+
+
+def send_choice(text: str, options: list[tuple[str, str]],
+                key: str | None = None, cooldown: int = 0) -> None:
+    """An alert whose answers are buttons — logged like any other alert."""
+    matchlog.log(
+        'alert sent',
+        ' '.join(str(text).split())[:200],
+        level=_ALERT_LEVEL.get(str(text)[:2].strip(), matchlog.INFO),
+    )
+    _send_choice_raw(text, options, key=key, cooldown=cooldown)
 
 # ── Tunables ──────────────────────────────────────────────────────────────────
 REGISTRY_FILE       = 'matches.json'
@@ -98,6 +123,16 @@ LINEUP_DEADLINE_SECS       = 5 * 60    # after kickoff, a starting XI post is st
 #               "worker_running": bool } }
 MATCH_STATE: dict[str, dict] = {}
 STATE_LOCK  = threading.Lock()
+
+# { match_id: (monotonic timestamp, {public_id, …}) } — what the Telegram
+# bot has staged for each live match, re-read on a timer rather than every
+# poll. Guarded by STATE_LOCK; see _staged_event_photos.
+_EVENT_PHOTO_CACHE: dict[str, tuple[float, set[str]]] = {}
+
+# { (match_id, posted_key): how many times that picture has been posted and
+# then taken down }. Kept out of MATCH_STATE because it must survive the
+# record being deleted, which is the whole mechanism of a retraction.
+_EVENT_PHOTO_RETRACTIONS: dict[tuple[str, str], int] = {}
 
 # Tracks which match_ids already have a worker thread spawned
 ACTIVE_WORKERS: set[str] = set()
@@ -670,6 +705,706 @@ def _photo_reminder(entry: dict, event_type: str, state_key: str,
     )
 
 
+# ── In-match event photos ─────────────────────────────────────────────────────
+# Pictures staged against a player's moment before the match — "Messi, goal" —
+# and posted on their own if that moment arrives. See event_photos.py for the
+# key they are stored under and why the player is part of it.
+#
+# Nothing here runs for a match nobody staged a picture for, which is what
+# makes the feature opt-in without a flag in matches.json: the opt-in is the
+# upload. A match with no staged pictures costs one Cloudinary listing every
+# EVENT_PHOTO_REFRESH_SECS and finds nothing.
+
+# How often the staged set is re-read from Cloudinary. Pictures are meant to be
+# staged before kickoff, so this is really a safety net for one added late —
+# frequent enough that it still posts, rare enough to stay well inside the
+# Admin API's hourly budget with several matches running at once.
+EVENT_PHOTO_REFRESH_SECS = 120
+
+# A moment that has left the timeline is usually the scraper dropping it for
+# a poll, not a decision — the same reason _early_card_stale refuses to act
+# on a vanished event. But sometimes it *is* a decision (VAR ruling a goal
+# out), and then a photo celebrating it is on the page and wrong. So the
+# disappearance has to be confirmed rather than believed: this many polls in
+# a row, roughly this many minutes, which is about how long a VAR check runs.
+EVENT_PHOTO_VANISHED_POLLS = 3
+
+# How many times one picture may be posted and then retracted before the bot
+# stops trying. A feed that flaps an event repeatedly would otherwise put the
+# same photo up and take it down all afternoon, in public.
+MAX_EVENT_PHOTO_RETRACTIONS = 2
+
+
+def _staged_event_photos(match_id: str) -> set[str]:
+    """The staged public_ids for a match, re-read from Cloudinary on a timer.
+
+    Returns the last known set on a Cloudinary failure rather than an empty
+    one: an empty set reads as "nothing is staged", and answering that during
+    an outage would quietly skip a picture that is sitting right there.
+    """
+    now = time.monotonic()
+    with STATE_LOCK:
+        cached = _EVENT_PHOTO_CACHE.get(match_id)
+    if cached and now - cached[0] < EVENT_PHOTO_REFRESH_SECS:
+        return cached[1]
+
+    try:
+        found = event_photos.staged(match_id)
+    except Exception as e:
+        print(f"[{match_id}] Could not list staged event photos: {e}")
+        return cached[1] if cached else set()
+
+    with STATE_LOCK:
+        _EVENT_PHOTO_CACHE[match_id] = (now, found)
+    return found
+
+
+def _posted_event_photos(match_id: str) -> dict:
+    """What has been posted for this match, as {posted_key: record}.
+
+    A record carries the Instagram media id (needed to take the post down
+    again), how many consecutive polls its moment has been absent from the
+    timeline, and how many times it has already been posted and retracted.
+
+    A plain list is accepted too: that is the shape a worker resuming from a
+    state.json written before retraction existed would find. Those entries
+    have no media id, so they can never be taken down — the alternative is
+    crashing on them, which is worse.
+    """
+    with STATE_LOCK:
+        raw = MATCH_STATE.get(match_id, {}).get('event_photos_posted')
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, list):
+        return {key: {'ig_id': None, 'missing': 0, 'retracted': 0}
+                for key in raw}
+    return {}
+
+
+def _write_posted_event_photos(match_id: str, records: dict) -> None:
+    with STATE_LOCK:
+        MATCH_STATE.setdefault(match_id, {})['event_photos_posted'] = records
+        _save_state()
+
+
+def _retract_event_photo(entry: dict, posted_key: str, record: dict) -> None:
+    """Take a posted event photo down, and let it post again later.
+
+    The picture itself stays on Cloudinary until the worker finishes. That is
+    the point: a goal ruled out is not proof the player will not score one
+    that stands, and the photo staged for him should still be there when he
+    does. Only the Instagram post and the record of it go.
+    """
+    match_id = entry['match_id']
+    ig_id = record.get('ig_id')
+    label = posted_key.replace('EVENT:', '').replace(':', ' ')
+
+    if ig_id:
+        try:
+            delete_instagram_post(ig_id)
+            print(f"[{match_id}] Retracted event photo ({label}) — IG {ig_id} deleted.")
+            matchlog.warn(f'retracted event photo — {label}',
+                          f'the moment left the timeline; IG {ig_id} deleted')
+            send_alert(
+                f"\u26a0\ufe0f {_label(entry)}: the photo posted for {label} has been "
+                f"taken down.\n\n"
+                f"The moment disappeared from the live timeline and stayed gone "
+                f"— almost always VAR ruling it out. The post is off Instagram.\n\n"
+                f"The photo is still staged, so if it happens again for real it "
+                f"will post again on its own."
+            )
+        except Exception as e:
+            print(f"[{match_id}] Instagram delete failed ({ig_id}): {e}")
+            matchlog.warn('retraction failed — needs you',
+                          f'IG {ig_id} is still up: {e}')
+            link = get_post_permalink(ig_id) or f"media id {ig_id}"
+            send_alert(
+                f"\U0001F64B Please delete this post manually — the bot can't:\n"
+                f"{link}\n\n"
+                f"{_label(entry)}: the {label} it celebrates has been taken off "
+                f"the timeline, almost certainly by VAR, so the post is now "
+                f"wrong.\n\n"
+                f"Technical detail: {e}"
+            )
+    else:
+        matchlog.warn(f'retracted event photo — {label}',
+                      'no media id recorded; nothing to delete')
+
+    unmark_event_posted(match_id, posted_key)
+
+
+def _check_event_photo_retractions(entry: dict, events, final: bool = False) -> None:
+    """Take down any posted photo whose moment has left the timeline.
+
+    Liveness comes from event_photos.live_posted_keys(), which reads the
+    TIMELINE ALONE. That separation is the point. An earlier version asked
+    pending(), which also needs the staged Cloudinary listing — so "pending
+    didn't produce it" conflated *the event was withdrawn* with *we could
+    not read Cloudinary*, and a blipped read at full time deleted every
+    correct post of the match. Retraction removes something public. It may
+    only ever fire on evidence that the event itself is gone.
+
+    Two refusals guard that:
+
+      * An unreadable timeline is not evidence. `events` must be a list;
+        the feed publishes a sentence there before kickoff and can return
+        one again on a bad scrape, and that must never read as "everything
+        was disallowed".
+      * An empty timeline is not evidence either, unless something was
+        posted from a timeline that had entries — which is exactly the
+        VAR case where the only goal of the match is struck off. So an
+        empty list still counts a miss, but the confirmation window has to
+        run in full for it.
+
+    Confirmed rather than believed: a single poll without the event is far
+    more often the scraper dropping it than a decision, so the absence has
+    to hold for EVENT_PHOTO_VANISHED_POLLS polls in a row.
+
+    `final` is set once, at worker exit. It does NOT delete. The last scrape
+    is the same data the last poll already judged, so treating it as fresh
+    evidence would collapse the window to a single miss — instead anything
+    still in doubt at the whistle becomes a question for a person.
+    """
+    match_id = entry['match_id']
+    records = _posted_event_photos(match_id)
+    if not records:
+        return
+    if not isinstance(events, list):
+        print(f"[{match_id}] No readable timeline — skipping the retraction check.")
+        return
+
+    live = event_photos.live_posted_keys(events, match_id, records)
+
+    changed = False
+    for posted_key, record in list(records.items()):
+        if posted_key in live:
+            if record.get('missing'):
+                record['missing'] = 0      # it came back; it was a blip
+                changed = True
+            continue
+
+        record['missing'] = record.get('missing', 0) + 1
+        changed = True
+
+        if final:
+            _unresolved_at_whistle(entry, posted_key, record)
+            continue
+        if record['missing'] < EVENT_PHOTO_VANISHED_POLLS:
+            print(f"[{match_id}] {posted_key} missing from the timeline "
+                  f"({record['missing']}/{EVENT_PHOTO_VANISHED_POLLS}) — waiting.")
+            continue
+
+        _retract_event_photo(entry, posted_key, record)
+        retracted = record.get('retracted', 0) + 1
+        del records[posted_key]
+        if retracted <= MAX_EVENT_PHOTO_RETRACTIONS:
+            # Remembered under a separate key so a re-post starts from a
+            # clean record but the count survives it.
+            _EVENT_PHOTO_RETRACTIONS[(match_id, posted_key)] = retracted
+
+    if changed:
+        _write_posted_event_photos(match_id, records)
+
+
+def _unresolved_at_whistle(entry: dict, posted_key: str, record: dict) -> None:
+    """Ask about a post whose moment is missing on the final scrape.
+
+    Deliberately not a deletion. At the whistle there are no further polls
+    to confirm with, and the only data available is the scrape the last poll
+    already saw — so a delete here would be acting on one ambiguous reading
+    of an irreversible thing. A person can look at the match in five seconds
+    and settle what no amount of polling will.
+    """
+    match_id = entry['match_id']
+    label = posted_key.replace('EVENT:', '').replace(':', ' ')
+    ig_id = record.get('ig_id')
+    link = (get_post_permalink(ig_id) if ig_id else None) or f"media id {ig_id}"
+    matchlog.warn(f'event photo unconfirmed at full time — {label}',
+                  'the moment was not in the final timeline')
+    send_alert(
+        f"\U0001F64B {_label(entry)}: worth a look — the {label} this post "
+        f"celebrates wasn't in the final timeline.\n\n"
+        f"{link}\n\n"
+        f"It may have been ruled out late, or the feed may simply have "
+        f"dropped it on the last read. The bot has NOT deleted anything — "
+        f"there were no polls left to be sure with, and it won't remove a "
+        f"post on one ambiguous reading.",
+        key=f"{match_id}:event-unconfirmed:{posted_key}", cooldown=3600,
+    )
+
+
+def _conflict_alert(entry: dict, moment: dict) -> None:
+    """Say that a staged picture fits two players, and post neither.
+    """
+    match_id = entry['match_id']
+    label = event_photos.EVENT_LABELS[moment['event_key']]
+    names = ' and '.join(moment['conflict'])
+    print(f"[{match_id}] Event photo '{moment['player']}' is ambiguous: {names}")
+    matchlog.warn(f"event photo ambiguous — {moment['player']}",
+                  f"could be {names}")
+    send_alert(
+        f"\U0001F64B {_label(entry)}: the photo you staged for \"{moment['player']}\" "
+        f"({label}) fits more than one player — {names} both match.\n\n"
+        f"Nothing has been posted, and nothing will be, because picking the "
+        f"wrong one would put the wrong player on the page.\n\n"
+        f"To fix: /event again and pick the player from the squad list, which "
+        f"pins the photo to their id instead of their name.",
+        key=f"{match_id}:event-conflict:{moment['posted_key']}", cooldown=3600,
+    )
+
+
+# ── Pinning a typed name to the feed's own id ────────────────────────────────
+# A picture staged before the team news carries a name somebody typed and
+# nothing else, and a typed name is the one part of this feature that fails
+# silently: "Rodri" against a feed that prints "Rodrigo" never fires, and
+# nothing says so until the full-time report.
+#
+# When both sheets are published every name in the match is knowable and there
+# is still an hour before kickoff. That is the only moment where both are true,
+# so it is where the question gets asked — and where most of them are answered
+# without asking, because the name was right all along.
+
+# How many players a question may offer. Past this the list stops being a
+# choice and becomes a squad sheet, and the answer is /staged and /event
+# rather than scrolling.
+MAX_CLARIFY_OPTIONS = 5
+
+
+def _clarify_staged_photos(entry: dict, scraper_data: dict) -> None:
+    """Pin every un-pinned staged picture to a player id, or ask about it.
+
+    Silent whenever it can be: a name that matches exactly one squad member
+    is the same decision the worker would make unattended anyway, made once
+    with the whole squad in hand instead of a goal at a time. What reaches
+    the chat is only what a person actually has to settle.
+
+    Runs on every poll once the sheets are out rather than once at the top,
+    so a picture staged twenty minutes before kickoff gets the same treatment
+    as one staged yesterday. It is cheap to repeat: the staged listing is
+    cached, a pinned picture drops out of the answer, and the questions carry
+    a cooldown.
+    """
+    match_id = entry['match_id']
+    if not has_lineups(scraper_data) or not event_photos.benches_named(scraper_data):
+        return
+    squad = event_photos.squad(scraper_data)
+    if not squad:
+        return
+    staged_map = _staged_event_photos(match_id)
+    if not staged_map:
+        return
+
+    for item in event_photos.clarify(staged_map, match_id, squad):
+        label = event_photos.EVENT_LABELS[item['event_key']]
+        if item['match']:
+            _pin_staged_photo(match_id, item, label)
+        elif item['options']:
+            _ask_who_it_is(entry, item, label)
+        else:
+            _nobody_by_that_name(entry, item, label)
+
+
+def _pin_staged_photo(match_id: str, item: dict, label: str) -> None:
+    """Attach the feed's id to a staged picture, and say nothing about it."""
+    name, player_id = item['match']
+    try:
+        event_photos.set_player_id(item['public_id'], player_id, name)
+    except Exception as e:
+        # Nothing is lost: the picture still matches by name, exactly as it
+        # did before, and the next poll tries again.
+        print(f"[{match_id}] Could not pin {item['public_id']} to {name}: {e}")
+        return
+
+    _note_player_pinned(match_id, item['public_id'], player_id, name)
+    print(f"[{match_id}] Event photo \"{item['staged']}\" ({label}) pinned to "
+          f"{name} — id {player_id}.")
+    if item['staged'] != event_photos.player_slug(name):
+        # Only worth a line when the sheets settled a disagreement.
+        matchlog.log('event photo name resolved',
+                     f"\"{item['staged']}\" is {name} ({label})")
+
+
+def _note_player_pinned(match_id: str, public_id: str, player_id: str,
+                        name: str) -> None:
+    """Carry the pin into the cached listing.
+
+    The staged set is re-read from Cloudinary on a timer, so without this the
+    next two minutes of polls would see the same picture still un-pinned and
+    write the same context again.
+    """
+    with STATE_LOCK:
+        cached = _EVENT_PHOTO_CACHE.get(match_id)
+        if not cached or not isinstance(cached[1], dict):
+            return
+        found = cached[1]
+        if public_id not in found:
+            return
+        ctx = dict(found.get(public_id) or {})
+        ctx['player_id'] = str(player_id)
+        if name:
+            ctx['player'] = name
+        found[public_id] = ctx
+
+
+def _ask_who_it_is(entry: dict, item: dict, label: str) -> None:
+    """Put the choice in front of a person, as buttons.
+
+    The tap is handled by the bot, in another process — so the button carries
+    a digest of the public_id and the player's id, both of which either side
+    can compute from what it already has. See event_photos.digest.
+    """
+    match_id = entry['match_id']
+    handle = event_photos.digest(item['public_id'])
+    options = [(name, f"ec:{handle}:{ident}")
+               for name, ident in item['options'][:MAX_CLARIFY_OPTIONS]]
+    options.append((f"Leave it as \"{item['staged']}\"", f"ec:{handle}:-"))
+
+    print(f"[{match_id}] Asking who \"{item['staged']}\" ({label}) is — "
+          f"{len(item['options'])} candidate(s).")
+    matchlog.warn(f"event photo name unclear — {item['staged']}",
+                  f"asked: {', '.join(n for n, _i in item['options'][:MAX_CLARIFY_OPTIONS])}")
+    send_choice(
+        f"\U0001F64B {_label(entry)}: the team sheets are out and I can't tell "
+        f"who the photo you staged as \"{item['staged']}\" ({label}) is of.\n\n"
+        f"Tap the player and I'll pin the photo to them — after that it posts "
+        f"on their moment however the scoreboard spells the name.\n\n"
+        f"Leave it and nothing breaks: it still posts, but only if the "
+        f"scoreboard spells the name exactly the way you typed it.",
+        options,
+        key=f"{match_id}:clarify:{item['public_id']}", cooldown=3600,
+    )
+
+
+def _nobody_by_that_name(entry: dict, item: dict, label: str) -> None:
+    """Say that a staged name resembles nobody in the match, while it is still
+    an hour from kickoff and /staged and /event can both still fix it.
+    """
+    match_id = entry['match_id']
+    print(f"[{match_id}] Nobody in either squad resembles "
+          f"\"{item['staged']}\" ({label}).")
+    matchlog.warn(f"event photo name not in the squads — {item['staged']}",
+                  f'staged for {label}')
+    send_alert(
+        f"\U0001F64B {_label(entry)}: the team sheets are out, and nobody in "
+        f"either squad is called anything like \"{item['staged']}\" — the photo "
+        f"you staged for {label} has nothing to fire on.\n\n"
+        f"It might still be right: a sheet can be published incomplete, and a "
+        f"player can be added late. But if it was a typo, this is the moment "
+        f"to fix it — /staged takes it back down, /event stages it again "
+        f"against a name from the list.",
+        key=f"{match_id}:clarify-missing:{item['public_id']}", cooldown=3600,
+    )
+
+
+# ── Instagram's publishing budget ────────────────────────────────────────────
+# The account may publish a fixed number of posts per rolling 24 hours and the
+# next one is simply refused. Nothing counted them while the posts per match
+# were fixed — line-ups, half time, full time. Event photos make the number
+# unbounded (any player, any of nine events), and they are evaluated BEFORE
+# the card triggers in the poll loop, so without a reservation the thing that
+# runs out of budget is the full-time card: the one post that always matters.
+
+# Posts held back for the cards. Enough for a half-time and a full-time card
+# with a stats slide, plus slack for a correction repost.
+INSTAGRAM_QUOTA_RESERVE = 5
+
+# The reading is shared by every match thread in this process and changes only
+# when something posts, so once per this many seconds is plenty.
+QUOTA_CACHE_SECS = 300
+_QUOTA_CACHE: dict[str, tuple[float, int, int]] = {}
+_QUOTA_LOCK = threading.Lock()
+
+
+def _quota_remaining() -> int | None:
+    """Posts left in the rolling window, or None if it can't be read.
+
+    None means "don't know", and every caller treats that as permission. A
+    Graph blip must not be the reason a post is skipped — the budget check
+    exists to protect the cards from event photos, not to add a new way for
+    everything to fail.
+    """
+    now = time.monotonic()
+    with _QUOTA_LOCK:
+        cached = _QUOTA_CACHE.get('limit')
+        if cached and now - cached[0] < QUOTA_CACHE_SECS:
+            return cached[2] - cached[1]
+
+    reading = publishing_limit()
+    if reading is None:
+        return None
+    used, cap = reading
+    with _QUOTA_LOCK:
+        _QUOTA_CACHE['limit'] = (now, used, cap)
+    return cap - used
+
+
+def _note_post_spent() -> None:
+    """Count a post against the cached reading, so several going out inside
+    one cache window can still exhaust the budget on paper before they do in
+    fact.
+    """
+    with _QUOTA_LOCK:
+        cached = _QUOTA_CACHE.get('limit')
+        if cached:
+            _QUOTA_CACHE['limit'] = (cached[0], cached[1] + 1, cached[2])
+
+
+def _instagram_budget_allows(entry: dict, moment: dict) -> bool:
+    """Is there room for an event photo without eating the cards' reserve?
+    """
+    remaining = _quota_remaining()
+    if remaining is None or remaining > INSTAGRAM_QUOTA_RESERVE:
+        return True
+
+    match_id = entry['match_id']
+    label = f"{moment['player']} — {event_photos.EVENT_LABELS[moment['event_key']]}"
+    print(f"[{match_id}] Skipping event photo ({label}): only {remaining} "
+          f"Instagram posts left in the 24h window.")
+    matchlog.warn(f'event photo held back — {label}',
+                  f'{remaining} posts left in the 24h window')
+    send_alert(
+        f"\U0001F64B {_label(entry)}: the photo for {label} was not posted — "
+        f"Instagram only has {remaining} posts left in the 24-hour window and "
+        f"those are being kept for the half-time and full-time cards.\n\n"
+        f"The photo is still staged. If room frees up before the whistle it "
+        f"will go out on its own.",
+        key=f'{match_id}:quota', cooldown=1800,
+    )
+    return False
+
+
+def _post_event_photo(entry: dict, moment: dict, scraper_data: dict) -> None:
+    """Publish one staged picture, as uploaded, with a caption for the moment.
+
+    The picture is already on Cloudinary — the bot put it there — so there is
+    nothing to render and nothing to upload. It goes to Instagram straight
+    from the URL it was staged at.
+    """
+    match_id = entry['match_id']
+    label = f"{moment['player']} — {event_photos.EVENT_LABELS[moment['event_key']]}"
+
+    try:
+        caption = generate_event_caption(
+            scraper_data, moment,
+            home_name=entry['home_team'],
+            away_name=entry['away_team'],
+            competition=_competition_of(entry, scraper_data))
+        ig_id = post_to_instagram(event_photos.delivery_url(moment['public_id']),
+                                  caption)
+    except Exception as e:
+        print(f"[{match_id}] \u274c Event photo post failed ({label}): {e}")
+        matchlog.error(f'event photo failed — {label}', f'{type(e).__name__}: {e}')
+        # Not marked as posted: the next poll sees the same moment in the
+        # timeline and tries again, exactly as a failed scorecard does.
+        send_alert(
+            f"\u274c {_label(entry)}: the picture you staged for {label} did not "
+            f"post.\n\n"
+            f"It is NOT on Instagram. The bot tries again by itself every "
+            f"minute while the match is running.\n\n"
+            f"Technical detail: {e}",
+            key=f"{match_id}:event-photo:{moment['posted_key']}", cooldown=600,
+        )
+        return
+
+    _note_post_spent()
+    mark_event_posted(match_id, moment['posted_key'])
+    records = _posted_event_photos(match_id)
+    records[moment['posted_key']] = {
+        # The media id is the only way the post can ever be taken down again.
+        'ig_id': ig_id,
+        # The feed's own key for this person. With it, checking whether the
+        # moment is still in the timeline needs nothing but the timeline.
+        'player_id': moment.get('player_id') or '',
+        'missing': 0,
+        'retracted': _EVENT_PHOTO_RETRACTIONS.get(
+            (match_id, moment['posted_key']), 0),
+    }
+    _write_posted_event_photos(match_id, records)
+
+    print(f"[{match_id}] \u2705 Event photo posted ({label}) — IG ID: {ig_id}")
+    matchlog.log(f'posted event photo — {label}',
+                 f"{moment['minute']} · IG {ig_id}", force=True)
+    send_music_reminder(f"{_label(entry)} — {label} {moment['minute']}", ig_id)
+
+
+def _run_event_photos(entry: dict, scraper_data: dict) -> None:
+    """Post every staged picture whose moment has now happened.
+
+    Called once per poll. The timeline is re-read whole each time rather than
+    diffed, so a moment the feed publishes late — or republishes after
+    dropping it for a poll — is still caught; what stops a second post is the
+    posted-key check, not having seen the event before.
+    """
+    match_id = entry['match_id']
+    # An empty timeline is a state to act on, not one to skip. It is exactly
+    # what a match looks like once its only goal has been ruled out, and
+    # returning early on it would leave that post up for good.
+    events = scraper_data.get('events')
+
+    # Retractions first. A moment that has left the timeline can't be one of
+    # the moments posted below, so the two never fight over a key — and a
+    # wrong post coming down matters more than a new one going up. The
+    # timeline goes in, not the staged matches: liveness must never depend on
+    # having successfully read Cloudinary. See _check_event_photo_retractions.
+    _check_event_photo_retractions(entry, events)
+
+    if not isinstance(events, list) or not events:
+        return
+    staged_ids = _staged_event_photos(match_id)
+    if not staged_ids:
+        return
+    moments = event_photos.pending(events, staged_ids, match_id)
+    if not moments:
+        return
+
+    already = set(_posted_event_photos(match_id))
+
+    for moment in moments:
+        if moment['posted_key'] in already:
+            continue
+        if moment.get('conflict'):
+            # The staged name fits more than one player who did that thing.
+            # Which of them the picture is of cannot be worked out here, and
+            # the wrong one on a public page has no undo.
+            _conflict_alert(entry, moment)
+            continue
+        if moment.get('duplicate'):
+            # Another staged picture already covers this exact moment.
+            # One moment gets one post.
+            _duplicate_alert(entry, moment)
+            continue
+        if is_event_posted(match_id, moment['posted_key']):
+            already.add(moment['posted_key'])
+            continue
+        if _EVENT_PHOTO_RETRACTIONS.get(
+                (match_id, moment['posted_key']), 0) >= MAX_EVENT_PHOTO_RETRACTIONS:
+            # Posted and taken down twice already. A feed flapping this hard
+            # is not something to keep answering in public.
+            send_alert(
+                f"\U0001F64B {_label(entry)}: the photo for {moment['player']} "
+                f"({event_photos.EVENT_LABELS[moment['event_key']]}) has been "
+                f"posted and withdrawn {MAX_EVENT_PHOTO_RETRACTIONS} times "
+                f"— the live feed keeps changing its mind about it.\n\n"
+                f"It won't post again automatically. Nothing is on the page.",
+                key=f"{match_id}:event-flap:{moment['posted_key']}", cooldown=3600,
+            )
+            already.add(moment['posted_key'])
+            continue
+        if not _instagram_budget_allows(entry, moment):
+            continue
+        _post_event_photo(entry, moment, scraper_data)
+        already.add(moment['posted_key'])
+
+
+def _duplicate_alert(entry: dict, moment: dict) -> None:
+    """Say that two staged pictures claim one moment, and post the extra one
+    nowhere.
+
+    Reachable because names are matched tolerantly: tapping "Joao Felix"
+    from the squad on one pass and typing "felix" on another leaves two
+    files for one player, and one goal must not become two posts.
+    """
+    match_id = entry['match_id']
+    label = event_photos.EVENT_LABELS[moment['event_key']]
+    others = ', '.join(pid.rsplit('_', 1)[-1] for pid in moment['duplicate'])
+    print(f"[{match_id}] Event photo {moment['public_id']} duplicates {others}")
+    matchlog.warn(f"event photo duplicate — {label}",
+                  f"{moment['public_id']} also covered by {others}")
+    send_alert(
+        f"\U0001F64B {_label(entry)}: two staged photos both point at the same "
+        f"moment — {moment['player']}, {label}.\n\n"
+        f"Only one of them has posted, so the moment isn't on the page twice. "
+        f"The other is spelled differently ({others}) and won't post at all.\n\n"
+        f"Nothing is broken — worth knowing only so you aren't waiting for a "
+        f"photo that was never going to go up.",
+        key=f"{match_id}:event-duplicate:{moment['posted_key']}", cooldown=3600,
+    )
+
+
+def _report_unfired_photos(entry: dict, scraper_data: dict | None,
+                           staged_ids: set[str]) -> None:
+    """At full time, say why a staged picture never went up.
+
+    Without this the feature fails silently in the one way it is most likely
+    to: a name typed as people say it ("Rodri") against a feed that prints the
+    team sheet ("Rodrigo"). The match simply ends, the photo never posted, and
+    nothing anywhere says so. Naming the near-miss is what makes it fixable
+    next time.
+
+    A moment that genuinely never happened is not reported — that is the
+    feature working, and an alert for every unused picture would train you to
+    ignore the ones that matter.
+    """
+    match_id = entry['match_id']
+    if not staged_ids or not isinstance(scraper_data, dict):
+        return
+    with STATE_LOCK:
+        posted = MATCH_STATE.get(match_id, {}).get('event_photos_posted') or []
+
+    misses = [u for u in event_photos.unfired(
+        scraper_data.get('events'), staged_ids, match_id, posted) if u['near']]
+    if not misses:
+        return
+
+    lines = []
+    for miss in misses:
+        label = event_photos.EVENT_LABELS[miss['event_key']]
+        lines.append(f"• you staged \"{miss['player']}\" for {label} — "
+                     f"the scoreboard says {', '.join(miss['near'])}")
+
+    matchlog.warn('event photos never fired',
+                  f"{len(misses)} name mismatch(es)")
+    send_alert(
+        f"🙋 {_label(entry)}: {len(misses)} staged photo"
+        f"{'s' if len(misses) > 1 else ''} never posted because the name "
+        f"didn't match what the scoreboard called the player.\n\n"
+        + '\n'.join(lines) +
+        f"\n\nThe moment did happen — the spelling is what missed. Next time "
+        f"pick the player from the list in /event, or type the name the way "
+        f"the scoreboard spells it."
+    )
+
+
+def _clear_event_photos(entry: dict, scraper_data: dict | None = None) -> None:
+    """Drop everything staged for this match once the worker is finished.
+
+    Both the pictures that posted — Cloudinary was only the hand-off to
+    Instagram, which holds its own copy — and the ones staged for moments that
+    never came. Best-effort: a match that ends with a Cloudinary outage is not
+    worth an alert, and the leftovers are keyed to a match_id that will never
+    be live again.
+    """
+    match_id = entry['match_id']
+    # Read the staged set before deleting it — both the report and the
+    # last retraction check are about what is about to be thrown away.
+    staged_ids = _staged_event_photos(match_id)
+    if isinstance(scraper_data, dict):
+        try:
+            # Reports; never deletes. The last scrape is the same data the
+            # last poll already judged, so treating it as fresh evidence
+            # would collapse the confirmation window to a single miss.
+            # See _unresolved_at_whistle.
+            _check_event_photo_retractions(
+                entry, scraper_data.get('events'), final=True)
+        except Exception as e:
+            print(f"[{match_id}] Final retraction check failed: {e}")
+    try:
+        _report_unfired_photos(entry, scraper_data, staged_ids)
+    except Exception as e:
+        print(f"[{match_id}] Could not report unfired event photos: {e}")
+    with STATE_LOCK:
+        _EVENT_PHOTO_CACHE.pop(match_id, None)
+    try:
+        removed = event_photos.delete_all(match_id)
+    except Exception as e:
+        print(f"[{match_id}] Could not clear staged event photos: {e}")
+        return
+    if removed:
+        print(f"[{match_id}] Cleared {removed} staged event photo(s).")
+        matchlog.log('event photos cleared',
+                     f"{removed} removed from Cloudinary")
+
+
 # ── Early-posting helpers ─────────────────────────────────────────────────────
 
 def _get_score(scraper_data: dict) -> tuple[str, str]:
@@ -942,6 +1677,10 @@ def match_worker(entry: dict):
             'photo_reminded_ht':      False,
             'photo_reminded_ft':      False,
             'photo_reminded_et':      False,
+            # posted_key of every staged picture already published, so a
+            # restart mid-match doesn't repost one (bot.db starts empty on
+            # every Actions run; state.json is what survives).
+            'event_photos_posted':    {},
         }.items():
             s.setdefault(k, v)
         _save_state()
@@ -949,6 +1688,10 @@ def match_worker(entry: dict):
     # The poll loop runs once a minute for up to three hours; only transitions
     # are worth recording, so remember what was last written to the log.
     logged_status, logged_score = None, None
+    # Bound here as well as in the loop: the full-time report on staged photos
+    # reads the last scrape, and a worker that breaks before its first poll
+    # (the safety ceiling, on a resumed run) would otherwise have none.
+    scraper_data = None
 
     while True:
         now = datetime.now(timezone.utc)
@@ -1123,6 +1866,26 @@ def match_worker(entry: dict):
                 entry, 'FT', 'photo_reminded_et',
                 opener=f"{_label(entry)} has gone to extra time — last call for "
                        f"the full-time photo.")
+
+        # ── Team news pins the staged names ──────────────────────────────────
+        # Before kickoff on purpose: this is the last moment a name typed the
+        # way people say it can still be turned into the feed's own key for a
+        # person, with someone around to settle what the sheets can't.
+        # Wrapped, because nothing about a staged picture may interrupt the
+        # coverage of the match itself.
+        try:
+            _clarify_staged_photos(entry, scraper_data)
+        except Exception as e:
+            print(f"[{match_id}] Staged-photo name check failed: {e}")
+
+        # ══════════════════════════════════════════════════════════════════════
+        # IN-MATCH EVENT PHOTOS  (staged before kickoff, posted when they happen)
+        # ══════════════════════════════════════════════════════════════════════
+        # Ahead of the card triggers on purpose: a goal in the 90th minute and
+        # the final whistle can land in the same poll, and the picture of the
+        # moment belongs on the page before the full-time card does.
+        if new_status != 'scheduled':
+            _run_event_photos(entry, scraper_data)
 
         # ══════════════════════════════════════════════════════════════════════
         # EARLY HT MONITORING  (first half, scraper minute 45+)
@@ -1352,6 +2115,8 @@ def match_worker(entry: dict):
 
         time.sleep(POLL_INTERVAL_SECS)
 
+    _clear_event_photos(entry, scraper_data)
+
     with WORKERS_LOCK:
         ACTIVE_WORKERS.discard(match_id)
     print(f"[{match_id}] Worker exited.")
@@ -1374,8 +2139,6 @@ def _posted_so_far(match_id: str) -> str:
         ('early_ft_posted', 'a full-time card'),
         ('ft_posted',       'the full-time card'),
     ) if s.get(key)]
-    if not done:
-        return "Nothing had been posted for it yet."
     # Dedupe the early/confirmed pairs: both flags set means one card is live.
     seen, unique = set(), []
     for label in done:
@@ -1383,6 +2146,13 @@ def _posted_so_far(match_id: str) -> str:
         if stem not in seen:
             seen.add(stem)
             unique.append(label)
+
+    staged = s.get('event_photos_posted') or []
+    if staged:
+        unique.append(f"{len(staged)} staged event photo"
+                      f"{'s' if len(staged) > 1 else ''}")
+    if not unique:
+        return "Nothing had been posted for it yet."
     return f"Already posted: {', '.join(unique)}."
 
 

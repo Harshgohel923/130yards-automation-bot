@@ -8,7 +8,9 @@ Two tables:
   posted_events    — one row per (match_id, event_type) pair that has been
                      successfully posted to Instagram.
                      event_type is 'LINEUPS' (the pre-match starting XI
-                     carousel), 'HT' or 'FT'.
+                     carousel), 'HT', 'FT', or 'EVENT:<KEY>:<player>' for a
+                     picture staged against one player's moment — see
+                     event_photos.pending(), which builds that string.
                      Guards against a double post *within a run*: the worker
                      checks it before every card, so a retry inside the poll
                      loop can't repeat one.
@@ -87,8 +89,24 @@ def is_event_posted(match_id: str, event_type: str) -> bool:
     return row is not None
 
 
+def unmark_event_posted(match_id: str, event_type: str):
+    """Forget that event_type was posted, so it can post again.
+
+    Used when a post is retracted: an event photo whose moment the feed
+    later withdrew (a goal ruled out by VAR) is deleted from Instagram, and
+    the same picture has to be free to go up again if the player scores a
+    goal that stands. See main._retract_event_photo.
+    """
+    with _conn() as conn:
+        conn.execute(
+            'DELETE FROM posted_events WHERE match_id=? AND event_type=?',
+            (match_id, event_type)
+        )
+
+
 def mark_event_posted(match_id: str, event_type: str):
-    """Record that event_type ('LINEUPS', 'HT' or 'FT') has been posted."""
+    """Record that event_type ('LINEUPS', 'HT', 'FT' or an 'EVENT:…' key) has
+    been posted."""
     with _conn() as conn:
         conn.execute(
             'INSERT OR IGNORE INTO posted_events (match_id, event_type) VALUES (?, ?)',

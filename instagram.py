@@ -15,6 +15,10 @@ GRAPH_URL    = 'https://graph.facebook.com/v19.0'
 CONTAINER_POLL_ATTEMPTS = 20
 CONTAINER_POLL_INTERVAL = 3   # seconds
 
+# What Instagram allows per rolling 24h when the API doesn't say. Used only
+# as a floor for the reading in publishing_limit().
+DEFAULT_PUBLISH_QUOTA = 25
+
 # Instagram's own limits on a carousel post.
 CAROUSEL_MIN_ITEMS = 2
 CAROUSEL_MAX_ITEMS = 10
@@ -153,6 +157,35 @@ def post_carousel_to_instagram(public_image_urls: list[str], caption: str) -> st
     media_id = pub.json()['id']
     print(f"[instagram] Published carousel ({len(urls)} slides): {media_id}")
     return media_id
+
+
+def publishing_limit() -> tuple[int, int] | None:
+    """(posts published in the last 24h, the cap). None if it can't be read.
+
+    Instagram allows a fixed number of API-published posts per rolling 24
+    hours per account and simply refuses the next one — there is no warning
+    and no queue. Nothing else in this pipeline counts them, which was
+    survivable while the number of posts per match was fixed. It stopped
+    being survivable once event photos made it unbounded.
+
+    Returns None rather than raising: a reading that can't be taken must not
+    stop a post going out, or a Graph blip would cost the full-time card.
+    """
+    try:
+        res = requests.get(
+            f'{GRAPH_URL}/{IG_USER_ID}/content_publishing_limit',
+            params={'fields': 'config,quota_usage',
+                    'access_token': ACCESS_TOKEN},
+            timeout=10,
+        )
+        res.raise_for_status()
+        data = (res.json().get('data') or [{}])[0]
+        used = int(data.get('quota_usage') or 0)
+        cap = int((data.get('config') or {}).get('quota_total') or 0)
+    except Exception as e:
+        print(f'[instagram] Could not read the publishing limit: {e}')
+        return None
+    return (used, cap or DEFAULT_PUBLISH_QUOTA)
 
 
 def get_post_permalink(media_id: str) -> str | None:
