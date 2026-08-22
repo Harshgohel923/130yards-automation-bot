@@ -17,8 +17,9 @@ computed for you (and vice versa — desktop_url is filled in either way):
 
 Fixtures are sorted by kick-off, earliest first, every time this runs, and
 kickoff_local is refreshed to show that kick-off in German time — 'Sun 16 Aug
-2026, 02:30 CEST'. It is derived from kickoff_utc, which stays the only
-kickoff the bot reads; editing kickoff_local moves nothing.
+2026, 02:30 CEST' — and kickoff_ist the same kick-off in Indian time — 'Sun 16
+Aug 2026, 06:00 IST'. Both are derived from kickoff_utc, which stays the only
+kickoff the bot reads; editing either of them moves nothing.
 
 Then it checks the file's structure — the mistakes that are easy to make when
 hand-editing fixtures and that no amount of name-checking would catch:
@@ -58,7 +59,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from config import LOCAL_TZ, get_crest_url
+from config import IST_TZ, LOCAL_TZ, get_crest_url
 from football_scraper_dom import get_match_data
 from logo_fetch import (COMPETITION_DISPLAY, COMPETITIONS, _scrape_hash,
                         _slugify, fetch_competition_logo, fetch_logo,
@@ -81,8 +82,8 @@ AUTO_FIELDS = ('match_id', 'kickoff_utc', 'home_team', 'away_team', 'competition
 # same way as a hand-written one. Anything unlisted keeps its position at the
 # end. Only reordered when a fixture is actually filled, to keep diffs quiet.
 FIELD_ORDER = ('match_id', 'scraper_url', 'desktop_url', 'kickoff_utc',
-               'kickoff_local', 'home_team', 'away_team', 'competition',
-               'post_ht', 'post_ft_stats', 'post_lineups', 'lineups_first',
+               'kickoff_local', 'kickoff_ist', 'home_team', 'away_team',
+               'competition', 'post_ht', 'post_ft_stats', 'post_lineups', 'lineups_first',
                'coaches', 'knockout_match', 'carousel_group', 'records')
 
 # Instagram will not accept more slides than this in one post, and a carousel
@@ -203,9 +204,9 @@ def _retitle_urls(matches: list, write: bool) -> bool:
     return changed
 
 
-def _local_kickoff(kickoff_utc: str) -> str | None:
+def _kickoff_in(kickoff_utc: str, tz) -> str | None:
     """
-    'Sat 15 Aug 2026, 20:00 CEST' — the kickoff as a person in Germany reads it.
+    'Sat 15 Aug 2026, 20:00 CEST' — the kickoff as someone in `tz` reads it.
 
     The zone abbreviation is the point of including it: CEST means summer time
     is on, CET means it is off, so the field answers the daylight-saving
@@ -215,16 +216,17 @@ def _local_kickoff(kickoff_utc: str) -> str | None:
         parsed = datetime.fromisoformat(str(kickoff_utc).replace('Z', '+00:00'))
     except (ValueError, TypeError):
         return None
-    return parsed.astimezone(LOCAL_TZ).strftime('%a %-d %b %Y, %H:%M %Z')
+    return parsed.astimezone(tz).strftime('%a %-d %b %Y, %H:%M %Z')
 
 
-def _refresh_local_times(matches: list, write: bool) -> tuple[list[str], bool]:
+def _refresh_local_times(matches: list, write: bool, field: str,
+                        tz) -> tuple[list[str], bool]:
     """
-    Keep `kickoff_local` in step with `kickoff_utc`.
+    Keep `field` — `kickoff_local` or `kickoff_ist` — in step with `kickoff_utc`.
 
-    Derived, always — `kickoff_utc` is the only kickoff the bot reads, and this
-    is recomputed from it on every run. Editing `kickoff_local` by hand moves
-    nothing; the change is reported here and then overwritten, so it can't
+    Derived, always — `kickoff_utc` is the only kickoff the bot reads, and both
+    readings are recomputed from it on every run. Editing them by hand moves
+    nothing; the change is reported here and then overwritten, so they can't
     quietly disagree with the time the match is actually tracked at.
     """
     notes: list[str] = []
@@ -233,13 +235,19 @@ def _refresh_local_times(matches: list, write: bool) -> tuple[list[str], bool]:
     for entry in matches:
         if not isinstance(entry, dict):
             continue
-        local = _local_kickoff(entry.get('kickoff_utc'))
+        local = _kickoff_in(entry.get('kickoff_utc'), tz)
         if local is None:
             continue                     # unparseable — the structure check has it
-        previous = entry.get('kickoff_local')
+        previous = entry.get(field)
         if previous == local:
             continue
-        entry['kickoff_local'] = local
+        entry[field] = local
+        if previous is None:
+            # A key added by assignment lands at the end of the entry; put it
+            # back beside the other kickoffs so the entry still reads in order.
+            ordered = _reorder(dict(entry))
+            entry.clear()
+            entry.update(ordered)
         changed = changed or write
         label = entry.get('match_id', '?')
         notes.append(f'match {label}: {previous} → {local}' if previous
@@ -719,13 +727,16 @@ def main() -> int:
     # spelling, which is what it would have picked up any earlier than this.
     changed = _retitle_urls(matches, write=not args.check) or changed
 
-    local_notes, local_changed = _refresh_local_times(matches, write=not args.check)
-    changed = changed or local_changed
-    if local_notes:
-        print('\nKick-off in German time:' if not args.check
-              else '\nWould set the German kick-off time:')
-        for n in local_notes:
-            print(f'  {n}')
+    for field, tz, label in (('kickoff_local', LOCAL_TZ, 'German'),
+                             ('kickoff_ist', IST_TZ, 'Indian')):
+        local_notes, local_changed = _refresh_local_times(
+            matches, write=not args.check, field=field, tz=tz)
+        changed = changed or local_changed
+        if local_notes:
+            print(f'\nKick-off in {label} time:' if not args.check
+                  else f'\nWould set the {label} kick-off time:')
+            for n in local_notes:
+                print(f'  {n}')
 
     # Last, so the file is written in the order it will be read. Only after the
     # structure check has passed, since that is what guarantees every

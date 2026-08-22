@@ -62,9 +62,10 @@ and posting it to Instagram once you say so. See the "Manual match" section
 below; the data assembly lives in manual_match.py.
 
 Input is a fixed vocabulary, never free text: the commands in BOT_COMMANDS
-(published to Telegram so the ☰ menu and "/" autocomplete list them), the
-buttons on the persistent keyboard that mirror them, and photos. Every match,
-HT/FT and event choice is an inline button. Anything else — a typed message, an
+(published to Telegram so the ☰ menu and "/" autocomplete list them) and
+photos. There is no keyboard under the chat — the ☰ menu is the whole of it.
+Every match, HT/FT and event choice is an inline button on the message that
+asks for it. Anything else — a typed message, an
 unknown command — gets the help text back rather than being parsed or ignored.
 Two steps read typed text, and only while they are running, because neither can
 be tapped into existence: /card's scorer lists, and the player's name in /event
@@ -104,7 +105,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     MenuButtonCommands,
-    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
     Update,
 )
 from telegram.ext import (
@@ -120,6 +121,7 @@ from telegram.ext import (
 
 import event_photos
 import manual_match
+from config import IST_TZ, LOCAL_TZ
 from cloudinary_utils import photo_public_id
 from football_scraper_dom import get_match_data
 
@@ -191,9 +193,10 @@ POST_ASPECT_MAX = 1.91       # widest landscape Instagram takes
 PHOTO_ENTRY_FILTER = filters.PHOTO | filters.Document.ALL
 
 # ── The fixed input vocabulary ────────────────────────────────────────────────
-# Outside /card the bot accepts exactly three things: a photo, one of these
-# commands, or one of the buttons below. Everything else gets pointed back at
-# them rather than being interpreted — free text has no meaning there.
+# Outside /card the bot accepts exactly two things: a photo, or one of these
+# commands. Everything else gets pointed back at them rather than being
+# interpreted — free text has no meaning there. This list is what the ☰ menu
+# shows, so a command missing from it is a command nobody will find.
 
 BOT_COMMANDS = [
     BotCommand('start', 'Send the background photo for a half-time or full-time card'),
@@ -202,52 +205,35 @@ BOT_COMMANDS = [
     BotCommand('staged', 'Photos armed for a moment — tap to take one back'),
     BotCommand('card', 'Build a match card from details you type in'),
     BotCommand('batch', 'Cards waiting to be posted together'),
+    BotCommand('list', 'Every fixture in the registry, with what will post'),
     BotCommand('cancel', 'Abandon whatever is in progress'),
     BotCommand('help', 'What this bot accepts'),
 ]
 KNOWN_COMMANDS = tuple(c.command for c in BOT_COMMANDS)
 
-# Buttons carry the same actions as a persistent keyboard, so the usual case is
-# a tap and nothing is ever typed. Their text is matched exactly.
-BTN_NEW = '📸 Scorecard photo'
-BTN_EVENT = '🎯 Event photo'
-BTN_CARD = '🆕 Manual card'
-BTN_CANCEL = '🚫 Cancel'
-BTN_HELP = '❓ Help'
-BUTTON_TEXTS = [BTN_NEW, BTN_EVENT, BTN_CARD, BTN_HELP, BTN_CANCEL]
-
-# The two photo flows sit together on the top row: both end in "send a photo",
-# and which one you want is the only thing to decide between them.
-MAIN_KEYBOARD = ReplyKeyboardMarkup(
-    [[BTN_NEW, BTN_EVENT], [BTN_CARD], [BTN_HELP, BTN_CANCEL]],
-    resize_keyboard=True,
-    is_persistent=True,
-    input_field_placeholder='Use the buttons below',
-)
-
-BTN_NEW_FILTER = filters.Text([BTN_NEW])
-BTN_EVENT_FILTER = filters.Text([BTN_EVENT])
-BTN_CARD_FILTER = filters.Text([BTN_CARD])
-BTN_CANCEL_FILTER = filters.Text([BTN_CANCEL])
-BTN_HELP_FILTER = filters.Text([BTN_HELP])
-BUTTON_FILTER = filters.Text(BUTTON_TEXTS)
+# There is no reply keyboard. Every action the bot has is a command, and the
+# ☰ menu next to the message box is where they are read off — one list, always
+# the same, instead of five buttons sitting under the chat for a bot that is
+# used a handful of times on a matchday. Anything asked mid-flow is an inline
+# keyboard on the message that asks it, where the question is.
 
 # Free text where a step asks for it: everything /card wants, and the player's
-# name when a squad can't be listed. Buttons and commands are excluded so
-# tapping Cancel mid-flow cancels instead of being recorded as a team called
-# "🚫 Cancel".
-MANUAL_TEXT_FILTER = filters.TEXT & ~filters.COMMAND & ~BUTTON_FILTER
+# name when a squad can't be listed. Commands are excluded so /cancel mid-flow
+# cancels instead of being recorded as a team called "/cancel".
+MANUAL_TEXT_FILTER = filters.TEXT & ~filters.COMMAND
 
 
 def _typed_reply(placeholder: str) -> ForceReply:
     """Ask for a typed answer, with the field labelled by what it wants.
 
-    Telegram gives a bot no way to disable, hide, or grey out the message box —
-    there is no such field in the Bot API, and a bot cannot restrict what a
-    client lets someone type. ForceReply is the whole of what is available: it
-    focuses the box, shows this placeholder inside it, and marks the reply as
-    belonging to the question. So the steps that want typing say so, and the
-    steps that don't carry inline buttons instead.
+    This is as close to "the message box is only live when I want typing" as
+    a bot can get. Telegram gives a bot no way to disable, hide or grey out
+    the box — there is no such field in the Bot API, and a bot cannot restrict
+    what a client lets someone type. ForceReply is the whole of what is
+    available: it focuses the box, shows this placeholder inside it, and marks
+    the reply as belonging to the question. So the steps that want typing say
+    so, the steps that don't carry inline buttons instead, and typing anywhere
+    else is answered by stray_message rather than acted on.
 
     A message may carry one reply_markup, so a step offering a button (the
     scorer lists, the theme) keeps the button — worth more than a hint.
@@ -269,13 +255,13 @@ HELP_TEXT = (
     "Three jobs. Two of them take a photo — which one you want depends on "
     "what the photo is meant to do.\n"
     "\n"
-    f"*{BTN_NEW}*  —  /start\n"
+    "*📸 Scorecard photo*  —  /start\n"
     "The background the half-time or full-time card is drawn on. I put the "
     "score, the crests and the scorers over the top of it. One per match per "
     "moment; sending another replaces it. Send nothing and the card still "
     "posts — on the standard template instead.\n"
     "\n"
-    f"*{BTN_EVENT}*  —  /event\n"
+    "*🎯 Event photo*  —  /event\n"
     "A photo held for one player's moment: Messi scoring, Ronaldo completing "
     "a hat-trick, Neymar sent off. "
     "Nothing is drawn on it. If that moment happens during the match, the "
@@ -283,7 +269,7 @@ HELP_TEXT = (
     "it never happens, nothing is posted and the photo is deleted at full "
     "time.\n"
     "\n"
-    f"*{BTN_CARD}*  —  /card\n"
+    "*🆕 Manual card*  —  /card\n"
     "A whole match card typed in from scratch, for a fixture the scraper "
     "doesn't cover. I render it and send it to you; posting is a separate tap "
     "that never happens on its own. /batch is the pile waiting to go out "
@@ -322,22 +308,29 @@ HELP_TEXT = (
     "It becomes a scorecard background — I'll ask which match and whether it's "
     "half time or full time. Use /event if you meant a player's moment.\n"
     "\n"
-    "*Anything else*\n"
-    f"{BTN_CANCEL} / /cancel drops whatever is in progress.\n"
-    f"{BTN_HELP} / /help is this message.\n"
+    "*The fixture list*  —  /list\n"
+    "Every fixture in the registry, earliest first: kick-off in German and "
+    "Indian time, whether lineups and the half-time card will post, and which "
+    "matches share a carousel. Reading only — fixtures are added in "
+    "matches.json, not here.\n"
     "\n"
+    "*Anything else*\n"
+    "/cancel drops whatever is in progress.\n"
+    "/help is this message.\n"
+    "\n"
+    "Everything I do is a command — ☰ next to the message box lists them, and "
+    "typing / offers the same list. Anything I ask mid-flow comes as buttons "
+    "on the question itself.\n"
     "Typed text only means something where a step asks for it — a player's "
-    "name, or anything /card wants. Everywhere else, use the buttons below or "
-    "the ☰ menu next to the message box."
+    "name, or anything /card wants. Everywhere else it does nothing, and I'll "
+    "say so rather than act on it."
 )
 
 # What the catch-all below answers: everything the conversation never looks at.
 # Handlers in different groups all get a turn at the same update, so this has
 # to exclude what group 0 already handles or every photo draws two replies.
-# Buttons are excluded for the same reason — group 0 owns them.
 STRAY_FILTER = (filters.ALL & ~filters.COMMAND & ~filters.PHOTO
-                & ~filters.Document.ALL & ~filters.StatusUpdate.ALL
-                & ~BUTTON_FILTER)
+                & ~filters.Document.ALL & ~filters.StatusUpdate.ALL)
 
 
 def _load_matches() -> list[dict]:
@@ -556,18 +549,184 @@ async def _upload_photo(msg, context, match: dict, event_type: str,
 
 # ── Conversation handlers ─────────────────────────────────────────────────────
 
-async def _ensure_menu(msg, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Put the button keyboard in front of the user, once per chat per run.
+async def _clear_keyboard(msg, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Take down the old button keyboard, once per chat per run.
 
-    A reply keyboard can't ride along with an inline one, and /start's first
-    message is the inline match list — so it gets its own message. Once shown,
-    Telegram keeps it (is_persistent), so this is at most one extra line per
-    chat for as long as the process lives.
+    Earlier versions left a persistent ReplyKeyboardMarkup under the chat, and
+    Telegram keeps one until a bot explicitly removes it — a new build alone
+    does not, so without this the buttons stay under every existing chat
+    forever. ReplyKeyboardRemove has to ride on a message, so one is sent and
+    deleted immediately; the removal outlives the message it arrived on.
+
+    Best-effort throughout: this is cosmetic, and a chat that cannot be tidied
+    must still be able to send a photo. `menu_shown` is the flag the old
+    keyboard used, reused here so a chat mid-conversation across the upgrade
+    is not tidied twice.
     """
     if context.chat_data.get('menu_shown'):
         return
     context.chat_data['menu_shown'] = True
-    await msg.reply_text("Buttons are below ⌨️", reply_markup=MAIN_KEYBOARD)
+    try:
+        sent = await msg.reply_text(
+            'The buttons have moved to the ☰ menu.',
+            reply_markup=ReplyKeyboardRemove())
+        await sent.delete()
+    except Exception as e:
+        log.debug("Could not remove the old reply keyboard: %s", e)
+
+
+# Telegram rejects a message over 4096 characters. The fixture list is the one
+# reply whose length grows with the registry, so it is split before it can hit
+# that — never mid-fixture, which is what the block-by-block build below buys.
+MAX_MESSAGE = 3500
+
+
+def _kickoff_times(match: dict) -> tuple[str, str]:
+    """(German, Indian) readings of this fixture's kick-off.
+
+    Recomputed from kickoff_utc rather than read out of the file: matches.json
+    carries kickoff_local and kickoff_ist, but only validate_matches.py keeps
+    them current, and a fixture hand-added since the last run would otherwise
+    be listed with a blank or a stale time. Those fields are the fallback for
+    the one case this can't handle — a kickoff_utc that won't parse.
+    """
+    try:
+        parsed = datetime.fromisoformat(
+            str(match.get('kickoff_utc')).replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return (match.get('kickoff_local') or '?',
+                match.get('kickoff_ist') or '?')
+    fmt = '%a %-d %b %Y, %H:%M %Z'
+    return (parsed.astimezone(LOCAL_TZ).strftime(fmt),
+            parsed.astimezone(IST_TZ).strftime(fmt))
+
+
+def _posting_plan(match: dict) -> list[str]:
+    """What the worker will post for this fixture, in the dispatcher's terms.
+
+    Every default here mirrors main.py rather than restating it: half time is
+    on unless switched off, lineups off unless switched on, and a stats slide
+    is dropped for a grouped match because a carousel is one scorecard per
+    match. A listing that disagreed with the dispatcher would be worse than no
+    listing at all.
+    """
+    if match.get('post_lineups'):
+        first = str(match.get('lineups_first') or 'home').strip().lower()
+        first = 'away' if first == 'away' else 'home'
+        lineups = f"on ({first} first)"
+    else:
+        lineups = 'off'
+
+    lines = [
+        f"Lineups: {lineups}",
+        f"Half time: {'on' if match.get('post_ht', True) else 'off'}",
+    ]
+
+    if not match.get('post_ft_stats'):
+        lines.append('FT stats: off')
+    elif _carousel_group_of(match):
+        lines.append('FT stats: off (carousel posts one slide per match)')
+    else:
+        lines.append('FT stats: on')
+
+    if match.get('knockout_match'):
+        lines.append('Knockout: extra time and penalties tracked')
+    return lines
+
+
+def _carousel_group_of(match: dict) -> str | None:
+    """The group this fixture posts with, or None when it posts on its own."""
+    group = str(match.get('carousel_group') or '').strip()
+    return group or None
+
+
+def _kickoff_key(match: dict) -> tuple[int, str]:
+    """Sort key: by kick-off, anything unparseable last rather than crashing."""
+    raw = str(match.get('kickoff_utc') or '')
+    try:
+        datetime.fromisoformat(raw.replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return (1, raw)
+    return (0, raw)
+
+
+def _fixture_block(index: int, match: dict) -> str:
+    """One fixture as it is listed: who, when in both zones, and what posts."""
+    local, ist = _kickoff_times(match)
+    home = match.get('home_team', '?')
+    away = match.get('away_team', '?')
+    lines = [
+        f"{index}. {home} vs {away}",
+        f"   {match.get('competition') or 'competition not set'}",
+        f"   🇩🇪 {local}",
+        f"   🇮🇳 {ist}",
+    ]
+    group = _carousel_group_of(match)
+    if group:
+        lines.append(f"   🎠 Carousel: {group}")
+    lines += [f"   {line}" for line in _posting_plan(match)]
+    return '\n'.join(lines)
+
+
+def _carousel_summary(matches: list[dict]) -> str:
+    """The groups, spelled out — which fixtures actually post together.
+
+    A carousel_group is the one setting whose effect isn't visible on the
+    fixture that carries it: what matters is the set of matches sharing the
+    name, and a typo in one of them silently splits the group in two. Listing
+    them together is what makes that visible.
+    """
+    groups: dict[str, list[dict]] = {}
+    for match in matches:
+        group = _carousel_group_of(match)
+        if group:
+            groups.setdefault(group, []).append(match)
+    if not groups:
+        return 'No carousel groups — every fixture posts on its own.'
+
+    lines = ['🎠 Carousel groups']
+    for name, members in groups.items():
+        lines.append(f"\n{name} — {len(members)} match"
+                     f"{'es' if len(members) != 1 else ''}"
+                     f"{', posts alone' if len(members) == 1 else ''}:")
+        lines += [f"   • {m.get('home_team', '?')} vs {m.get('away_team', '?')}"
+                  for m in members]
+    return '\n'.join(lines)
+
+
+async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/list — every fixture in the registry and what the worker will post.
+
+    Read-only, and deliberately so: matches.json is edited in the repo and
+    checked by validate_matches.py, so this answers 'what is armed for today'
+    without giving the chat a way to change it.
+    """
+    if not _allowed(update):
+        await update.message.reply_text("Not authorized.")
+        return
+
+    matches = [m for m in _load_matches() if isinstance(m, dict)]
+    if not matches:
+        await update.message.reply_text("No matches found in matches.json.")
+        return
+
+    await _clear_keyboard(update.message, context)
+    matches.sort(key=_kickoff_key)
+
+    header = (f"📋 {len(matches)} fixture{'s' if len(matches) != 1 else ''} "
+              f"in matches.json\nTimes are 🇩🇪 German / 🇮🇳 Indian.")
+    blocks = [header] + [_fixture_block(i, m) for i, m in enumerate(matches, 1)]
+    blocks.append(_carousel_summary(matches))
+
+    # Packed greedily so a fixture is never split across two messages.
+    chunk = ''
+    for block in blocks:
+        if chunk and len(chunk) + len(block) + 2 > MAX_MESSAGE:
+            await update.message.reply_text(chunk)
+            chunk = ''
+        chunk = f"{chunk}\n\n{block}" if chunk else block
+    if chunk:
+        await update.message.reply_text(chunk)
 
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -575,21 +734,18 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _allowed(update):
         await update.message.reply_text("Not authorized.")
         return
-    context.chat_data['menu_shown'] = True
-    await update.message.reply_text(
-        HELP_TEXT, parse_mode='Markdown', reply_markup=MAIN_KEYBOARD
-    )
+    await _clear_keyboard(update.message, context)
+    await update.message.reply_text(HELP_TEXT, parse_mode='Markdown')
 
 
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """A /command the bot doesn't have. Say so instead of staying silent."""
     if not _allowed(update) or not update.message:
         return
-    context.chat_data['menu_shown'] = True
+    await _clear_keyboard(update.message, context)
     await update.message.reply_text(
         f"I don't have that command.\n\n{HELP_TEXT}",
         parse_mode='Markdown',
-        reply_markup=MAIN_KEYBOARD,
     )
 
 
@@ -604,7 +760,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
 
     context.user_data.clear()
-    await _ensure_menu(update.message, context)
+    await _clear_keyboard(update.message, context)
     await update.message.reply_text(
         "📸 *Scorecard photo* — the background the half-time or full-time card "
         "is drawn on.\n"
@@ -639,7 +795,7 @@ async def photo_first(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     context.user_data.clear()
     context.user_data['pending'] = ref
-    await _ensure_menu(update.message, context)
+    await _clear_keyboard(update.message, context)
     await update.message.reply_text(
         "Got the photo — I'll use it as a *scorecard background*.\n"
         "_For a photo that posts on its own when a player scores, /cancel and "
@@ -739,7 +895,7 @@ async def event_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return ConversationHandler.END
 
     context.user_data.clear()
-    await _ensure_menu(update.message, context)
+    await _clear_keyboard(update.message, context)
     await update.message.reply_text(
         "🎯 *Event photo* — held for one player's moment, and posted on its "
         "own, exactly as you send it, if that moment happens.\n"
@@ -1401,7 +1557,7 @@ async def staged_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text("No matches found in matches.json.")
         return
 
-    await _ensure_menu(update.message, context)
+    await _clear_keyboard(update.message, context)
     try:
         # One Admin API call for the whole folder, off the event loop — it is
         # a real HTTP request and every other chat is waiting on this thread.
@@ -1750,7 +1906,7 @@ async def _card_intro(msg, context: ContextTypes.DEFAULT_TYPE,
         context.user_data.pop(key, None)
     _manual(context)['owner'] = owner
 
-    await _ensure_menu(msg, context)
+    await _clear_keyboard(msg, context)
 
     # Say up front if this card is joining others — the pile outlives the
     # conversation, so it is entirely possible to have forgotten about it.
@@ -1763,7 +1919,7 @@ async def _card_intro(msg, context: ContextTypes.DEFAULT_TYPE,
         "*Manual match card* — for a game the scraper doesn't cover.\n\n"
         "I'll ask for one thing at a time, then send you the card. Nothing is "
         f"posted unless you tap Post at the end.{joining}\n\n"
-        f"{BTN_CANCEL} or /cancel stops at any point.\n\n"
+        "/cancel stops at any point.\n\n"
         "First: what's the *home team*?\n"
         f"_Just the name, as it should read on the card — up to "
         f"{manual_match.MAX_TEAM_NAME} characters. e.g. Arsenal_",
@@ -2537,8 +2693,7 @@ async def _publish(msg, context: ContextTypes.DEFAULT_TYPE,
     await asyncio.to_thread(_card_batch().clear, owner)
     await msg.reply_text(
         f"Posted ✅\n{permalink or f'media id {media_id}'}\n\n"
-        f"/card to start another post.",
-        reply_markup=MAIN_KEYBOARD,
+        f"/card to start another post."
     )
 
 
@@ -2681,13 +2836,12 @@ async def batch_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _allowed(update):
         await update.message.reply_text("Not authorized.")
         return
-    context.chat_data['menu_shown'] = True
+    await _clear_keyboard(update.message, context)
 
     owner = _owner(update)
     cards = await asyncio.to_thread(_card_batch().pending, owner)
     if not cards:
-        await update.message.reply_text(
-            "Nothing waiting. /card builds one.", reply_markup=MAIN_KEYBOARD)
+        await update.message.reply_text("Nothing waiting. /card builds one.")
         return
 
     await update.message.reply_text(
@@ -2775,11 +2929,8 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # clears them, deliberately and on its own.
     _discard_render(context)
     context.user_data.clear()
-    context.chat_data['menu_shown'] = True
-    await update.message.reply_text(
-        f"Cancelled. {BTN_NEW} (or /start) to begin again.",
-        reply_markup=MAIN_KEYBOARD,
-    )
+    await _clear_keyboard(update.message, context)
+    await update.message.reply_text("Cancelled. /start to begin again.")
     return ConversationHandler.END
 
 
@@ -2789,8 +2940,8 @@ async def stray_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     Except while a step is asking for typed text — /card throughout, and the
     player's name for an event photo. Handlers in different groups every get a
     turn at the same update, so while either is running this one sees every
-    answer to every question — and used to reply "I only understand photos and
-    the buttons below" to a perfectly good team name, immediately after the
+    answer to every question — and used to reply "typed messages don't do
+    anything here" to a perfectly good team name, immediately after the
     conversation had accepted it. That message is true everywhere else and
     wrong here, and being told you are typing nonsense while correctly
     answering a question is worse than not being answered at all.
@@ -2806,11 +2957,11 @@ async def stray_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     if context.user_data.get('awaiting_player'):
         return          # same reason: the step asked for exactly this text
-    context.chat_data['menu_shown'] = True
+    await _clear_keyboard(update.message, context)
     await update.message.reply_text(
-        "I only understand photos and the buttons below — typed messages "
-        f"don't do anything here.\n\nSend a match photo, or tap {BTN_NEW}.",
-        reply_markup=MAIN_KEYBOARD,
+        "Typed messages don't do anything here — I only act on a photo or a "
+        "command.\n\nSend a match photo, or open ☰ next to the message box "
+        "for everything I do. /help explains each one."
     )
 
 
@@ -2856,14 +3007,12 @@ def main() -> None:
 
     app = ApplicationBuilder().token(token).post_init(post_init).build()
 
-    # Fallbacks both conversations share: Cancel ends whatever is running,
-    # Help answers without disturbing the state it was in (returns None), and
-    # /card jumps to the manual flow from anywhere.
+    # Fallbacks both conversations share: /cancel ends whatever is running,
+    # /help answers without disturbing the state it was in (returns None), and
+    # /batch reaches the pile from anywhere.
     common_fallbacks = [
         CommandHandler('cancel', cancel),
-        MessageHandler(BTN_CANCEL_FILTER, cancel),
         CommandHandler('help', help_cmd),
-        MessageHandler(BTN_HELP_FILTER, help_cmd),
         CommandHandler('batch', batch_cmd),
     ]
 
@@ -2873,7 +3022,6 @@ def main() -> None:
     card_conv = ConversationHandler(
         entry_points=[
             CommandHandler('card', card_start),
-            MessageHandler(BTN_CARD_FILTER, card_start),
             CallbackQueryHandler(batch_add, pattern=r'^batch:add$'),
             CallbackQueryHandler(batch_post, pattern=r'^batch:post$'),
         ],
@@ -2914,7 +3062,6 @@ def main() -> None:
         },
         fallbacks=common_fallbacks + [
             CommandHandler('card', card_start),
-            MessageHandler(BTN_CARD_FILTER, card_start),
             # Last: anything else mid-flow re-asks the current step instead of
             # throwing away everything typed so far.
             MessageHandler(filters.ALL & ~filters.StatusUpdate.ALL, card_wrong_input),
@@ -2928,7 +3075,6 @@ def main() -> None:
     event_conv = ConversationHandler(
         entry_points=[
             CommandHandler('event', event_start),
-            MessageHandler(BTN_EVENT_FILTER, event_start),
         ],
         states={
             E_MATCH:  [CallbackQueryHandler(event_match_chosen,
@@ -2954,7 +3100,6 @@ def main() -> None:
         },
         fallbacks=common_fallbacks + [
             CommandHandler('event', event_start),
-            MessageHandler(BTN_EVENT_FILTER, event_start),
         ],
     )
 
@@ -2962,7 +3107,6 @@ def main() -> None:
         entry_points=[
             CommandHandler('start', start),
             CommandHandler('newphoto', start),
-            MessageHandler(BTN_NEW_FILTER, start),
             # A bare photo is a valid way to begin — see photo_first.
             MessageHandler(PHOTO_ENTRY_FILTER, photo_first),
         ],
@@ -2976,13 +3120,12 @@ def main() -> None:
                                                 pattern=r'^(event:|cancel$)')],
             WAIT_PHOTO: [MessageHandler(filters.PHOTO | filters.Document.ALL, photo_received)],
         },
-        # Fallbacks apply in every state, so the buttons keep working mid-flow:
-        # New photo restarts it from the match list, and the shared ones above
-        # cover Cancel and Help.
+        # Fallbacks apply in every state, so the commands keep working
+        # mid-flow: /start restarts from the match list, and the shared ones
+        # above cover /cancel and /help.
         fallbacks=common_fallbacks + [
             CommandHandler('start', start),
             CommandHandler('newphoto', start),
-            MessageHandler(BTN_NEW_FILTER, start),
         ],
     )
     app.add_handler(card_conv)
@@ -2990,9 +3133,9 @@ def main() -> None:
     app.add_handler(conv)
     # Outside any conversation these still have to answer.
     app.add_handler(CommandHandler('help', help_cmd))
-    app.add_handler(MessageHandler(BTN_HELP_FILTER, help_cmd))
-    app.add_handler(MessageHandler(BTN_CANCEL_FILTER, cancel))
+    app.add_handler(CommandHandler('cancel', cancel))
     app.add_handler(CommandHandler('batch', batch_cmd))
+    app.add_handler(CommandHandler('list', list_cmd))
     app.add_handler(CallbackQueryHandler(batch_clear, pattern=r'^batch:clear$'))
     # /staged answers outside any conversation and mid-way through one:
     # it is what you reach for when a flow has left something armed by

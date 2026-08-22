@@ -16,6 +16,11 @@ CLOUD_NAME = os.getenv('CLOUDINARY_CLOUD_NAME')
 # date, including on the changeover weekends.
 LOCAL_TZ = ZoneInfo('Europe/Berlin')
 
+# The same instant read a second way, for whoever works to Indian time. Shown
+# beside the German one in the fixture list and written into matches.json as
+# kickoff_ist; nothing is ever stored or scheduled in it.
+IST_TZ = ZoneInfo('Asia/Kolkata')
+
 # Normalize team names from scraper to config
 # Normalize team names from scraper to official FIFA names
 TEAM_NAME_ALIASES = {

@@ -236,7 +236,7 @@ class TestStrayDuringCard:
     The group-1 catch-all exists because outside /card typed text means
     nothing, and a bot that stays silent looks like a bot that is down. But it
     sees *every* message, including every answer to every /card question — and
-    was replying "I only understand photos and the buttons below" to a
+    was replying "typed messages don't do anything here" to a
     perfectly good team name, right after the conversation had accepted it.
 
     Being told you are typing nonsense while correctly answering a question is
@@ -287,7 +287,7 @@ class TestStrayDuringCard:
         """The behaviour it exists for. A stray message with no conversation
         running must not be ignored."""
         replies = self._run('hello?', {})
-        assert replies and 'buttons' in replies[0]
+        assert replies and "don't do anything here" in replies[-1]
 
     def test_it_answers_again_once_the_card_is_finished(self):
         """Every exit from the flow pops 'manual' — cancel, discard, post. If

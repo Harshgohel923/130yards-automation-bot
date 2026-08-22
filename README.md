@@ -724,34 +724,49 @@ and behind `/event` in
 
 The vocabulary is fixed and free text has no meaning except where a step asks
 for it — `/card` throughout, and the player's name in `/event` when no squad
-can be listed. Everywhere else it is photos, the commands, and the buttons that
-mirror them. Anything else gets the
-help text back rather than being parsed or ignored — a bot that stays silent is
-indistinguishable from a bot that is down.
+can be listed. Everywhere else it is photos and the commands. Anything else
+gets the help text back rather than being parsed or ignored — a bot that stays
+silent is indistinguishable from a bot that is down.
+
+**There is no keyboard under the chat.** Every action is a command, read off
+Telegram's ☰ menu or `/` autocomplete, and everything asked mid-flow is an
+inline keyboard on the message that asks it. Telegram keeps a persistent reply
+keyboard until a bot explicitly removes it, so `_clear_keyboard` sends a
+`ReplyKeyboardRemove` once per chat per run and deletes the message it rode in
+on — a chat that used an earlier build would otherwise keep the old buttons
+forever.
+
+**The message box cannot be switched off.** The Bot API has no field for it: a
+bot cannot disable, hide or grey out the input, and cannot restrict what a
+client lets someone type. The closest available is what the bot does — steps
+that want typing send `ForceReply` with a placeholder naming what they want,
+every other choice is a button, and text typed where nothing asked for it is
+answered by `stray_message` instead of being acted on.
 
 **Inside `/card` that catch-all steps aside.** Handlers in different groups each
 get a turn at the same update, so the group-1 catch-all sees every answer to
-every question — and would otherwise reply "I only understand photos and the
-buttons below" to a perfectly good team name, immediately after the
+every question — and would otherwise reply "typed messages don't do
+anything here" to a perfectly good team name, immediately after the
 conversation had accepted it. `stray_message` returns early while
 `user_data['manual']` exists. Nothing is ignored by that: the conversation's own
 handlers cover every message while it is live — a valid answer advances, an
 invalid one is rejected with a reason, and anything else re-asks the step.
 
-| | Published to Telegram's ☰ menu | Button |
-|---|---|---|
-| `/start`, `/newphoto` | Send the background photo for a half-time or full-time card | 📸 Scorecard photo |
-| `/event` | Stage a photo for a player's moment in a match | 🎯 Event photo |
-| `/staged` | Photos armed for a moment — tap to take one back | — |
-| `/card` | Build a match card from details you type in | 🆕 Manual card |
-| `/batch` | Cards waiting to be posted together | — |
-| `/cancel` | Abandon whatever is in progress | 🚫 Cancel |
-| `/help` | What this bot accepts | ❓ Help |
+| | Published to Telegram's ☰ menu |
+|---|---|
+| `/start`, `/newphoto` | Send the background photo for a half-time or full-time card |
+| `/event` | Stage a photo for a player's moment in a match |
+| `/staged` | Photos armed for a moment — tap to take one back |
+| `/card` | Build a match card from details you type in |
+| `/batch` | Cards waiting to be posted together |
+| `/list` | Every fixture in the registry, with what will post |
+| `/cancel` | Abandon whatever is in progress |
+| `/help` | What this bot accepts |
 
 ### Which photo is which
 
-Two of the flows take a photo and the buttons sit next to each other, so this
-is the only thing to decide before starting either:
+Two of the flows take a photo, so this is the only thing to decide before
+starting either:
 
 | | 📸 Scorecard photo (`/start`) | 🎯 Event photo (`/event`) |
 |---|---|---|
@@ -772,8 +787,8 @@ finds the bot can use it, which for a bot that overwrites match photos and
 posts to Instagram is worth not doing.
 
 **In every state**, `/cancel`, `/help` and `/batch` keep working — they are
-registered as fallbacks on all three conversations, so a button tap mid-flow
-does what it says instead of being swallowed as an answer. `/card` and `/event`
+registered as fallbacks on all three conversations, so a command mid-flow does
+what it says instead of being swallowed as an answer. `/card` and `/event`
 reach across from anywhere for a different reason: their conversations are
 registered ahead of the scorecard one, so their entry points see the command
 first. `/help` and `/batch`
