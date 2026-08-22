@@ -114,6 +114,8 @@
     "post_ht": true,
     "knockout_match": true,
     "post_ft_stats": true,
+    "post_lineups": true,
+    "lineups_first": "away",
     "records": [
   "10th Dortmund vs Bayern Supercup meeting since 2012",
   "Bayern lead the Supercup H2H 5 wins to Dortmund's 3, with 1 penalty shootout win for Bayern in 2017",
