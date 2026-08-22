@@ -8,9 +8,13 @@ runs in its own GitHub Actions run: separate filesystem, separate SQLite, no
 shared memory. So the group needs a rendezvous point, and Cloudinary — already
 holding every rendered card — is it.
 
-    carousel/<group>/<match_id>        the scorecard image
-    carousel/<group>/<match_id>.json   what that match was, for the caption
-    carousel/<group>/POSTED.json       written once the group has been posted
+    carousel/<day>/<group>/<match_id>        the scorecard image
+    carousel/<day>/<group>/<match_id>.json   what that match was, for the caption
+    carousel/<day>/<group>/POSTED.json       written once the group has posted
+
+<day> is the group's earliest kickoff date. Group ids are reusable labels like
+'17:00', so the date is what makes one Saturday's '17:00' a different folder
+from the next one's — see _group_root().
 
 The split of duties:
 
@@ -64,16 +68,74 @@ GROUP_TIMEOUT_HOURS = 4
 
 # ── Cloudinary paths ──────────────────────────────────────────────────────────
 
-def _slide_id(group: str, match_id: str) -> str:
-    return f'{FOLDER}/{group}/{match_id}'
+# Module-relative, not cwd-relative: a worker and the dispatcher must resolve
+# the same registry, and they are not started from the same directory.
+REGISTRY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             'matches.json')
 
 
-def _manifest_id(group: str, match_id: str) -> str:
-    return f'{FOLDER}/{group}/{match_id}.json'
+def _kickoff_of(entry: dict) -> datetime | None:
+    """An entry's kickoff as an aware datetime, or None if it can't be read."""
+    try:
+        return datetime.fromisoformat(
+            str(entry['kickoff_utc']).replace('Z', '+00:00'))
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
-def _posted_id(group: str) -> str:
-    return f'{FOLDER}/{group}/{POSTED_MARKER}.json'
+def _registry_members(group: str) -> list[dict]:
+    """Every matches.json entry in this group; empty if the file can't be read."""
+    try:
+        with open(REGISTRY_FILE, encoding='utf-8') as f:
+            registry = json.load(f)
+    except Exception as e:
+        print(f'[carousel] Could not read {REGISTRY_FILE}: {e}')
+        return []
+    return [e for e in registry
+            if isinstance(e, dict)
+            and str(e.get('carousel_group') or '').strip() == group]
+
+
+def _matchday(group: str, entries: list[dict] | None = None) -> str:
+    """
+    The date a group belongs to, as YYYY-MM-DD.
+
+    Read from matches.json rather than the caller's entries so that a worker —
+    which holds only its own fixture — and the dispatcher — which holds all of
+    them — derive the same answer. `entries` is the fallback for a group that
+    has already left the registry.
+    """
+    members = _registry_members(group) or entries or []
+    kickoffs = [k for k in (_kickoff_of(e) for e in members) if k]
+    return min(kickoffs).date().isoformat() if kickoffs else 'undated'
+
+
+def _group_root(group: str, entries: list[dict] | None = None) -> str:
+    """
+    'carousel/2026-08-22/17:00' — a group's rendezvous folder.
+
+    Group ids are human labels ('17:00', 'saturday') and get reused week after
+    week, so the id on its own is not a unique key. Scoping the folder by
+    matchday keeps each use of a name separate. Without it, a POSTED marker
+    left by an earlier group of the same name makes publish_group() skip the
+    new one forever, and that group's stale manifests join the new carousel as
+    extra slides — which is exactly what happened to '17:00' on 2026-08-22.
+    """
+    return f'{FOLDER}/{_matchday(group, entries)}/{group}'
+
+
+def _slide_id(group: str, match_id: str,
+              entries: list[dict] | None = None) -> str:
+    return f'{_group_root(group, entries)}/{match_id}'
+
+
+def _manifest_id(group: str, match_id: str,
+                 entries: list[dict] | None = None) -> str:
+    return f'{_slide_id(group, match_id, entries)}.json'
+
+
+def _posted_id(group: str, entries: list[dict] | None = None) -> str:
+    return f'{_group_root(group, entries)}/{POSTED_MARKER}.json'
 
 
 def _upload_json(public_id: str, payload: dict) -> str:
@@ -162,7 +224,7 @@ def submit_match(entry: dict, scraper_data: dict, image_path: str) -> dict:
     """
     group = str(entry['carousel_group']).strip()
     match_id = entry['match_id']
-    public_id = _slide_id(group, match_id)
+    public_id = _slide_id(group, match_id, [entry])
 
     result = cloudinary.uploader.upload(image_path, public_id=public_id,
                                         overwrite=True, invalidate=True)
@@ -173,17 +235,18 @@ def submit_match(entry: dict, scraper_data: dict, image_path: str) -> dict:
     print(f'[carousel] {group}/{match_id}: card uploaded → {image_url}')
 
     manifest = build_manifest(entry, scraper_data, image_url, stored_id)
-    _upload_json(_manifest_id(group, match_id), manifest)
+    _upload_json(_manifest_id(group, match_id, [entry]), manifest)
     print(f'[carousel] {group}/{match_id}: manifest written')
     return manifest
 
 
-def read_manifests(group: str) -> dict[str, dict]:
+def read_manifests(group: str,
+                   entries: list[dict] | None = None) -> dict[str, dict]:
     """Every manifest that has landed for a group, keyed by match_id."""
     try:
         listing = cloudinary.api.resources(
             type='upload', resource_type='raw',
-            prefix=f'{FOLDER}/{group}/', max_results=100,
+            prefix=f'{_group_root(group, entries)}/', max_results=100,
         )
     except Exception as e:
         print(f'[carousel] Could not list manifests for {group}: {e}')
@@ -200,18 +263,20 @@ def read_manifests(group: str) -> dict[str, dict]:
     return manifests
 
 
-def posted_marker(group: str) -> dict | None:
+def posted_marker(group: str, entries: list[dict] | None = None) -> dict | None:
     """The marker written after a successful post, or None if never posted."""
     try:
-        resource = cloudinary.api.resource(_posted_id(group), resource_type='raw')
+        resource = cloudinary.api.resource(_posted_id(group, entries),
+                                           resource_type='raw')
     except Exception:
         return None
     return _fetch_json(resource.get('secure_url', ''))
 
 
 def mark_group_posted(group: str, ig_id: str, match_ids: list[str],
-                      missing: list[str]) -> None:
-    _upload_json(_posted_id(group), {
+                      missing: list[str],
+                      entries: list[dict] | None = None) -> None:
+    _upload_json(_posted_id(group, entries), {
         'group':      group,
         'ig_media_id': ig_id,
         'match_ids':  match_ids,
@@ -268,12 +333,12 @@ def publish_group(group: str, entries: list[dict], now: datetime | None = None) 
     """
     now = now or datetime.now(timezone.utc)
 
-    if posted_marker(group):
+    if posted_marker(group, entries):
         print(f'[carousel] {group}: already posted, skipping.')
         return None
 
     members = [str(e['match_id']) for e in entries]
-    manifests = read_manifests(group)
+    manifests = read_manifests(group, entries)
     missing = [m for m in members if m not in manifests]
 
     if missing:
@@ -334,7 +399,7 @@ def publish_group(group: str, entries: list[dict], now: datetime | None = None) 
         raise RuntimeError(f'group {group} has manifests but no usable image urls')
 
     posted_ids = [str(m['match_id']) for m in ordered]
-    mark_group_posted(group, ig_id, posted_ids, missing)
+    mark_group_posted(group, ig_id, posted_ids, missing, entries)
     print(f'[carousel] {group}: ✅ posted {len(urls)} slides — IG ID: {ig_id}')
     send_music_reminder(
         f"The '{group}' carousel — {len(urls)} "

@@ -293,9 +293,11 @@ def _pending_carousel_groups(registry: list) -> set:
                 if isinstance(e_, dict) and e_.get('carousel_group')}
 
     pending = set()
-    for group in groups_in(registry):
+    for group, entries in groups_in(registry).items():
         try:
-            if not posted_marker(group):
+            # Entries and not just the name: the marker lives under the group's
+            # matchday, which is derived from its members' kickoffs.
+            if not posted_marker(group, entries):
                 pending.add(group)
         except Exception as e:
             print(f'[dispatcher] WARNING: could not check carousel {group} ({e}) — '
