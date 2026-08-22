@@ -494,6 +494,10 @@ def generate_event_caption(scraper_data: dict, moment: dict,
     score_line = f"{home_team} {home_score}-{away_score} {away_team}"
 
     assister = str(moment.get('assister') or '').strip()
+    # Set only on an ASSIST moment: the goal this photo is really about. The
+    # picture is of the player who made the pass, and a caption that never
+    # says who finished it is describing half of what happened.
+    scorer = str(moment.get('scorer') or '').strip()
     goals_str = _summarise_events(scraper_data.get('events', []))
 
     # A brace or a hat-trick is not one goal, and a caption that reacted to it
@@ -521,6 +525,7 @@ CAPTION RULES:
 - Very short: hard cap 45 words / 350 characters excluding hashtags, at most 4 short lines.
 - The post is a photograph of this player with nothing written on it, so the caption must make clear who it is and what happened.
 - Match the tone to the moment: a goal is euphoric, a red card is dramatic, a substitution is a moment of respect or anticipation — do NOT celebrate a booking or a sending-off.
+- If this is an assist, the post belongs to the player who MADE THE PASS, not the one who scored. Credit the finish, but the headline is the creator.
 - If this is a brace or a hat-trick, lead with THAT, not with the individual goal. It is the achievement that earns the post.
 - Emojis are welcome but tasteful — never 3+ in a row.
 - Every sentence on its own line, with a BLANK LINE after each one.
@@ -536,6 +541,7 @@ The moment:
 - Minute: {minute or 'unknown'}
 {milestone_line}
 {f'- Assisted by: {assister}' if assister else ''}
+{f'- {player} set up the goal, which {scorer} scored' if scorer else ''}
 - Score at this moment (NOT a final result): {score_line}
 - Competition: {comp_label}
 - Goals so far in this match: {goals_str}

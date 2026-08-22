@@ -93,7 +93,6 @@ class TestEventKeys:
         assert ep.event_keys_for(ev) == [('SUB_IN', 'Lautaro', '50238753')]
 
     @pytest.mark.parametrize('ev', [
-        {'type': 'assist', 'player': 'Messi'},
         {'type': 'var', 'player': 'Messi'},
         {'type': 'penalty_missed', 'player': 'Messi'},
         {'type': 'half_time', 'player': 'N/A', 'team': None},
@@ -464,6 +463,132 @@ class TestStagingAMilestone:
         staged = {ep.public_id(self.MATCH, 'HAT_TRICK', 'Renaldo')}
         report = ep.unfired(self.TIMELINE, staged, self.MATCH, posted_keys=[])
         assert report[0]['near'] == ['Ronaldo']
+
+
+class TestAssists:
+    """A goal entry names two people, and the second one is not a goal.
+
+    The scraper folds an assist into the goal it produced rather than emitting
+    it separately, so 🅰️ Assist is read off the same timeline entry as ⚽ Goal
+    — the same shape as a paired substitution. What has to hold: both fire,
+    they don't collide, and nobody is credited with an assist for an own goal.
+    """
+
+    MATCH = '54483541'
+    TIMELINE = [
+        {'type': 'goal', 'player': 'Cristian Romero', 'player_id': '50255850',
+         'team': 'Argentina', 'minute': "23'",
+         'assister': 'Messi', 'assister_id': '50000116'},
+        {'type': 'goal', 'player': 'Messi', 'player_id': '50000116',
+         'team': 'Argentina', 'minute': "41'",
+         'assister': 'Gonzalo Montiel', 'assister_id': '50251053'},
+    ]
+
+    def fire(self, *staged):
+        ids = {ep.public_id(self.MATCH, k, p) for k, p in staged}
+        return ep.pending(self.TIMELINE, ids, self.MATCH)
+
+    # ── Reading it off the entry ────────────────────────────────────────────
+
+    def test_a_goal_offers_the_scorer_and_the_assister(self):
+        ev = {'type': 'goal', 'player': 'Romero', 'player_id': '1',
+              'assister': 'Messi', 'assister_id': '2'}
+        assert ep.event_keys_for(ev) == [('GOAL', 'Romero', '1'),
+                                         ('ASSIST', 'Messi', '2')]
+
+    def test_a_penalty_can_carry_one_too(self):
+        ev = {'type': 'penalty_goal', 'player': 'Kane', 'player_id': '1',
+              'assister': 'Musiala', 'assister_id': '2'}
+        assert ('ASSIST', 'Musiala', '2') in ep.event_keys_for(ev)
+
+    def test_an_own_goal_never_does(self):
+        """Nobody is credited with an assist for an own goal — and the scraper
+        pairs goals with assists by position in the minute, not by asserting a
+        link, so believing this one would put the wrong name on a public page."""
+        ev = {'type': 'own_goal', 'player': 'Maguire', 'player_id': '1',
+              'assister': 'Someone', 'assister_id': '2'}
+        assert ep.event_keys_for(ev) == [('OG', 'Maguire', '1')]
+
+    def test_a_goal_with_nobody_credited_offers_only_the_scorer(self):
+        ev = {'type': 'goal', 'player': 'Haaland', 'player_id': '1'}
+        assert ep.event_keys_for(ev) == [('GOAL', 'Haaland', '1')]
+
+    @pytest.mark.parametrize('assister', ['N/A', '', None, '   '])
+    def test_an_unnamed_assister_is_not_a_person(self, assister):
+        ev = {'type': 'goal', 'player': 'Haaland', 'player_id': '1',
+              'assister': assister}
+        assert ep.event_keys_for(ev) == [('GOAL', 'Haaland', '1')]
+
+    def test_an_orphaned_assist_entry_still_works(self):
+        """The scraper emits a bare 'assist' when it couldn't pair one with a
+        goal in the same minute. Then the assister is the entry's own player."""
+        ev = {'type': 'assist', 'player': 'Messi', 'player_id': '2'}
+        assert ep.event_keys_for(ev) == [('ASSIST', 'Messi', '2')]
+
+    # ── Firing ──────────────────────────────────────────────────────────────
+
+    def test_a_photo_staged_for_the_assister_posts(self):
+        got = self.fire(('ASSIST', 'Messi'))
+        assert [m['player'] for m in got] == ['Messi']
+        assert got[0]['minute'] == "23'"
+
+    def test_the_scorer_and_the_assister_both_post(self):
+        """One entry, two people, two pictures, two posts. The regression this
+        guards is the duplicate check reading them as one claim on one moment
+        and silently dropping the second."""
+        got = self.fire(('GOAL', 'Cristian Romero'), ('ASSIST', 'Messi'))
+        assert [m['event_key'] for m in got] == ['GOAL', 'ASSIST']
+        assert not any(m.get('duplicate') or m.get('conflict') for m in got)
+
+    def test_scoring_is_not_assisting(self):
+        """Messi scored in the 41st and assisted in the 23rd. A picture staged
+        for one must not fire on the other."""
+        got = self.fire(('ASSIST', 'Messi'))
+        assert got[0]['minute'] == "23'"
+        got = self.fire(('GOAL', 'Messi'))
+        assert got[0]['minute'] == "41'"
+
+    def test_it_fires_on_the_assisters_id_not_their_name(self):
+        staged = {ep.public_id(self.MATCH, 'ASSIST', 'leo'):
+                  {'player_id': '50000116'}}
+        got = ep.pending(self.TIMELINE, staged, self.MATCH)
+        assert [m['player'] for m in got] == ['Messi']
+
+    def test_one_assist_per_picture_however_many_he_makes(self):
+        timeline = self.TIMELINE + [
+            {'type': 'goal', 'player': 'Enzo', 'player_id': '3',
+             'team': 'Argentina', 'minute': "77'",
+             'assister': 'Messi', 'assister_id': '50000116'}]
+        got = ep.pending(timeline, {ep.public_id(self.MATCH, 'ASSIST', 'Messi')},
+                         self.MATCH)
+        assert len(got) == 1 and got[0]['minute'] == "23'"
+
+    # ── What the caption is told ────────────────────────────────────────────
+
+    def test_the_moment_names_who_finished_it(self):
+        """The photo is of the player who made the pass; a caption that never
+        says who scored is describing half of what happened."""
+        got = self.fire(('ASSIST', 'Messi'))
+        assert got[0]['scorer'] == 'Cristian Romero'
+
+    def test_and_does_not_credit_him_with_assisting_himself(self):
+        got = self.fire(('ASSIST', 'Messi'))
+        assert not got[0]['assister']
+
+    def test_a_goal_moment_is_unaffected(self):
+        got = self.fire(('GOAL', 'Cristian Romero'))
+        assert got[0]['assister'] == 'Messi'
+        assert got[0]['scorer'] is None
+
+    def test_an_orphaned_assist_knows_of_no_goal(self):
+        got = ep.pending([{'type': 'assist', 'player': 'Messi',
+                           'player_id': '2', 'minute': "23'"}],
+                         {ep.public_id(self.MATCH, 'ASSIST', 'Messi')},
+                         self.MATCH)
+        assert got[0]['scorer'] is None
+
+    def test_the_caption_has_words_for_it(self):
+        assert 'assist' in ep.EVENT_DESCRIPTION['ASSIST']
 
 
 class TestKeyboardLayout:

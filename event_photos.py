@@ -119,6 +119,10 @@ EVENT_CHOICES: list[tuple[str, str, tuple[str, ...]]] = [
     ('GOAL',      '⚽ Goal',          ('goal',)),
     ('PEN',       '🅿️ Penalty goal',  ('penalty_goal',)),
     ('OG',        '🥅 Own goal',      ('own_goal',)),
+    # The scraper only emits a bare 'assist' entry for an orphan — one it
+    # could not pair with a goal in the same minute. The ordinary case is
+    # folded into the goal entry, and event_keys_for() reads it from there.
+    ('ASSIST',    '🅰️ Assist',        ('assist',)),
     # Derived, not read off a timeline entry — see GOAL_MILESTONES.
     ('BRACE',     '⚽⚽ Brace',        ()),
     ('HAT_TRICK', '⚽⚽⚽ Hat-trick',   ()),
@@ -141,6 +145,13 @@ GOAL_MILESTONES = {2: 'BRACE', 3: 'HAT_TRICK'}
 # tap-in a hat-trick.
 MILESTONE_GOAL_TYPES = ('goal', 'penalty_goal')
 
+# Goal entries whose `assister` is worth believing. Own goals are excluded on
+# purpose: nobody is credited with an assist for one, and the scraper pairs
+# goals with assists by their position in the minute rather than by asserting
+# a link — so an own goal sitting next to somebody else's assist would put the
+# wrong person on a public page. A miss costs a photo; that costs an apology.
+ASSIST_GOAL_TYPES = ('goal', 'penalty_goal')
+
 # How the buttons are laid out in the bot. Grouped by kind rather than chunked
 # two at a time, because "🥅 Own goal | ⚽⚽ Brace" sitting on one row reads as
 # though they were a pair. Every key in EVENT_CHOICES appears here exactly once
@@ -148,6 +159,10 @@ MILESTONE_GOAL_TYPES = ('goal', 'penalty_goal')
 # stage a picture for.
 EVENT_KEYBOARD_ROWS: tuple[tuple[str, ...], ...] = (
     ('GOAL', 'PEN', 'OG'),
+    # Alone on its row rather than tacked onto the goals: an assist is a goal
+    # involvement, not a goal, and sitting it beside ⚽ Goal would read as
+    # another way of scoring one.
+    ('ASSIST',),
     ('BRACE', 'HAT_TRICK'),
     ('YELLOW', 'RED'),
     ('SUB_IN', 'SUB_OUT'),
@@ -168,6 +183,7 @@ EVENT_DESCRIPTION = {
     'GOAL':      'scored a goal',
     'PEN':       'scored from the penalty spot',
     'OG':        'scored an own goal',
+    'ASSIST':    'provided the assist',
     'BRACE':     'scored his second of the match',
     'HAT_TRICK': 'completed a hat-trick',
     'YELLOW':    'was booked',
@@ -305,12 +321,18 @@ def delivery_url(pid: str) -> str:
 def event_keys_for(ev: dict) -> list[tuple[str, str, str]]:
     """(event_key, player, player_id) a timeline entry could have a picture for.
 
-    Usually one. A paired substitution is two — one player came on and another
-    went off in the same entry — and either can be the one somebody staged a
-    picture for, so both are offered.
+    Usually one, but two entry kinds name two different people, and either can
+    be the one somebody staged a picture for — so both are offered:
 
-    An entry the feature has no opinion about (an assist, a VAR check, the
-    half-time marker) yields nothing, which is how it stays ignored.
+      * a paired substitution — one player came on, another went off
+      * a goal with an assist — the scorer, and whoever set it up
+
+    Both are one entry because the scraper merged them, not because they are
+    one moment. A photo staged for the scorer and a photo staged for the
+    assister both fire off the same entry, and each gets its own post.
+
+    An entry the feature has no opinion about (a VAR check, the half-time
+    marker) yields nothing, which is how it stays ignored.
     """
     ev_type = ev.get('type')
 
@@ -322,11 +344,19 @@ def event_keys_for(ev: dict) -> list[tuple[str, str, str]]:
         return [(key, ev.get(role), player_id_of(ev, role))
                 for key, role in pairs if _is_named(ev.get(role))]
 
+    out = []
     key = TYPE_TO_KEY.get(ev_type)
     player = ev.get('player')
     if key and _is_named(player):
-        return [(key, player, player_id_of(ev))]
-    return []
+        out.append((key, player, player_id_of(ev)))
+
+    # The assist, read off the goal it produced. There is no assist entry in
+    # the ordinary case — the scraper folds it in — so this is the only place
+    # it can be seen. A bare 'assist' entry does exist for one the scraper
+    # could not pair with a goal, and that goes through the branch above.
+    if ev_type in ASSIST_GOAL_TYPES and _is_named(ev.get('assister')):
+        out.append(('ASSIST', ev.get('assister'), player_id_of(ev, 'assister')))
+    return out
 
 
 def _is_named(player) -> bool:
@@ -583,7 +613,9 @@ def _timeline_moments(events, match_id: str) -> list[dict]:
         if not isinstance(ev, dict):
             continue
 
+        scored_here = ev.get('type') in ASSIST_GOAL_TYPES
         for event_key, player, pid in event_keys_for(ev):
+            assisted = event_key == 'ASSIST'
             out.append({
                 'index':     len(out),
                 'event_key': event_key,
@@ -592,7 +624,14 @@ def _timeline_moments(events, match_id: str) -> list[dict]:
                 'player_id': pid,
                 'team':      ev.get('team'),
                 'minute':    str(ev.get('minute') or '').strip(),
-                'assister':  ev.get('assister'),
+                # Who set this moment up — never the player it is about. On an
+                # ASSIST moment that would be the assister themselves, and a
+                # caption told "X assisted, assisted by X" writes nonsense.
+                'assister':  None if assisted else ev.get('assister'),
+                # The mirror of it: who the assist was *for*. Only knowable
+                # when the assist came off a goal entry — a bare 'assist' entry
+                # is one the scraper could not pair with a goal.
+                'scorer':    ev.get('player') if assisted and scored_here else None,
             })
 
         if ev.get('type') not in MILESTONE_GOAL_TYPES:
@@ -616,6 +655,7 @@ def _timeline_moments(events, match_id: str) -> list[dict]:
                 'team':         ev.get('team'),
                 'minute':       tally[-1],
                 'assister':     ev.get('assister'),
+                'scorer':       None,
                 # Every goal that got him here, for the caption to draw on.
                 'goal_minutes': list(tally),
             })
@@ -732,6 +772,8 @@ def pending(events, staged_ids, match_id: str) -> list[dict]:
             'team':       moment['team'],
             'minute':     moment['minute'],
             'assister':   moment['assister'],
+            # Set only on an ASSIST: the goal this picture is really about.
+            'scorer':     moment.get('scorer'),
             # Only a milestone carries this: every goal that got him there.
             'goal_minutes': moment.get('goal_minutes'),
             # Keyed on what was staged, not on what the feed called them: the
