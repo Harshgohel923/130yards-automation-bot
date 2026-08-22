@@ -1606,6 +1606,58 @@ def _delete_early_post(entry: dict, event_type: str) -> None:
         _save_state()
 
 
+def _settle_early_card(entry: dict, event_type: str, stale: str | None,
+                       lagging: bool, scraper_data: dict,
+                       current_score, current_events) -> bool:
+    """
+    What to do with a live early card once the whistle is confirmed.
+
+    The monitoring that normally corrects an early card is keyed on the playing
+    status — '1H' for the half-time card, '2H' for the full-time one — and stops
+    the instant that flips to HT or FT. A stoppage-time goal reaches the feed a
+    poll or two *after* the flip, so the whistle is the last chance to catch it.
+    Dortmund vs Bayern on 2026-08-22 is the case that proved it: Olise scored on
+    45', the status went to HT before the event landed, and the card stayed on
+    0-1 for the rest of the night.
+
+    Returns True when the moment is settled and can be marked posted, False to
+    leave it open and try again on the next poll.
+    """
+    match_id = entry['match_id']
+    moment   = event_type.upper()
+
+    if not stale:
+        print(f"[{match_id}] {moment} confirmed — early post active, skipping fallback.")
+        return True
+
+    if _wait_for_scorers(match_id, lagging):
+        print(f"[{match_id}] {moment} confirmed but the live card is stale "
+              f"({stale}) and the scorer list lags — retrying next poll.")
+        return False
+
+    print(f"[{match_id}] {moment} confirmed — live card is out of date "
+          f"({stale}) — correcting…")
+    _delete_early_post(entry, event_type)
+    cids, ig_id = _early_pipeline(entry, event_type, scraper_data)
+    if not (cids and ig_id):
+        # The delete has already cleared early_<moment>_ig_id, so the next poll
+        # misses the "early post active" branch and runs the fallback pipeline
+        # instead. Returning True here would end the match with no card at all.
+        print(f"[{match_id}] {moment} correction failed to post — the fallback "
+              f"pipeline picks it up on the next poll.")
+        return False
+
+    key = event_type.lower()
+    with STATE_LOCK:
+        s = MATCH_STATE[match_id]
+        s[f'early_{key}_ig_id']         = ig_id
+        s[f'early_{key}_cloudinary_id'] = cids
+        s[f'early_{key}_score']         = list(current_score)
+        s[f'early_{key}_events']        = current_events
+        _save_state()
+    return True
+
+
 # ── Per-match worker ──────────────────────────────────────────────────────────
 
 def match_worker(entry: dict):
@@ -1934,11 +1986,14 @@ def match_worker(entry: dict):
                 _eht_done    = MATCH_STATE[match_id].get('early_ht_posted', False)
 
             if _eht_done and active_ht_ig:
-                print(f"[{match_id}] HT confirmed — early post active, skipping fallback.")
-                mark_event_posted(match_id, 'HT')
-                with STATE_LOCK:
-                    MATCH_STATE[match_id]['ht_posted'] = True
-                    _save_state()
+                stale = _early_card_stale(early_ht_score, early_ht_events,
+                                          current_score, current_events)
+                if _settle_early_card(entry, 'HT', stale, lagging, scraper_data,
+                                      current_score, current_events):
+                    mark_event_posted(match_id, 'HT')
+                    with STATE_LOCK:
+                        MATCH_STATE[match_id]['ht_posted'] = True
+                        _save_state()
             elif entry.get('post_ht', True):
                 print(f"[{match_id}] HT confirmed — running fallback HT pipeline…")
                 if _wait_for_scorers(match_id, lagging):
@@ -2026,13 +2081,16 @@ def match_worker(entry: dict):
                         _archive_match_data(entry)
                         break
             elif _eft_done and active_ft_ig:
-                print(f"[{match_id}] FT confirmed — early post active, skipping fallback.")
-                mark_event_posted(match_id, 'FT')
-                with STATE_LOCK:
-                    MATCH_STATE[match_id]['ft_posted'] = True
-                    _save_state()
-                _archive_match_data(entry)
-                break
+                stale = _early_card_stale(early_ft_score, early_ft_events,
+                                          current_score, current_events)
+                if _settle_early_card(entry, 'FT', stale, lagging, scraper_data,
+                                      current_score, current_events):
+                    mark_event_posted(match_id, 'FT')
+                    with STATE_LOCK:
+                        MATCH_STATE[match_id]['ft_posted'] = True
+                        _save_state()
+                    _archive_match_data(entry)
+                    break
             else:
                 # Early post never made, or was deleted (e.g. equalization → ET)
                 print(f"[{match_id}] FT confirmed — running fallback FT pipeline…")
