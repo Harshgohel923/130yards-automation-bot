@@ -22,7 +22,12 @@ photo becomes.
      happens, nothing is posted and the photo is deleted at full time.
 
        /event  →  pick match  →  pick ⚽ Goal  →  pick team  →  pick player
-               →  send photo
+               →  send photo  →  another player / other team / other event
+
+     The last step is the loop: staging is rarely one picture, and the match,
+     the event and the squad behind a photo are the same for every player in
+     it. The menu after each upload goes back to a step rather than to the
+     start — see _staged_menu. Only the match is never re-asked.
 
      Most of the events are one timeline entry. Two are not: a brace and a
      hat-trick are counts, so they are derived from the goals in order and
@@ -144,7 +149,7 @@ SELECT_MATCH, SELECT_EVENT, WAIT_PHOTO = range(3)
 # clear of both the photo flow's and /card's so a stray state value can never
 # be read as belonging to another conversation.
 (E_MATCH, E_EVENT, E_TEAM, E_PLAYER, E_TYPE_PLAYER,
- E_PHOTO) = range(30, 36)
+ E_PHOTO, E_MORE) = range(30, 37)
 
 # /card's states. Numbered clear of the photo flow's so a stray state value can
 # never be read as belonging to the other conversation.
@@ -291,6 +296,8 @@ HELP_TEXT = (
     "*Staging an event photo*\n"
     "/event → the match → what has to happen → the team → the player → the "
     "photo.\n"
+    "After each one you can add another player, switch to the other team or "
+    "change the event without picking the match again.\n"
     "Stage them as early as you like, as long as the fixture is in the list. "
     "The squad only appears about an hour before kickoff; before that you type "
     "the name instead, which works just as well — accents and capitals are "
@@ -760,22 +767,29 @@ async def event_match_chosen(update: Update,
         return ConversationHandler.END
 
     context.user_data['match'] = match
-    # One button per event a picture can be staged against, laid out by kind —
-    # see EVENT_KEYBOARD_ROWS. A goal's type is its own button rather than a
-    # follow-up question: a penalty and an open-play goal are different moments
-    # wanting different pictures.
+    await query.edit_message_text(
+        f"{match['home_team']} vs {match['away_team']}\n"
+        f"What has to happen for this picture to post?",
+        reply_markup=_event_keyboard(),
+    )
+    return E_EVENT
+
+
+def _event_keyboard() -> InlineKeyboardMarkup:
+    """One button per event a picture can be staged against, laid out by kind —
+    see EVENT_KEYBOARD_ROWS. A goal's type is its own button rather than a
+    follow-up question: a penalty and an open-play goal are different moments
+    wanting different pictures.
+
+    Built here rather than inline because the "different event" button on the
+    staged menu asks the same question again, and two copies would drift.
+    """
     rows = [[InlineKeyboardButton(event_photos.EVENT_LABELS[key],
                                   callback_data=f"ev:evt:{key}")
              for key in row]
             for row in event_photos.EVENT_KEYBOARD_ROWS]
     rows.append([InlineKeyboardButton("Cancel", callback_data="cancel")])
-
-    await query.edit_message_text(
-        f"{match['home_team']} vs {match['away_team']}\n"
-        f"What has to happen for this picture to post?",
-        reply_markup=InlineKeyboardMarkup(rows),
-    )
-    return E_EVENT
+    return InlineKeyboardMarkup(rows)
 
 
 async def event_event_chosen(update: Update,
@@ -855,7 +869,10 @@ async def _squad(context: ContextTypes.DEFAULT_TYPE) -> dict | None:
                 # downstream has to match on spelling at all.
                 ident = str(p.get('person_id') or '').strip()
                 if ident:
-                    ids.setdefault(name, ident)
+                    # Keyed by side as well as name: the two squads can share a
+                    # surname, and one flat map would pin the wrong person_id
+                    # onto the picture — see _player_id_for.
+                    ids.setdefault(side, {}).setdefault(name, ident)
         if names:
             squad[side] = names
 
@@ -892,8 +909,29 @@ async def _ask_squad_side(msg, context: ContextTypes.DEFAULT_TYPE) -> int:
     return E_TEAM
 
 
+def _player_id_for(context: ContextTypes.DEFAULT_TYPE, player: str) -> str:
+    """
+    The feed's own id for a name, or '' when it cannot be known for certain.
+
+    With a side chosen the answer is unambiguous. A typed name has no side, so
+    both squads are searched — and a name they both answer to is left unpinned
+    rather than guessed. An empty id means the worker settles the picture on
+    spelling later, which is the designed fallback; a wrong id is wrong for good.
+    """
+    ids = context.user_data.get('squad_ids') or {}
+    side = context.user_data.get('side')
+    if side:
+        return (ids.get(side) or {}).get(player, '')
+    found = {(ids.get(s) or {}).get(player, '') for s in ('home', 'away')}
+    found.discard('')
+    return found.pop() if len(found) == 1 else ''
+
+
 async def _ask_typed_player(msg, context: ContextTypes.DEFAULT_TYPE) -> int:
     event_key = context.user_data.get('event_key')
+    # A typed name belongs to no squad list. Left over from an earlier loop the
+    # side would have the staged menu offering the wrong team's players back.
+    context.user_data.pop('side', None)
     await msg.reply_text(
         f"Type the player's name for the "
         f"*{event_photos.EVENT_LABELS.get(event_key, 'event')}* picture.\n\n"
@@ -922,14 +960,30 @@ async def event_side_chosen(update: Update,
         return await _ask_typed_player(query.message, context)
 
     side = query.data.split(':', 2)[2]
+    return await _ask_player_list(query.message, context, side, query=query)
+
+
+async def _ask_player_list(msg, context: ContextTypes.DEFAULT_TYPE, side: str,
+                           query=None) -> int:
+    """The squad keyboard for one side.
+
+    Asked twice now: once on the way down /event, and again from the staged
+    menu's "another player" / "other team" buttons — which is why the message
+    to edit is a parameter rather than an assumption. With `query` the keyboard
+    replaces what is on screen; without it, it arrives as a new message.
+    """
     squad = (await _squad(context) or {}).get(side) or []
     if not squad:
-        await query.edit_message_text("I don't have that squad any more.")
-        return await _ask_typed_player(query.message, context)
+        await msg.reply_text("I don't have that squad any more.")
+        return await _ask_typed_player(msg, context)
 
     # Indexes, not names: callback_data is capped at 64 bytes and a name can
     # carry anything, colons included.
     context.user_data['squad_side'] = squad
+    # Which side those indexes belong to. Not part of a photo's identity — see
+    # _ask_squad_side — but the staged menu has to know whose list to re-open
+    # and whose to offer as the other one.
+    context.user_data['side'] = side
     rows = [[InlineKeyboardButton(name, callback_data=f"ev:player:{i}")
              for i, name in pair]
             for pair in _pairs(list(enumerate(squad)))]
@@ -937,10 +991,12 @@ async def event_side_chosen(update: Update,
     rows.append([InlineKeyboardButton("Cancel", callback_data="cancel")])
 
     match = context.user_data['match']
-    await query.edit_message_text(
-        f"{match[f'{side}_team']} — who is the picture of?",
-        reply_markup=InlineKeyboardMarkup(rows),
-    )
+    text = f"{match[f'{side}_team']} — who is the picture of?"
+    markup = InlineKeyboardMarkup(rows)
+    if query is not None:
+        await query.edit_message_text(text, reply_markup=markup)
+    else:
+        await msg.reply_text(text, reply_markup=markup)
     return E_PLAYER
 
 
@@ -1062,14 +1118,16 @@ async def _player_settled(msg, context: ContextTypes.DEFAULT_TYPE,
     # Only a name that came from the squad has one. A typed name that the
     # squad didn't recognise stays un-pinned and is matched on spelling until
     # the worker's clarification settles it — see main._clarify_staged_photos.
-    context.user_data['player_id'] = (
-        context.user_data.get('squad_ids') or {}).get(player, '')
+    context.user_data['player_id'] = _player_id_for(context, player)
     context.user_data.pop('awaiting_player', None)
 
-    pending = context.user_data.get('pending')
+    # Popped, not read: a held photo belongs to the name being settled right
+    # now and to no other. Left in place it is uploaded again for whoever is
+    # chosen next, which the staged menu makes an ordinary thing to do.
+    pending = context.user_data.pop('pending', None)
     if pending:
         ok = await _upload_event_photo(msg, context, pending)
-        return ConversationHandler.END if ok else E_PHOTO
+        return await _staged_menu(msg, context) if ok else E_PHOTO
 
     await msg.reply_text(
         f"Staging {player} — {event_photos.EVENT_LABELS[event_key]} — for "
@@ -1129,7 +1187,7 @@ async def event_photo_received(update: Update,
         return ConversationHandler.END
 
     ok = await _upload_event_photo(msg, context, ref)
-    return ConversationHandler.END if ok else E_PHOTO
+    return await _staged_menu(msg, context) if ok else E_PHOTO
 
 
 async def _upload_event_photo(msg, context: ContextTypes.DEFAULT_TYPE,
@@ -1140,9 +1198,16 @@ async def _upload_event_photo(msg, context: ContextTypes.DEFAULT_TYPE,
     player = context.user_data['player']
     player_id = context.user_data.get('player_id') or ''
     label = event_photos.EVENT_LABELS[event_key]
-    return await _upload_photo(
+    public_id = event_photos.public_id(match['match_id'], event_key, player)
+    # The id is (match, event, player), so the same pair twice overwrites rather
+    # than adds — and the menu offering the same list again makes that an easy
+    # mis-tap. Silence would leave you believing two pictures are armed.
+    seen = context.user_data.setdefault('staged_this_run', set())
+    replaced = public_id in seen
+
+    ok = await _upload_photo(
         msg, context, match, event_key, ref,
-        public_id=event_photos.public_id(match['match_id'], event_key, player),
+        public_id=public_id,
         descriptor=f"{player}, {label}",
         # Written onto the asset, not kept here: the worker is a different
         # process on a different machine, and the picture is the only thing
@@ -1152,6 +1217,133 @@ async def _upload_event_photo(msg, context: ContextTypes.DEFAULT_TYPE,
         # shape has to be one Instagram will take.
         fit_aspect=True,
     )
+    if not ok:
+        return False
+    seen.add(public_id)
+    if replaced:
+        # Deliberately not Markdown: the name is whatever was typed.
+        await msg.reply_text(
+            f"⚠️ That replaced the picture already staged for {player} — "
+            f"{label}. One picture per player per moment, so the earlier one "
+            f"is gone."
+        )
+    return True
+
+
+# ── After one photo: the next one, without starting over ─────────────────────
+# Staging is rarely a single picture. A goal keyboard for Bayern is three or
+# four players, and the match, the event and the squad behind them are the same
+# for every one of them. Ending the conversation after each photo charged four
+# already-answered questions for every extra player.
+#
+# So the flow returns to a *step* rather than to the start: another player in
+# the same squad, the other squad, or a different event for the same match. The
+# match itself is never re-asked — /event is still how you change that.
+
+async def _staged_menu(msg, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """What to offer after a picture is staged, given what is already known."""
+    match     = context.user_data['match']
+    event_key = context.user_data['event_key']
+    squad     = context.user_data.get('squad') or {}
+    side      = context.user_data.get('side')
+    other     = {'home': 'away', 'away': 'home'}.get(side or '')
+
+    rows = []
+    if side and squad.get(side):
+        rows.append([InlineKeyboardButton(
+            f"➕ Another {match[f'{side}_team']} player",
+            callback_data="ev:more:player")])
+    if other and squad.get(other):
+        rows.append([InlineKeyboardButton(
+            f"🔁 {match[f'{other}_team']} instead",
+            callback_data="ev:more:team")])
+    elif not side and (squad.get('home') or squad.get('away')):
+        # The name was typed, so there is no list to return to — but a squad
+        # exists, so the team question is still worth offering.
+        rows.append([InlineKeyboardButton("➕ Another player",
+                                          callback_data="ev:more:team")])
+    rows.append([InlineKeyboardButton("🎯 Different event",
+                                      callback_data="ev:more:event")])
+    rows.append([InlineKeyboardButton("✅ Done", callback_data="ev:more:done")])
+
+    # Retire the previous menu so only the newest one has live buttons. Every
+    # staged photo leaves one behind otherwise, and a tap on a stale one matches
+    # no handler — which in Telegram is not an error, just a spinner that never
+    # stops.
+    previous = context.user_data.pop('menu_msg', None)
+    if previous is not None:
+        try:
+            await previous.edit_reply_markup(reply_markup=None)
+        except Exception as e:
+            log.debug("Could not retire the previous staged menu: %s", e)
+
+    context.user_data['menu_msg'] = await msg.reply_text(
+        f"{match['home_team']} vs {match['away_team']} — "
+        f"{event_photos.EVENT_LABELS[event_key]}.\n"
+        f"Anything else for this match?",
+        reply_markup=InlineKeyboardMarkup(rows),
+    )
+    return E_MORE
+
+
+async def event_more_chosen(update: Update,
+                            context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    if query.data in ("cancel", "ev:more:done"):
+        await query.edit_message_text("Done. /staged lists everything armed.")
+        return ConversationHandler.END
+
+    match = context.user_data.get('match')
+    if match is None:
+        await query.edit_message_text("That expired — /event to try again.")
+        return ConversationHandler.END
+
+    # This menu is about to become the next question, so it is no longer a
+    # menu to retire.
+    context.user_data.pop('menu_msg', None)
+
+    # Everything about the picture just staged goes; everything above the step
+    # being returned to stays. `pending` is deliberately NOT cleared here: at
+    # this point it can only be a photo sent *at* the menu, meant for the
+    # player about to be chosen — _player_settled pops the one it consumes.
+    for key in ('player', 'player_id', 'awaiting_player'):
+        context.user_data.pop(key, None)
+
+    # A squad miss is cached for the whole conversation, and this conversation
+    # now outlives the team news it was told didn't exist. Dropping the cached
+    # None makes the next step look again; a real squad is left alone.
+    if context.user_data.get('squad', False) is None:
+        context.user_data.pop('squad', None)
+        context.user_data.pop('squad_ids', None)
+
+    choice = query.data.split(':', 2)[2]
+
+    if choice == 'event':
+        context.user_data.pop('event_key', None)
+        await query.edit_message_text(
+            f"{match['home_team']} vs {match['away_team']}\n"
+            f"What has to happen for this picture to post?",
+            reply_markup=_event_keyboard(),
+        )
+        return E_EVENT
+
+    side = context.user_data.get('side')
+
+    if choice == 'team':
+        other = {'home': 'away', 'away': 'home'}.get(side or '')
+        if other:
+            return await _ask_player_list(query.message, context, other, query=query)
+        # No side was ever chosen — the name was typed. Ask the team question
+        # properly rather than guessing which squad was meant.
+        await query.edit_message_text("Which team?")
+        return await _ask_squad_side(query.message, context)
+
+    # 'player' — the same squad again.
+    if side:
+        return await _ask_player_list(query.message, context, side, query=query)
+    return await _ask_typed_player(query.message, context)
 
 
 async def photo_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -2754,6 +2946,11 @@ def main() -> None:
             E_TYPE_PLAYER: [MessageHandler(MANUAL_TEXT_FILTER, event_player_typed),
                             MessageHandler(PHOTO_ENTRY_FILTER, event_photo_early)],
             E_PHOTO:  [MessageHandler(PHOTO_ENTRY_FILTER, event_photo_received)],
+            # A photo sent at the menu is held, not dropped — the next player
+            # picked settles it, exactly as it does at the player steps.
+            E_MORE:   [CallbackQueryHandler(event_more_chosen,
+                                            pattern=r'^(ev:more:|cancel$)'),
+                       MessageHandler(PHOTO_ENTRY_FILTER, event_photo_early)],
         },
         fallbacks=common_fallbacks + [
             CommandHandler('event', event_start),

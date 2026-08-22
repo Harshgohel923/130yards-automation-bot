@@ -1194,7 +1194,39 @@ running the bot is already up, so this only bites well before kickoff.
 ```
 
 The reply confirms with the `public_id` and the URL, so you can see exactly
-what was stored. Repeat from `/event` for each one.
+what was stored.
+
+**Then it asks what's next, instead of ending.** Staging is rarely one picture,
+and the match, the event and the squad behind it are the same for every player
+in the set — so the menu after each upload goes back to a *step*, not to the
+start:
+
+```
+✅ Argentina vs Brazil — ⚽ Goal
+   Anything else for this match?
+
+   ➕ Another Argentina player     the same squad again  → name → photo
+   🔁 Brazil instead               the other squad, same event
+   🎯 Different event              back to the event keyboard, same match
+   ✅ Done
+```
+
+Three goal photos for one side is one `/event` and three names, rather than
+three runs through the whole thing. The **match is the one thing never
+re-asked** — `/event` is still how you change that.
+
+A photo sent while the menu is on screen is held, not dropped: the next player
+you pick settles it, the same way it works at the player steps.
+
+If the squad wasn't published when you staged — so you typed the name — there
+is no list to reopen, and the menu offers the team question instead. Team news
+that arrives *during* the session is picked up: the menu looks again rather
+than holding onto the answer it got before kickoff.
+
+Picking the same player and the same event twice replaces the first picture
+rather than adding a second — the `public_id` is `(match, event, player)`, so
+there is only ever one. The bot says so when it happens, which matters now that
+the same list is one tap away.
 
 **4. Nothing else.** No flag in `matches.json`, no restart, no push. The
 uploading *is* the opt-in, and the worker picks it up on its own.
