@@ -33,7 +33,12 @@ Europe's top-5 leagues, the UEFA Champions League, and pre-season friendlies.
 9. Give several fixtures the same `carousel_group` id and they post as **one
    carousel** instead of one post each — one scorecard per match, published by
    the dispatcher once the last of them has finished.
-10. Any failure anywhere sends you a descriptive Telegram alert.
+10. `/event` in the bot stages a photo against a player's moment — "Messi,
+    goal" — and it posts on its own, exactly as you sent it, if that moment
+    happens. If it doesn't, nothing is posted and the picture is deleted when
+    the match ends. `/staged` lists what's armed and takes one back down. See
+    *In-match event photos*.
+11. Any failure anywhere sends you a descriptive Telegram alert.
 
 ---
 
@@ -94,6 +99,11 @@ Each worker thread handles one match end-to-end:
   worker starts it watches for the published line-ups and posts them as a
   two-slide carousel, then leaves them alone. It gives up at kickoff + 5 min
   with a 🙋 alert — see *The starting XI post* below.
+- **Staged photo names get pinned** once both team sheets are published: every
+  picture staged under a typed name is matched against the squads and either
+  pinned to the feed's player id silently or asked about with buttons — see
+  *In-match event photos* below. Runs before kickoff, because that is the last
+  moment a mis-typed name can still be fixed by a person.
 - **Photo reminders** at 35', 80' and 110' — see *Reminders* below.
 - **Early posting**: posts the HT card at scraper minute 45 and the FT card
   at minute 90, without waiting for the official whistle. If the score
@@ -231,7 +241,8 @@ fixture list rather than at full time.
 | `matches.json` | The fixture registry — the **single source of truth** for team names, competition, and kickoff. Hand-edited, then validated. Finished fixtures are pruned automatically — see *Registry cleanup*. |
 | `football_scraper_dom.py` | Scrapes allfootballapp's **mobile** match pages: match phase, teams, scores (HT/FT/pens), event timeline (goals, assists, cards, subs), statistics, formations. **The single source of truth** — status, live data and competition name all come from here. Only the `m.` host carries the data blob; `www.` returns nothing. |
 | `allfootball_desktop.py` | **Secondary, strictly additive.** Reads the desktop match page for two things mobile lacks: `minute_extra` (stoppage-time offset — mobile reports both a 90th-minute and a 90+3 booking as `90'`) and the `tendencies` momentum series, archived with the match data. Its `format_minute()` is what both renderers use to draw scorer minutes, so a stoppage-time goal reads `90+3'` instead of `90'`; events without an offset are returned unchanged, so it is safe to call unconditionally. Best-effort throughout: every failure path leaves the match data untouched, so it can never affect posting. Fetched only once a post is in prospect (HT/FT/ET/AP, or minute ≥ 43), to avoid doubling request volume against the same site. |
-| `telegram_bot.py` | Photo intake: you send a match photo via Telegram, it lands in Cloudinary keyed by match id, and the pipeline switches to the photo-overlay card style. Also hosts `/card` — see *Manual match cards*. |
+| `telegram_bot.py` | Photo intake: you send a match photo via Telegram, it lands in Cloudinary keyed by match id, and the pipeline switches to the photo-overlay card style. Also hosts `/event`, which stages a photo against one player's moment (see *In-match event photos*), and `/card` (see *Manual match cards*) — three conversations with disjoint state ranges, so a stray state value can never be read as another flow's. |
+| `event_photos.py` | The vocabulary shared by the bot, the worker and the caption writer for staged event photos: the Cloudinary key (`event_photos/<match_id>_<KEY>_<player-slug>`), the event list the bot offers, and the pure matcher that decides which staged pictures the current timeline has fired. No I/O beyond the Cloudinary listing and deletion. |
 | `manual_match.py` | Turns typed-in details into the same `scraper_data` dict the scraper returns, so a hand-entered match renders and captions through the ordinary pipeline. Parsers only — no I/O. |
 | `card_batch.py` | The pile of hand-built cards waiting to go out as one post, stored on Cloudinary under `manual_cards/<telegram user id>/` so it outlives the bot process. Same idea as `carousel.py`, minus the deadline and the POSTED marker — this one is told when it's complete. |
 
@@ -244,7 +255,7 @@ fixture list rather than at full time.
 | `stats_card.py` | The FT statistics page — slide two of a `post_ft_stats` post. Same template as the scorecard (`scorecard.load_template`, seeded by `match_id`, so both slides share a background) but blurred and veiled, since the page is dense with small marks. Header is the **momentum chart**, not the score: slide one already carries that. Body is a priority-ordered stat list as team-coloured split bars. |
 | `lineup_card.py` | The pre-match starting XI page — one per team, posted as a two-slide carousel before kickoff. Draws the scraper's position grid as a pitch in perspective, each player a shirt in the team's own colours, with the bench, referee and conditions down the left. Falls back to a listed team sheet when the feed publishes names without positions. |
 | `carousel.py` | Carousel groups: the Cloudinary manifest store, the dispatcher nudge, and `publish_group`. See *Carousel groups* above. |
-| `caption.py` | Instagram caption via Gemini (2.5-flash → 2.0-flash → plain fallback), fed the score line, events, and the optional hand-written `records` from `matches.json`. The hashtag line comes from `hashtags.py`, not the model. |
+| `caption.py` | Instagram caption via Gemini (2.5-flash → 2.0-flash → plain fallback), fed the score line, events, and the optional hand-written `records` from `matches.json`. The hashtag line comes from `hashtags.py`, not the model. Also writes the caption for a staged event photo, which differs in that the match is still being played and the picture carries no text of its own. |
 | `hashtags.py` | The five hashtags, built in code: competition, home team, away team, then each side's nickname. Names resolve through `logo_fetch`'s canonical slugs, so any spelling yields the same tags. |
 | `pick_coords.py` | Interactive helper to click out coordinate boxes on a template image. |
 
@@ -698,16 +709,23 @@ rendered. The Markdown in git is the permanent copy.
 
 ## The Telegram bot, step by step
 
-`telegram_bot.py` runs three flows. Two attach a photo to a fixture the scraper
-is already covering; the third builds a whole match from nothing. This section
-is the exhaustive reference — every prompt, everything each step accepts, what
-it does when it can't read you, and where it goes next. The *why* behind the
-manual flow is in [Manual match cards](#manual-match-cards) below.
+`telegram_bot.py` runs four flows in three conversations, plus two commands
+that belong to no conversation at all — `/batch` and `/staged`, each a list
+with buttons on it. Two of the flows attach a photo to a fixture the scraper is
+already covering, one stages a photo against a player's moment in it, and the
+last builds a whole match from nothing. This
+section is the exhaustive reference — every prompt, everything each step
+accepts, what it does when it can't read you, and where it goes next. The *why*
+behind the manual flow is in [Manual match cards](#manual-match-cards) below,
+and behind `/event` in
+[In-match event photos](#in-match-event-photos).
 
 ### What it accepts at all
 
-Outside `/card`, the vocabulary is fixed and free text has no meaning anywhere:
-photos, the commands, and the buttons that mirror them. Anything else gets the
+The vocabulary is fixed and free text has no meaning except where a step asks
+for it — `/card` throughout, and the player's name in `/event` when no squad
+can be listed. Everywhere else it is photos, the commands, and the buttons that
+mirror them. Anything else gets the
 help text back rather than being parsed or ignored — a bot that stays silent is
 indistinguishable from a bot that is down.
 
@@ -722,22 +740,46 @@ invalid one is rejected with a reason, and anything else re-asks the step.
 
 | | Published to Telegram's ☰ menu | Button |
 |---|---|---|
-| `/start`, `/newphoto` | Pick a match and upload a photo | 📸 New photo |
+| `/start`, `/newphoto` | Send the background photo for a half-time or full-time card | 📸 Scorecard photo |
+| `/event` | Stage a photo for a player's moment in a match | 🎯 Event photo |
+| `/staged` | Photos armed for a moment — tap to take one back | — |
 | `/card` | Build a match card from details you type in | 🆕 Manual card |
 | `/batch` | Cards waiting to be posted together | — |
 | `/cancel` | Abandon whatever is in progress | 🚫 Cancel |
 | `/help` | What this bot accepts | ❓ Help |
 
+### Which photo is which
+
+Two of the flows take a photo and the buttons sit next to each other, so this
+is the only thing to decide before starting either:
+
+| | 📸 Scorecard photo (`/start`) | 🎯 Event photo (`/event`) |
+|---|---|---|
+| **What it becomes** | the background a card is drawn on | the post itself |
+| **Drawn on it** | score, crests, scorers, competition logo | nothing — posted exactly as sent |
+| **Posts when** | half time / full time, with the card | the moment happens, on its own |
+| **If you don't send one** | the card posts on the standard template | nothing is posted, and nothing is missing |
+| **Keyed by** | match + HT/FT | match + event + player |
+| **How many per match** | one per moment, replaced by re-sending | as many as you stage — each is its own post |
+| **Caption** | the card's own HT/FT caption | its own, written from the moment |
+| **Kept afterwards** | yes | deleted when the worker finishes |
+
+A photo sent with no command takes the first column — the bot says so in its
+reply, so a wrong guess is visible before you answer anything.
+
 `TELEGRAM_ALLOWED_USER_IDS` gates every entry point. Unset means anyone who
 finds the bot can use it, which for a bot that overwrites match photos and
 posts to Instagram is worth not doing.
 
-**In every state**, `/cancel`, `/help`, `/batch` and `/card` keep working —
-they are registered as fallbacks on both conversations, so a button tap mid-flow
-does what it says instead of being swallowed as an answer. `/help` and `/batch`
+**In every state**, `/cancel`, `/help` and `/batch` keep working — they are
+registered as fallbacks on all three conversations, so a button tap mid-flow
+does what it says instead of being swallowed as an answer. `/card` and `/event`
+reach across from anywhere for a different reason: their conversations are
+registered ahead of the scorecard one, so their entry points see the command
+first. `/help` and `/batch`
 answer *without* disturbing the state you were in.
 
-### Flow A — photo for a scraped match
+### Flow A — 📸 Scorecard photo (`/start`)
 
 Renders that match's next card in the photo-overlay style instead of on the
 template. The photo is stored as `match_photos/<match_id>_<HT|FT>` with
@@ -771,7 +813,57 @@ than asking which match it is would be dropping it. The same fallback catches a
 photo that arrives in step 3 after the state was lost: it re-asks rather than
 discarding.
 
-### Flow C — `/card`, a match typed in
+### Flow C — 🎯 Event photo (`/event`)
+
+Its own conversation, entered with `/event` or 🎯 Event photo. It never touches
+the scorecard flow: that one answers "what goes under the half-time card", this
+one answers "what goes up on its own if Messi scores". Folding seven event
+buttons into the HT/FT step would have made the everyday case read the rare
+one's options every time.
+
+The picture is stored as `event_photos/<match_id>_<KEY>_<player-slug>`. The
+extra question versus Flow A is *who*, and it isn't optional — that is what
+names the file.
+
+| Step | Prompt | Accepts | Otherwise | Next |
+|---|---|---|---|---|
+| 1 | "Which match is the picture for?" — one inline button per fixture in `matches.json`, plus Cancel | a tap | an empty registry ends the flow with "No matches found in matches.json." | 2 |
+| 2 | "What has to happen for this picture to post?" — ⚽ Goal, 🅿️ Penalty goal, 🥅 Own goal, 🅰️ Assist, ⚽⚽ Brace, ⚽⚽⚽ Hat-trick, 🟡 Yellow card, 🔴 Red card, ⬆️ Subbed on, ⬇️ Subbed off, plus Cancel | a tap | a match id that vanished from the registry mid-flow ends with "Match not found" | 3 |
+| 3 | "Which team is the player in?" — one button per side, plus ✏️ Type the name instead / Cancel | a tap | no team news published yet ⇒ says so and goes straight to 4b | 4a |
+| 4a | "&lt;Team&gt; — who is the picture of?" — the starting XI then the bench, two names to a row, plus ✏️ Type the name instead / Cancel | a tap | a squad that expired under a restart falls through to 4b | 5 |
+| 4b | "Type the player's name…" | typed text | text with no letters or digits in it is rejected and the step repeats | 5 |
+| 5 | "Now send the photo." — with a reminder that it posts exactly as sent | a photo or an image document | a non-image document is told so and the step repeats | upload |
+
+A goal's *type* is its own button at step 2 rather than a follow-up question,
+because a penalty and an open-play goal are different moments wanting different
+pictures.
+
+The squad list is fetched from the scraper on demand and cached for the
+conversation. Tapping a name is strictly better than typing one, and the two do
+**not** end up in the same place: a tapped name comes with the feed's own
+numeric id for that person, which is written onto the picture as Cloudinary
+context metadata (`player_id`, `player`) and is what the worker matches on
+afterwards. A typed name carries no id and is matched on spelling until
+something pins one — see
+[Player ids, and why names are only a fallback](#player-ids-and-why-names-are-only-a-fallback).
+
+The feed publishes team news about an hour before kickoff, so a picture staged
+before that has nothing to tap. That is what the typed fallback is for, and it
+is not a dead end: the worker asks about it the moment the sheets land.
+
+Steps 3–4 also accept a photo sent early: it is held rather than dropped, and
+uploaded the moment the player is settled. There is no equivalent of Flow B
+here — three questions have to be answered before a picture can be filed, and
+guessing any of them would stage it against the wrong moment, so a photo that
+arrives with no conversation goes to Flow B and becomes a scorecard photo.
+
+At the upload, on top of everything Flow A does: the picture is centre-cropped
+if its shape falls outside 3:4–1.91:1, and the reply says so. An event photo is
+posted as-is, with no card drawn on it, so its own shape is what Instagram is
+asked to accept — and a portrait phone photo at 9:16 would simply be refused. A
+picture already inside the band keeps every pixel it arrived with.
+
+### Flow D — 🆕 Manual card (`/card`)
 
 Ten steps. Every field is parsed the moment it arrives, so a bad value is
 caught on the message that contained it rather than at render time; a rejected
@@ -1059,6 +1151,569 @@ mid-scoreline. See [Waking the bot](#waking-the-bot).
 
 ---
 
+## In-match event photos
+
+A picture, uploaded before the match, that posts on its own if a particular
+player does a particular thing. Nothing about it is automatic in the sense of
+guessing: it is posted because somebody decided beforehand that it should be,
+and staging it *is* the approval.
+
+```
+before kickoff   /event → match → ⚽ Goal → team → Messi → photo
+                 → event_photos/54533571_GOAL_messi
+
+23'              Messi scores. The next poll sees it in the timeline,
+                 finds the picture, writes a caption, posts it.
+
+no goal          nothing happens, ever. The picture is deleted when
+                 the worker finishes.
+```
+
+### Using it
+
+**1. The fixture has to be in `matches.json` on `master`.** The bot builds its
+match list from its own checkout of that file — there is no free-text match
+entry in this flow, by design. Push a fixture while the bot is already running
+and it won't appear until the bot restarts.
+
+**2. Wake the bot if it's asleep.** It only exists while an Actions job holds
+it. Send it anything; the dispatcher's next 15-minute tick peeks at Telegram's
+queue, sees a message waiting, and starts it (`dispatcher.wake_telegram_bot_if_messaged`).
+Worst case you wait a quarter of an hour for the first reply. While a match is
+running the bot is already up, so this only bites well before kickoff.
+
+**3. Stage the photo.**
+
+```
+/event                        or tap 🎯 Event photo
+  → Argentina vs Brazil       one button per fixture
+  → ⚽ Goal                    what has to happen
+  → Argentina                 narrows the name list; not part of the key
+  → Messi                     tapped from the XI, or typed
+  → send the photo
+```
+
+The reply confirms with the `public_id` and the URL, so you can see exactly
+what was stored. Repeat from `/event` for each one.
+
+**4. Nothing else.** No flag in `matches.json`, no restart, no push. The
+uploading *is* the opt-in, and the worker picks it up on its own.
+
+**5. `/staged` if you want to check, or change your mind.** See below.
+
+### `/staged` — what's armed, and the only safe way to take it back
+
+A staged picture is invisible by design. It lives under a Cloudinary name
+nobody sees, does nothing for hours, and then posts on its own, in public. So
+there has to be an answer to "what did I arm?" that isn't the Cloudinary
+console — and a way to disarm one that isn't deleting an object there by hand,
+which is the same operation with none of the checks and a different match's
+photo one keystroke away.
+
+```
+/staged
+
+🎯 Real Madrid vs Barcelona
+2 photos armed:
+
+• Rodrigo — ⚽ Goal
+• vinicius — 🔴 Red card   (by name)
+
+Tap one to take it back down.
+
+[ ❌ Rodrigo — ⚽ Goal ]
+[ ❌ vinicius — 🔴 Red card ]
+```
+
+One message per fixture that has something armed; a fixture with nothing is not
+mentioned. `(by name)` marks a picture with no `player_id` on it yet — it still
+fires, but only if the scoreboard spells the name that way.
+
+Details that are decisions rather than defaults:
+
+- **It is not a conversation.** It is a list and a tap, and it has to work
+  while `/card` or `/event` is half-finished — which is exactly when you notice
+  something was armed by mistake. The scorecard flow's callbacks were given
+  patterns so a `❌` tap falls through to its own handler instead of being read
+  as an answer to the question on screen.
+- **The button carries a digest, not a position.** Same reason as the
+  clarification buttons, and the same mechanism: the tap is resolved against a
+  fresh listing. A stale listing's button removes the picture it was drawn for
+  or nothing at all — never whatever has since moved into that slot.
+- **One Admin API call**, not one per fixture. `staged_all()` lists the folder
+  once and sorts it by the `match_id` in each public_id; ten fixtures in the
+  registry would otherwise be ten listings to draw one message.
+- **Every failure leaves everything armed.** A Cloudinary outage on the listing
+  says "nothing has changed"; one on the delete says the photo is still staged
+  and will still post.
+- **One tap, no confirmation.** The button names exactly what it removes, and
+  re-staging is `/event` again.
+
+### When you can do it
+
+| | |
+|---|---|
+| **Earliest** | as soon as the fixture is in `matches.json` and the bot is awake. Days ahead is fine — the photo just sits in Cloudinary. |
+| **Squad buttons appear** | ~1 hour before kickoff, when the feed publishes team news. Before that the bot asks you to type the name. |
+| **Worker starts looking** | 30 minutes before kickoff (75 with `post_lineups`) — `dispatcher.PRE_MATCH_WINDOW_SECS`. |
+| **Still works during the match** | yes. The timeline is re-read whole every poll, so a photo staged *after* the goal still posts — within a poll or two of the listing cache refreshing, so about three minutes. |
+| **Deadline** | full time. The worker deletes everything staged for the match as it exits, so anything sent after that is gone with no post. |
+
+Typing is not a degraded path — `messi`, `Messi` and `MESSI` all land on
+`…_GOAL_messi` — but it is the weaker one, and only because of *which* name you
+type. Type it once team news is out and the bot checks it against the squad and
+offers corrections; type it before, and there is nothing to check it against.
+If you stage early, prefer the name as the scoreboard would print it — and
+don't worry too much, because the worker comes back to you about it the moment
+the team sheets are published. See *Names, ids, and the four places they can
+disagree*.
+
+### The 15-minute tick is not what checks for the photo
+
+Worth separating, because the two clocks are unrelated:
+
+| | Dispatcher | Match worker |
+|---|---|---|
+| Runs | every 15 min, always | only while a match is live |
+| Does | spawn workers, wake the bot, publish carousels, prune the registry | poll the scraper, post cards, **check for staged photos** |
+| Looks for event photos | never | every poll, listing cached 120s |
+
+The dispatcher never touches event photos. The check lives entirely inside the
+match worker's once-a-minute poll loop.
+
+### Why the player is part of the key
+
+Because a match has several of each moment and they are not interchangeable.
+Messi scoring against Brazil and Álvarez scoring against Brazil are two moments
+wanting two pictures, and Neymar's red card in the same game is a third. Keying
+on the fixture and the event alone would make them one, and the wrong picture
+would go up for two of them.
+
+So the Cloudinary name carries all three: `event_photos/<match_id>_<KEY>_<slug>`.
+The bot writes it, the worker recomputes it from the scrape, and neither passes
+anything to the other — which matters, because the bot restarts constantly and
+the worker is a different process on a different Actions run entirely. A name
+both can derive is worth more than any state either could hold.
+
+`<slug>` is the player's name with the differences folded out — accents, case,
+punctuation, spacing — so `Gerónimo Rulli` typed as `geronimo rulli` still finds
+the picture. Slugging handles the mechanical differences; the ones that are
+about the name itself (`Rodri` vs `Rodrigo`) are handled separately — see
+*Names, ids, and the four places they can disagree* below.
+
+The slug is what the picture is *stored* under. It is no longer what it is
+*found* by wherever an id is available — see the next section.
+
+### Player ids, and why names are only a fallback
+
+The feed gives every person in a match a numeric id — `person_id` on a team
+sheet, `player_id` on a timeline entry — and it is the same id in both places.
+That is the feed's own key for a human being, and it is exact: it cannot be
+confused by two players sharing a surname, and it does not move when the feed
+changes its mind about how to spell someone halfway through a match.
+
+So wherever an id is available, that is what a staged picture is matched on.
+Names are the fallback for a picture staged before any id was knowable, and
+everything tolerant and fallible about matching lives on that path alone.
+
+**Where the id comes from.** The public_id can't carry it — it is fixed at
+upload and the id often isn't known yet — so it rides on the picture as
+Cloudinary **context metadata**, which the same Admin API listing already
+returns. Two things write it:
+
+| | |
+|---|---|
+| Tapping a name in `/event` | the squad list carries `person_id`; the upload writes `{player_id, player}` |
+| The worker, when the sheets drop | `set_player_id()` adds it to a picture already uploaded — see the next section |
+
+**Where it is read.** `_hits_for()` is the whole of the matching rule:
+
+```python
+if entry['player_id']:                       # exact — the feed's own key
+    return [m for m in same_event if m['player_id'] == entry['player_id']]
+return [m for m in same_event                # tolerant — spelling, and hope
+        if names_match(entry['slug'], m['slug'])]
+```
+
+The tallies behind ⚽⚽ Brace and ⚽⚽⚽ Hat-trick key on the id too, so two
+players with the same short name can't pool their goals into one hat-trick.
+
+**Where it matters most.** A posted picture records the id it fired on. That is
+what lets the liveness check that guards retraction read the *timeline alone* —
+see [When VAR takes the goal away](#when-var-takes-the-goal-away), where
+depending on anything else once cost every correct post of a match.
+
+`/staged` shows which pictures have an id and which are still going on
+spelling; the ones without are marked `(by name)`.
+
+### Names, ids, and the four places they can disagree
+
+One end of this is a person typing a name; the other is a feed printing a team
+sheet. They disagree constantly — `Messi` vs `Lionel Messi`, `felix` vs `Joao
+Felix`, `Rodri` vs `Rodrigo` — and an unreconciled disagreement is a photo that
+never posts and never says why. Four defences, in the order they get a chance.
+The first two end the argument by replacing the name with an id; the last two
+are what is left when neither could.
+
+**1. At staging time — `event_photos.suggest()`, in the bot.** A typed name is
+checked against both squads before it is believed. Exact match, and it is
+stored under the feed's spelling. No exact match, and you get the near ones as
+buttons:
+
+```
+you type:  Rodri
+bot:       I can't see "Rodri" in either squad. Did you mean one of these?
+           [ Rodrigo ]
+           [ Neither — stage "Rodri" as typed ]
+```
+
+Deliberately loose — prefixes, typos, initials all suggest — because a wrong
+guess costs one tap. This is the only place `Rodri` → `Rodrigo` can be settled,
+and it is why picking from the list is worth waiting for team news. Nothing is
+*blocked*: a name the squad doesn't know still stages, with a warning. A squad
+list can be incomplete, and refusing an upload over a guess would be worse than
+the silence it is preventing.
+
+**2. When the team sheets drop — `event_photos.clarify()`, in the worker.**
+The moment both XIs and both benches are published, every name in the match is
+knowable and there is still an hour before kickoff. That is the only point
+where both of those are true, so it is where every picture still going on
+spelling gets settled — silently where it can be, with a question where it
+can't.
+
+| What the sheets say | What happens |
+|---|---|
+| exactly one player spells it that way | pinned to their id. Nothing is sent — it was right all along |
+| no exact spelling, and exactly one player `names_match()` would have fired for anyway (`felix` ⊂ `Joao Felix`) | pinned. The same decision the worker would have made unattended, made once, against the whole squad instead of a goal at a time |
+| several it could be, or none that matches but some that resemble it | asked, with buttons |
+| nothing in either squad that resembles it at all | said out loud, with no buttons — there is nothing to offer |
+
+```
+🙋 Real Madrid vs Barcelona: the team sheets are out and I can't tell who
+   the photo you staged as "rodri" (⚽ Goal) is of.
+
+   [ Rodrigo ]
+   [ Leave it as "rodri" ]
+```
+
+Both benches have to be published, not just the XIs. The feed fills the sheet
+in stages, and asking before the substitutes are listed would report half the
+squad as missing — a question that answers itself, wrongly.
+
+The tap is handled by the bot, in a different process on a different machine
+that shares nothing with the worker. So the button carries only what both sides
+can compute from the picture itself: an 8-character digest of its public_id
+(`event_photos.digest` — a public_id plus a player id does not reliably fit
+Telegram's 64-byte `callback_data` cap) and the id of the player being offered.
+The bot resolves that digest against a *fresh* listing, which is why the button
+still works after a restart and can never land on whatever has since taken that
+position in a list.
+
+*Leave it as "rodri"* is recorded on the picture itself (`clarified`), not
+remembered in the process. A deliberate refusal looks exactly like an
+unanswered question, and without the marker the worker would ask again every
+hour for the rest of the match.
+
+The pass runs on every poll once the sheets are out, not once at the top, so a
+picture staged twenty minutes before kickoff gets the same treatment as one
+staged yesterday. Repeating it is cheap: the staged listing is already cached,
+a pinned picture drops out of the answer, and the questions carry an hour's
+cooldown.
+
+**3. At fire time — `event_photos.names_match()`, in the worker.** Unattended,
+against a live match, so strict: exact, or one name's words wholly inside the
+other's.
+
+| Staged | Feed says | Fires | |
+|---|---|---|---|
+| `messi` | Lionel Messi | ✅ | a shorter form of the same name |
+| `felix` | Joao Felix | ✅ | |
+| `joao-felix` | Felix | ✅ | symmetric |
+| `rodri` | Rodrigo | ❌ | a different word, not a shorter name |
+| `n-gonzalez` | Nico Gonzalez | ❌ | an initial is not a given name |
+
+`rodri` → `rodrigo` is refused on purpose. Loosening to prefixes would make it
+match Rodrigo *and* Rodríguez, and the wrong player's photo on a public page
+has no undo — a miss is recoverable, a false positive isn't.
+
+This whole table only applies to a picture with no `player_id` on it. One that
+has been pinned — tapped from the squad at staging time, or settled by defence
+2 — never reaches `names_match()` at all.
+
+**Ties are reported, never guessed.** A staged `silva` when both Silvas were
+booked returns a `conflict` instead of a match: nothing posts, and an alert
+names both.
+
+**4. At full time — `event_photos.unfired()`.** Whatever slipped through both,
+said out loud while the timeline is still in hand:
+
+```
+🙋 Man City vs Chelsea: 1 staged photo never posted because the name
+   didn't match what the scoreboard called the player.
+
+   • you staged "rodri" for ⚽ Goal — the scoreboard says Rodrigo
+
+   The moment did happen — the spelling is what missed.
+```
+
+Only near misses are reported. A photo staged for a goal that never came is the
+feature working as intended, and alerting on it would train you to ignore the
+ones that matter.
+
+### What fires it
+
+Every poll, the whole timeline is re-read and checked against what is staged.
+Not diffed against the last poll — re-read — so a moment the feed publishes
+late, or drops for a poll and republishes, is still caught. What stops a second
+post is the posted key, not having seen the event before.
+
+| Button | Fires on |
+|---|---|
+| ⚽ Goal | `goal` |
+| 🅿️ Penalty goal | `penalty_goal` |
+| 🥅 Own goal | `own_goal` |
+| 🅰️ Assist | the `assister` on a `goal` or `penalty_goal` entry — see below |
+| ⚽⚽ Brace | *derived* — the player's 2nd goal of the match |
+| ⚽⚽⚽ Hat-trick | *derived* — the player's 3rd |
+| 🟡 Yellow card | `yellow_card` |
+| 🔴 Red card | `red_card` |
+| ⬆️ Subbed on | `substitution_in`, and the "on" half of a paired `substitution` |
+| ⬇️ Subbed off | `substitution_out`, and the "off" half of a paired `substitution` |
+
+A goal's *type* is its own button rather than a follow-up question, because a
+penalty and an open-play goal are different moments deserving different
+pictures. A picture staged for `RED` does not fire when that player scores.
+
+**🅰️ Assist is read off the goal entry.** There is no assist entry in the
+ordinary case — the scraper folds the assist into the goal it produced, as
+`assister` / `assister_id` — so one timeline entry names two people and
+`event_keys_for()` returns both, exactly as it does for a paired substitution.
+(A bare `assist` entry does exist, for one the scraper could not pair with a
+goal in the same minute; that goes through the normal path.)
+
+Three consequences worth knowing:
+
+- **Own goals never carry one.** Nobody is credited with an assist for an own
+  goal, and the scraper pairs goals with assists by their position within the
+  minute rather than by asserting a link — so an own goal sitting next to
+  somebody else's assist would credit the wrong player on a public page. A
+  penalty *can* carry one, since the feed naming a person there is a claim
+  worth believing.
+- **The scorer's photo and the assister's photo both post.** One entry, two
+  people, two moments, two separate Instagram posts. That is the intent, but
+  it means one goal can spend two of the day's publishing budget — see
+  *Instagram's publishing budget*.
+- **Scoring is not assisting.** A player who assists in the 23rd and scores in
+  the 41st has two moments. `⚽ Goal` fires on the second, `🅰️ Assist` on the
+  first, and neither picture goes anywhere near the other.
+
+### One moment, one post
+
+Enforced in both directions, inside `pending()` rather than left to the
+caller.
+
+**A picture never posts twice.** It matches the *earliest* moment it fits and
+yields one entry, so a player who scores twice has his goal picture go up on
+the first goal and the second is not a fresh occasion for it. Same for a
+second booking — two yellows is a sending-off, not two chances at the same
+photo. Three guards stack behind that, for the same reason the scorecards
+have them: the returned entry's `posted_key`, `state.json`'s
+`event_photos_posted` (survives a restart), and `bot.db` (within a run).
+
+**A moment never carries two posts.** This one is only reachable because
+names are matched tolerantly: tapping *Joao Felix* from the squad on one pass
+and typing *felix* on another leaves two files for one player, and without a
+guard both would post for the same goal. `_mark_duplicate_claims()` groups
+resolved pictures by the moment they landed on; the exactly-spelled one wins
+when there is exactly one — it came off the squad list, so it is the one that
+was meant — and the loser is marked `duplicate` and reported instead of
+posted. With nothing to choose between them, neither posts.
+
+The guard is about one *moment*, not one player: ⚽ Goal, ⚽⚽ Brace and
+⚽⚽⚽ Hat-trick for the same man are three moments and all three post.
+
+
+### Braces and hat-tricks
+
+Nothing in the feed says "hat-trick". It says goal, goal, goal — and the third
+one *is* the moment. So these two are **derived** rather than read off a
+timeline entry: `_timeline_moments()` walks the timeline in order keeping a
+per-player tally and emits the milestone alongside the goal that completed it.
+
+```
+12'  goal          Ronaldo   ->  GOAL
+48'  penalty_goal  Ronaldo   ->  PEN   +  BRACE       (2 goals)
+55'  own_goal      Ronaldo   ->  OG                   <- does not count
+77'  goal          Ronaldo   ->  GOAL  +  HAT_TRICK   (3 goals)
+```
+
+Details that matter:
+
+- **Penalties count, own goals don't** (`MILESTONE_GOAL_TYPES`). Nobody has
+  ever called two tap-ins and an own goal a hat-trick.
+- **The milestone is emitted *alongside* the goal, not instead of it.** Stage
+  ⚽ Goal, ⚽⚽ Brace and ⚽⚽⚽ Hat-trick for the same player and all three fire —
+  on his 1st, 2nd and 3rd goals, in that order, as three separate posts.
+- **A 4th goal doesn't fire it again.** The tally passes 3 once.
+- **It fires the moment the third goes in**, not at full time. If he only gets
+  two, the hat-trick photo never posts and is deleted with the rest.
+- The caption is told it is a brace or a hat-trick and given every goal minute,
+  so it leads with the achievement instead of reacting to the last goal as if
+  it were an ordinary one.
+- Staging is identical to any other event — `/event` → match → ⚽⚽⚽ Hat-trick →
+  team → player → photo. Name matching, the ambiguity guard and the full-time
+  report all apply unchanged.
+
+### When VAR takes the goal away
+
+The feed shows a goal, the photo posts, and then the goal is ruled out and
+disappears from the timeline. The post is now on a public page celebrating
+something that didn't happen.
+
+```
+23'  Messi scores                  ->  POSTED, IG ig-1
+24'  gone from the timeline        ->  missing 1/3, waiting
+25'  still gone                    ->  missing 2/3, waiting
+26'  still gone                    ->  RETRACTED: ig-1 deleted
+                                       photo stays on Cloudinary
+70'  Messi scores again, it stands ->  POSTED again, IG ig-2
+FT                                 ->  Cloudinary photo deleted
+```
+
+**Liveness is read from the timeline alone.** `event_photos.live_posted_keys()`
+takes the timeline and the posted records and nothing else — in particular, not
+the staged Cloudinary listing. That separation is the whole reason it exists as
+its own function. An earlier version asked `pending()`, which needs the listing
+as well, so "`pending()` didn't produce it" conflated *the event was withdrawn*
+with *we could not read Cloudinary* — and one blipped listing at full time
+deleted every correct post of the match. Retraction removes something public.
+It may only ever fire on evidence that the event itself is gone.
+
+Two refusals hold that line:
+
+- **An unreadable timeline is not evidence.** `events` has to be a `list`. The
+  feed publishes a sentence there before kickoff and can return one again on a
+  bad scrape, and that must never read as "everything was disallowed".
+- **An empty timeline is not evidence either** — unless something was posted
+  from a timeline that had entries, which is exactly the VAR case where the
+  only goal of the match is struck off. So an empty list still counts a miss,
+  but the confirmation window has to run in full for it.
+
+Matching a posted record back to the timeline uses the `player_id` recorded on
+it when it posted, which is what makes this exact rather than another round of
+spelling comparison.
+
+**The disappearance is confirmed, not believed.** `_early_card_stale` already
+records the house position on this: an event that only vanishes is *usually*
+the scraper dropping it for a poll, and acting on that would delete a correct
+post and then have to put it back. So the absence has to hold for
+`EVENT_PHOTO_VANISHED_POLLS` polls in a row — three, about the length of a
+VAR check. An event that reappears resets the counter and costs nothing.
+
+**The picture stays on Cloudinary.** Only the Instagram post and the record
+of it go. A goal ruled out is no evidence the player won't score one that
+stands, and the photo staged for him has to still be there when he does —
+which is why `unmark_event_posted()` exists: the row comes out of
+`posted_events` so the same picture is free to go up again.
+
+**A flapping feed is eventually left alone.** Posted and withdrawn
+`MAX_EVENT_PHOTO_RETRACTIONS` times and the bot stops answering it, with an
+alert. Putting the same photo up and taking it down all afternoon happens in
+public.
+
+**The final check reports; it does not delete.** `_clear_event_photos()` runs
+one last pass with `final=True` as the worker exits, and anything still missing
+becomes a 🙋 question rather than a deletion:
+
+```
+🙋 Real Madrid vs Barcelona: worth a look — the GOAL messi this post
+   celebrates wasn't in the final timeline.
+
+   https://instagram.com/p/…
+
+   It may have been ruled out late, or the feed may simply have dropped it
+   on the last read. The bot has NOT deleted anything.
+```
+
+This used to delete, and that was wrong twice over. The last scrape is the same
+data the last poll already judged, so treating it as fresh evidence collapsed a
+three-poll window down to a single miss. And at the whistle there are no
+further polls to confirm with, so a delete there acts on one ambiguous reading
+of an irreversible thing. A person can settle in five seconds what no amount of
+polling will.
+
+If the Instagram delete fails during a real retraction, you get the same 🙋
+manual-deletion alert the early scorecards use, with a permalink.
+
+### Where it sits in the poll
+
+Ahead of the card triggers, deliberately. A goal in the 90th minute and the
+final whistle can land in the same poll, and the picture of the moment belongs
+on the page before the full-time card does.
+
+A failed post is not marked as posted, so the next poll tries again — the same
+retry the scorecards get. An alert goes out either way, and a successful one
+sends the usual permalink and music reminder, since Instagram's API cannot
+attach audio to anything the bot publishes.
+
+### Instagram's publishing budget
+
+The account may publish a fixed number of posts per rolling 24 hours, and the
+next one after that is simply refused. Nothing counted them while the posts per
+match were a fixed set — line-ups, half time, full time. Event photos make the
+number unbounded: any player, any of nine moments, as many as somebody staged.
+And they are evaluated *before* the card triggers in the poll loop, so without
+a reservation the thing that runs out of budget is the full-time card — the one
+post that always matters.
+
+So `instagram.publishing_limit()` reads `content_publishing_limit` off the
+Graph API, and `_instagram_budget_allows()` holds `INSTAGRAM_QUOTA_RESERVE = 5`
+back for the cards: enough for a half-time card, a full-time card with its
+stats slide, and slack for a correction repost.
+
+- **An unreadable quota means "allowed".** `None` is "don't know", and every
+  caller treats that as permission. The check exists to protect the cards from
+  event photos, not to add a new way for everything to fail on a Graph blip.
+- **A held-back photo is not marked as posted.** It stays staged, and if room
+  frees up before the whistle it goes out on its own. The alert says so.
+- **Posts are counted down inside the cache window.** The reading is shared by
+  every match thread and refreshed every `QUOTA_CACHE_SECS`; `_note_post_spent()`
+  decrements it locally so several photos going out in one poll can't all see
+  the same stale number and all decide there was room.
+
+### Opting in, and cleaning up
+
+There is no flag in `matches.json` for this. The opt-in is the upload: a match
+nobody staged anything for finds nothing and posts nothing. What that costs is
+one Cloudinary listing every two minutes per live match — a listing, not a
+lookup per event, because a timeline carries thirty-odd entries by full time
+and the per-entry version would be thousands of requests a match to answer a
+question that is almost always "none of them". The answer is cached between
+polls; a Cloudinary failure returns the last known set rather than an empty
+one, since "nothing is staged" would skip a picture sitting right there.
+
+When the worker finishes, everything staged for that match is deleted —
+the pictures that posted (Instagram holds its own copy; Cloudinary was only
+the hand-off) and the ones staged for moments that never came. Best-effort: a
+match that ends during a Cloudinary outage leaves its leftovers behind, keyed
+to a `match_id` that will never be live again.
+
+### Captions
+
+`caption.generate_event_caption` writes them, through the same Gemini models
+and the same hashtag line as everything else. The prompt differs in one way
+that matters: the match is still being played, so the score it is given is the
+score *right now* and it is told repeatedly not to write it as a result. The
+picture carries no text either — unlike a scorecard, which has the score drawn
+on it — so the caption has to say who this is and what they just did.
+
+An 🅰️ Assist moment carries the scorer as well, and the prompt is told the post
+belongs to the player who made the pass: credit the finish, but the headline is
+the creator. A goal moment carries its assister the other way round, as it
+always has.
+
+---
+
 ## Manual match cards
 
 Some fixtures are simply not on allfootball — a friendly, a lower division, an
@@ -1184,9 +1839,29 @@ Emoji convention:
 | **🙋** | The bot can't finish this — a person must | **Yes** |
 | **📸 / 🎵** | A routine reminder — nothing is wrong | Only if you want the photo or the music |
 
-**🙋** is used for exactly one thing today: a superseded post the bot tried and
-failed to delete (see *Deleting a superseded post*). It should now be rare —
-if you are seeing it regularly, the delete API has regressed again.
+**🙋** started as one thing — a superseded post the bot tried and failed to
+delete (see *Deleting a superseded post*) — and is now the mark for anything
+only a person can settle. In full:
+
+| 🙋 says | What it wants from you |
+|---|---|
+| a superseded post the delete API refused | delete it in the app; the permalink is in the message |
+| "who is this photo of?", when the team sheets can't settle a staged name | tap the player, or tap *leave it as typed* |
+| nobody in either squad resembles a staged name | `/staged` removes it, `/event` stages it again — or ignore it if the sheet was just incomplete |
+| a staged name that fits two players who both did the thing | nothing posted, and nothing will. Pick from the squad list next time |
+| two staged pictures claiming one moment | nothing is broken: one posted, the other never will |
+| a photo held back because Instagram's 24-hour budget is nearly spent | nothing, unless you want to free up a post — it stays staged either way |
+| a photo posted and withdrawn twice by a flapping feed | nothing is on the page; it won't try again |
+| a post whose moment wasn't in the final timeline | look at the match. The bot deleted nothing |
+| staged photos that never fired because the name missed | next time, tap the name from the list |
+
+Only the second row is a question. Everything else is told to you because
+silence is the one outcome this feature must not have — a photo that quietly
+never posts and never says why is the failure the whole design is built
+against.
+
+The delete failure should be rare — if you are seeing it regularly, the delete
+API has regressed again.
 
 ### Deleting a superseded post
 
@@ -1367,6 +2042,26 @@ logo is skipped).
   pick the match back up. The crash alert says so, and names what had already
   been posted — a manually re-run worker starts with no memory of the first
   attempt, so anything already on the page would go up again.
+- **Staged event photos share Instagram's publishing budget.** The Graph API
+  allows 25 published posts per account per rolling 24 hours — a match with six
+  pictures staged spends six of them on top of its line-ups, its HT card and
+  its FT card. The last `INSTAGRAM_QUOTA_RESERVE` posts are now held back for
+  the cards, so it is the event photos that get skipped rather than the
+  full-time card, and a skipped one is alerted and stays staged in case room
+  frees up. That protects the post that always matters; it does not create
+  budget. Stage what is worth a post.
+- **A staged picture posts on what the feed reported at the time.** A goal
+  later disallowed by VAR does post — and is then taken down again once the
+  event has been absent from the timeline for three polls, with the picture
+  kept on Cloudinary in case a valid goal follows. So the post is public for
+  a few minutes before it is retracted; that window is the cost of not
+  deleting correct posts over a scraper blip. It is also blind to *which*
+  goal: a player who scores twice has one ⚽ Goal picture and it goes up on
+  the first (⚽⚽ Brace and ⚽⚽⚽ Hat-trick cover the others).
+- **A goal withdrawn right at the whistle is a question, not a takedown.**
+  There are no polls left to confirm with, so the final check alerts and leaves
+  the post up rather than deleting on one ambiguous reading. Deleting it is
+  yours to do, and the alert carries the permalink.
 - **The `bot.db` idempotency guard is per-run, not per-match.** It is gitignored
   and every Actions run checks out fresh, so `posted_events` only ever
   deduplicates within one process. Dispatcher-level dedup is what actually
@@ -1412,6 +2107,44 @@ without secrets.
 Richer registry checks — crest coverage, URL shapes, carousel sizes — stay in
 `validate_matches.py`, which needs Cloudinary credentials and remains a local
 tool. CI only asserts that `matches.json` is structurally sound.
+
+### Rehearsing event photos before trusting them live
+
+The suite covers the decisions. It cannot cover Instagram accepting the
+picture, Cloudinary handing it over, or the two Telegram processes agreeing on
+what a button means. So the first real exercise of this feature should be **one
+match against a throwaway Instagram account**, not the page.
+
+What to swap — nothing else changes:
+
+| | |
+|---|---|
+| `IG_USER_ID`, `IG_ACCESS_TOKEN` in `.env` | the throwaway account's — see *Auth* above for minting them |
+| `TELEGRAM_ALERT_CHAT_ID` | leave it. The alerts are half of what is being tested |
+| Cloudinary | leave it. Staged pictures live under `event_photos/<match_id>_…` and are deleted at full time either way |
+
+Then, with a fixture that kicks off shortly already in `matches.json`:
+
+1. **Before the team sheets are out**, stage three pictures, deliberately
+   spelled three ways: one exactly as the scoreboard will print it, one
+   shortened (`felix` for Joao Felix), and one that is a different word
+   (`rodri` for Rodrigo). Those are the three branches of `clarify()`.
+2. `/staged` — all three listed, all three marked `(by name)`.
+3. **When the sheets land** (~an hour before kickoff), the first two should be
+   pinned silently and the third should arrive as a 🙋 question with buttons.
+   Answer it. `/staged` again: nothing should say `(by name)` any more.
+4. Stage a fourth for a moment that certainly won't happen, then `/staged` → ❌
+   to take it back down. That is the abort path, and it is the one thing with
+   no other way out.
+5. **Let the match run.** Watch for the post itself, its caption, the 🎵 music
+   reminder — and, if anything is disallowed, the retraction sequence in the
+   worker output (`missing 1/3`, `2/3`, then the delete).
+6. **At full time**, check the staged folder is empty and that the 🙋 report
+   named anything that never fired.
+
+`venv/bin/python main.py` runs the worker locally against the same registry, so
+none of this needs a push. Run it somewhere you can read the output: the worker
+prints every decision it makes about a staged picture.
 
 Useful one-offs:
 
