@@ -2,6 +2,8 @@
 
 One file per day, in German local time. Newest first.
 
+- [Sunday, 23 August 2026](2026-08-23.md)
+- [Saturday, 22 August 2026](2026-08-22.md)
 - [Friday, 21 August 2026](2026-08-21.md)
 - [Thursday, 20 August 2026](2026-08-20.md)
 - [Wednesday, 19 August 2026](2026-08-19.md)

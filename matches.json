@@ -1,20 +1,5 @@
 [
   {
-    "match_id": "54329172",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/inter-miami-vs-toronto/54329172",
-    "desktop_url": "https://www.allfootballapp.com/match/54329172",
-    "kickoff_utc": "2026-08-22T23:30:00Z",
-    "kickoff_local": "Sun 23 Aug 2026, 01:30 CEST",
-    "kickoff_ist": "Sun 23 Aug 2026, 05:00 IST",
-    "home_team": "Inter Miami",
-    "away_team": "Toronto FC",
-    "competition": "MLS",
-    "post_ht": false,
-    "post_ft_stats": true,
-    "knockout_match": false,
-    "records": []
-  },
-  {
     "match_id": "54483557",
     "scraper_url": "https://m.allfootballapp.com/match/Main/Brighton-vs-Aston-Villa/54483557",
     "desktop_url": "https://www.allfootballapp.com/match/54483557",
