@@ -1,20 +1,5 @@
 [
   {
-    "match_id": "54566887",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/palmeiras-vs-santos/54566887",
-    "desktop_url": "https://www.allfootballapp.com/match/54566887",
-    "kickoff_utc": "2026-08-27T00:30:00Z",
-    "kickoff_local": "Thu 27 Aug 2026, 02:30 CEST",
-    "kickoff_ist": "Thu 27 Aug 2026, 06:00 IST",
-    "home_team": "Palmeiras",
-    "away_team": "Santos",
-    "competition": "Copa do Brasil",
-    "post_ht": false,
-    "post_ft_stats": true,
-    "knockout_match": true,
-    "records": []
-  },
-  {
     "match_id": "54554381",
     "scraper_url": "https://m.allfootballapp.com/match/Main/Chelsea-vs-Luton-Town/54554381",
     "desktop_url": "https://www.allfootballapp.com/match/54554381",
