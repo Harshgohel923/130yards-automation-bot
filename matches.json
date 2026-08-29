@@ -87,7 +87,7 @@
     "post_ht": true,
     "post_ft_stats": true,
     "knockout_match": false,
-    "post_lineups": false,
+    "post_lineups": true,
     "lineups_first": "home",
     "records": []
   },
