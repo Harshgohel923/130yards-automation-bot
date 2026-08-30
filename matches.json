@@ -1,35 +1,5 @@
 [
   {
-    "match_id": "54493192",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Sevilla-vs-Atletico/54493192",
-    "desktop_url": "https://www.allfootballapp.com/match/54493192",
-    "kickoff_utc": "2026-08-29T19:30:00Z",
-    "kickoff_local": "Sat 29 Aug 2026, 21:30 CEST",
-    "kickoff_ist": "Sun 30 Aug 2026, 01:00 IST",
-    "home_team": "Sevilla",
-    "away_team": "Atlético Madrid",
-    "competition": "La Liga",
-    "post_ht": false,
-    "post_ft_stats": true,
-    "knockout_match": false,
-    "records": []
-  },
-  {
-    "match_id": "54329210",
-    "scraper_url": "https://m.allfootballapp.com/match/Global/Inter-Miami-CF-vs-Montreal-Impact/54329210",
-    "desktop_url": "https://www.allfootballapp.com/match/54329210",
-    "kickoff_utc": "2026-08-29T23:30:00Z",
-    "kickoff_local": "Sun 30 Aug 2026, 01:30 CEST",
-    "kickoff_ist": "Sun 30 Aug 2026, 05:00 IST",
-    "home_team": "Inter Miami",
-    "away_team": "CF Montreal",
-    "competition": "MLS",
-    "post_ht": false,
-    "post_ft_stats": true,
-    "knockout_match": false,
-    "records": []
-  },
-  {
     "match_id": "54483577",
     "scraper_url": "https://m.allfootballapp.com/match/Main/Chelsea-vs-Brighton/54483577",
     "desktop_url": "https://www.allfootballapp.com/match/54483577",
