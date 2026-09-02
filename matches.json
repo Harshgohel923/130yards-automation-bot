@@ -1,17 +1,1 @@
-[
-  {
-    "match_id": "54473223",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/HEBC-vs-Dortmund/54473223",
-    "desktop_url": "https://www.allfootballapp.com/match/54473223",
-    "kickoff_utc": "2026-09-01T18:45:00Z",
-    "kickoff_local": "Tue 1 Sep 2026, 20:45 CEST",
-    "kickoff_ist": "Wed 2 Sep 2026, 00:15 IST",
-    "home_team": "HEBC",
-    "away_team": "Borussia Dortmund",
-    "competition": "DFB-Pokal",
-    "post_ht": false,
-    "post_ft_stats": true,
-    "knockout_match": true,
-    "records": []
-  }
-]
+[]
