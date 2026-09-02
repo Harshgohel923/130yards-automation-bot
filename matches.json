@@ -1,1 +1,32 @@
-[]
+[
+  {
+    "match_id": "54473222",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/VfL-Osnabruck-vs-Bayern/54473222",
+    "desktop_url": "https://www.allfootballapp.com/match/54473222",
+    "kickoff_utc": "2026-09-02T18:45:00Z",
+    "kickoff_local": "Wed 2 Sep 2026, 20:45 CEST",
+    "kickoff_ist": "Thu 3 Sep 2026, 00:15 IST",
+    "home_team": "Osnabruck",
+    "away_team": "Bayern Munich",
+    "competition": "DFB-Pokal",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": true,
+    "records": []
+  },
+  {
+    "match_id": "54566893",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/santos-vs-palmeiras/54566893",
+    "desktop_url": "https://www.allfootballapp.com/match/54566893",
+    "kickoff_utc": "2026-09-03T00:30:00Z",
+    "kickoff_local": "Thu 3 Sep 2026, 02:30 CEST",
+    "kickoff_ist": "Thu 3 Sep 2026, 06:00 IST",
+    "home_team": "Santos",
+    "away_team": "Palmeiras",
+    "competition": "Copa do Brasil",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": true,
+    "records": []
+  }
+]
