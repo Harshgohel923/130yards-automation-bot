@@ -8,7 +8,11 @@
     "kickoff_ist": "Fri 4 Sep 2026, 22:30 IST",
     "home_team": "Basaksehir",
     "away_team": "Galatasaray",
-    "competition": "Turkish SL"
+    "competition": "Turkish SL",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
   },
   {
     "match_id": "54483619",
@@ -22,7 +26,7 @@
     "competition": "Premier League",
     "post_ht": false,
     "post_ft_stats": true,
-    "knockout_match": true,
+    "knockout_match": false,
     "records": []
   },
   {
@@ -34,7 +38,13 @@
     "kickoff_ist": "Sat 5 Sep 2026, 00:30 IST",
     "home_team": "Real Betis",
     "away_team": "Real Madrid",
-    "competition": "La Liga"
+    "competition": "La Liga",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "post_lineups": true,
+    "lineups_first": "away",
+    "records": []
   },
   {
     "match_id": "54473871",
@@ -45,7 +55,11 @@
     "kickoff_ist": "Sat 5 Sep 2026, 00:35 IST",
     "home_team": "Paris Saint-Germain",
     "away_team": "AS Monaco",
-    "competition": "Ligue 1"
+    "competition": "Ligue 1",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
   },
   {
     "match_id": "54483622",
@@ -56,7 +70,11 @@
     "kickoff_ist": "Sat 5 Sep 2026, 17:00 IST",
     "home_team": "Newcastle United",
     "away_team": "Bournemouth",
-    "competition": "Premier League"
+    "competition": "Premier League",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
   },
   {
     "match_id": "54494419",
@@ -67,7 +85,11 @@
     "kickoff_ist": "Sat 5 Sep 2026, 19:00 IST",
     "home_team": "Hoffenheim",
     "away_team": "Borussia Dortmund",
-    "competition": "Bundesliga"
+    "competition": "Bundesliga",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
   },
   {
     "match_id": "54483610",
@@ -78,7 +100,12 @@
     "kickoff_ist": "Sat 5 Sep 2026, 19:30 IST",
     "home_team": "Brentford",
     "away_team": "Sunderland",
-    "competition": "Premier League"
+    "competition": "Premier League",
+    "post_ht": false,
+    "post_ft_stats": false,
+    "knockout_match": false,
+    "carousel_group": "16:00-Sep5",
+    "records": []
   },
   {
     "match_id": "54483612",
@@ -89,7 +116,12 @@
     "kickoff_ist": "Sat 5 Sep 2026, 19:30 IST",
     "home_team": "Brighton",
     "away_team": "Leeds United",
-    "competition": "Premier League"
+    "competition": "Premier League",
+    "post_ht": false,
+    "post_ft_stats": false,
+    "knockout_match": false,
+    "carousel_group": "16:00-Sep5",
+    "records": []
   },
   {
     "match_id": "54483616",
@@ -100,7 +132,12 @@
     "kickoff_ist": "Sat 5 Sep 2026, 19:30 IST",
     "home_team": "Fulham",
     "away_team": "Crystal Palace",
-    "competition": "Premier League"
+    "competition": "Premier League",
+    "post_ht": false,
+    "post_ft_stats": false,
+    "knockout_match": false,
+    "carousel_group": "16:00-Sep5",
+    "records": []
   },
   {
     "match_id": "54483620",
@@ -111,7 +148,11 @@
     "kickoff_ist": "Sat 5 Sep 2026, 19:30 IST",
     "home_team": "Manchester City",
     "away_team": "Coventry City",
-    "competition": "Premier League"
+    "competition": "Premier League",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
   },
   {
     "match_id": "54483625",
@@ -122,7 +163,11 @@
     "kickoff_ist": "Sat 5 Sep 2026, 19:30 IST",
     "home_team": "Nottingham Forest",
     "away_team": "Tottenham Hotspur",
-    "competition": "Premier League"
+    "competition": "Premier League",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
   },
   {
     "match_id": "54527366",
@@ -133,7 +178,11 @@
     "kickoff_ist": "Sat 5 Sep 2026, 19:45 IST",
     "home_team": "Athletic Club",
     "away_team": "Atlético Madrid",
-    "competition": "La Liga"
+    "competition": "La Liga",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
   },
   {
     "match_id": "54470939",
@@ -144,7 +193,11 @@
     "kickoff_ist": "Sat 5 Sep 2026, 21:30 IST",
     "home_team": "Inter Milan",
     "away_team": "Napoli",
-    "competition": "Serie A"
+    "competition": "Serie A",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
   },
   {
     "match_id": "54483618",
@@ -155,7 +208,11 @@
     "kickoff_ist": "Sat 5 Sep 2026, 22:00 IST",
     "home_team": "Hull City",
     "away_team": "Aston Villa",
-    "competition": "Premier League"
+    "competition": "Premier League",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
   },
   {
     "match_id": "54494425",
@@ -166,7 +223,13 @@
     "kickoff_ist": "Sat 5 Sep 2026, 22:00 IST",
     "home_team": "Schalke 04",
     "away_team": "Bayern Munich",
-    "competition": "Bundesliga"
+    "competition": "Bundesliga",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "post_lineups": true,
+    "lineups_first": "away",
+    "records": []
   },
   {
     "match_id": "54511123",
@@ -177,7 +240,11 @@
     "kickoff_ist": "Sat 5 Sep 2026, 22:30 IST",
     "home_team": "Fenerbahçe",
     "away_team": "Beşiktaş",
-    "competition": "Turkish SL"
+    "competition": "Turkish SL",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
   },
   {
     "match_id": "54533602",
@@ -188,7 +255,11 @@
     "kickoff_ist": "Sat 5 Sep 2026, 23:30 IST",
     "home_team": "Al Ittihad",
     "away_team": "Al-Nassr",
-    "competition": "Saudi Pro League"
+    "competition": "Saudi Pro League",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
   },
   {
     "match_id": "54329243",
@@ -199,6 +270,10 @@
     "kickoff_ist": "Sun 6 Sep 2026, 05:00 IST",
     "home_team": "Inter Miami",
     "away_team": "Atlanta United",
-    "competition": "MLS"
+    "competition": "MLS",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
   }
 ]
