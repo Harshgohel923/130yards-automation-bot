@@ -1,1 +1,204 @@
-[]
+[
+  {
+    "match_id": "54511120",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/basaksehir-vs-galatasaray/54511120",
+    "desktop_url": "https://www.allfootballapp.com/match/54511120",
+    "kickoff_utc": "2026-09-04T17:00:00Z",
+    "kickoff_local": "Fri 4 Sep 2026, 19:00 CEST",
+    "kickoff_ist": "Fri 4 Sep 2026, 22:30 IST",
+    "home_team": "Basaksehir",
+    "away_team": "Galatasaray",
+    "competition": "Turkish SL"
+  },
+  {
+    "match_id": "54483619",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Ipswich-Town-vs-Liverpool/54483619",
+    "desktop_url": "https://www.allfootballapp.com/match/54483619",
+    "kickoff_utc": "2026-09-04T19:00:00Z",
+    "kickoff_local": "Fri 4 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 00:30 IST",
+    "home_team": "Ipswich",
+    "away_team": "Liverpool",
+    "competition": "Premier League",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": true,
+    "records": []
+  },
+  {
+    "match_id": "54493212",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Betis-vs-Real-Madrid/54493212",
+    "desktop_url": "https://www.allfootballapp.com/match/54493212",
+    "kickoff_utc": "2026-09-04T19:00:00Z",
+    "kickoff_local": "Fri 4 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 00:30 IST",
+    "home_team": "Real Betis",
+    "away_team": "Real Madrid",
+    "competition": "La Liga"
+  },
+  {
+    "match_id": "54473871",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/PSG-vs-Monaco/54473871",
+    "desktop_url": "https://www.allfootballapp.com/match/54473871",
+    "kickoff_utc": "2026-09-04T19:05:00Z",
+    "kickoff_local": "Fri 4 Sep 2026, 21:05 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 00:35 IST",
+    "home_team": "Paris Saint-Germain",
+    "away_team": "AS Monaco",
+    "competition": "Ligue 1"
+  },
+  {
+    "match_id": "54483622",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Newcastle-vs-Bournemouth/54483622",
+    "desktop_url": "https://www.allfootballapp.com/match/54483622",
+    "kickoff_utc": "2026-09-05T11:30:00Z",
+    "kickoff_local": "Sat 5 Sep 2026, 13:30 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 17:00 IST",
+    "home_team": "Newcastle United",
+    "away_team": "Bournemouth",
+    "competition": "Premier League"
+  },
+  {
+    "match_id": "54494419",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Hoffenheim-vs-Dortmund/54494419",
+    "desktop_url": "https://www.allfootballapp.com/match/54494419",
+    "kickoff_utc": "2026-09-05T13:30:00Z",
+    "kickoff_local": "Sat 5 Sep 2026, 15:30 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 19:00 IST",
+    "home_team": "Hoffenheim",
+    "away_team": "Borussia Dortmund",
+    "competition": "Bundesliga"
+  },
+  {
+    "match_id": "54483610",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Brentford-vs-Sunderland/54483610",
+    "desktop_url": "https://www.allfootballapp.com/match/54483610",
+    "kickoff_utc": "2026-09-05T14:00:00Z",
+    "kickoff_local": "Sat 5 Sep 2026, 16:00 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 19:30 IST",
+    "home_team": "Brentford",
+    "away_team": "Sunderland",
+    "competition": "Premier League"
+  },
+  {
+    "match_id": "54483612",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Brighton-vs-Leeds-United/54483612",
+    "desktop_url": "https://www.allfootballapp.com/match/54483612",
+    "kickoff_utc": "2026-09-05T14:00:00Z",
+    "kickoff_local": "Sat 5 Sep 2026, 16:00 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 19:30 IST",
+    "home_team": "Brighton",
+    "away_team": "Leeds United",
+    "competition": "Premier League"
+  },
+  {
+    "match_id": "54483616",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Fulham-vs-Crystal-Palace/54483616",
+    "desktop_url": "https://www.allfootballapp.com/match/54483616",
+    "kickoff_utc": "2026-09-05T14:00:00Z",
+    "kickoff_local": "Sat 5 Sep 2026, 16:00 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 19:30 IST",
+    "home_team": "Fulham",
+    "away_team": "Crystal Palace",
+    "competition": "Premier League"
+  },
+  {
+    "match_id": "54483620",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Man-City-vs-Coventry-City/54483620",
+    "desktop_url": "https://www.allfootballapp.com/match/54483620",
+    "kickoff_utc": "2026-09-05T14:00:00Z",
+    "kickoff_local": "Sat 5 Sep 2026, 16:00 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 19:30 IST",
+    "home_team": "Manchester City",
+    "away_team": "Coventry City",
+    "competition": "Premier League"
+  },
+  {
+    "match_id": "54483625",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Nottingham-Forest-vs-Tottenham/54483625",
+    "desktop_url": "https://www.allfootballapp.com/match/54483625",
+    "kickoff_utc": "2026-09-05T14:00:00Z",
+    "kickoff_local": "Sat 5 Sep 2026, 16:00 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 19:30 IST",
+    "home_team": "Nottingham Forest",
+    "away_team": "Tottenham Hotspur",
+    "competition": "Premier League"
+  },
+  {
+    "match_id": "54527366",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Athletic-Club-vs-Atletico/54527366",
+    "desktop_url": "https://www.allfootballapp.com/match/54527366",
+    "kickoff_utc": "2026-09-05T14:15:00Z",
+    "kickoff_local": "Sat 5 Sep 2026, 16:15 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 19:45 IST",
+    "home_team": "Athletic Club",
+    "away_team": "Atlético Madrid",
+    "competition": "La Liga"
+  },
+  {
+    "match_id": "54470939",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Inter-vs-Napoli/54470939",
+    "desktop_url": "https://www.allfootballapp.com/match/54470939",
+    "kickoff_utc": "2026-09-05T16:00:00Z",
+    "kickoff_local": "Sat 5 Sep 2026, 18:00 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 21:30 IST",
+    "home_team": "Inter Milan",
+    "away_team": "Napoli",
+    "competition": "Serie A"
+  },
+  {
+    "match_id": "54483618",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Hull-City-vs-Aston-Villa/54483618",
+    "desktop_url": "https://www.allfootballapp.com/match/54483618",
+    "kickoff_utc": "2026-09-05T16:30:00Z",
+    "kickoff_local": "Sat 5 Sep 2026, 18:30 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 22:00 IST",
+    "home_team": "Hull City",
+    "away_team": "Aston Villa",
+    "competition": "Premier League"
+  },
+  {
+    "match_id": "54494425",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Schalke-vs-Bayern/54494425",
+    "desktop_url": "https://www.allfootballapp.com/match/54494425",
+    "kickoff_utc": "2026-09-05T16:30:00Z",
+    "kickoff_local": "Sat 5 Sep 2026, 18:30 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 22:00 IST",
+    "home_team": "Schalke 04",
+    "away_team": "Bayern Munich",
+    "competition": "Bundesliga"
+  },
+  {
+    "match_id": "54511123",
+    "scraper_url": "https://m.allfootballapp.com/match/Global/Fenerbah%C3%A7e-vs-Besiktas-JK/54511123",
+    "desktop_url": "https://www.allfootballapp.com/match/54511123",
+    "kickoff_utc": "2026-09-05T17:00:00Z",
+    "kickoff_local": "Sat 5 Sep 2026, 19:00 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 22:30 IST",
+    "home_team": "Fenerbahçe",
+    "away_team": "Beşiktaş",
+    "competition": "Turkish SL"
+  },
+  {
+    "match_id": "54533602",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/al-ittihad-club-vs-al-nassr/54533602",
+    "desktop_url": "https://www.allfootballapp.com/match/54533602",
+    "kickoff_utc": "2026-09-05T18:00:00Z",
+    "kickoff_local": "Sat 5 Sep 2026, 20:00 CEST",
+    "kickoff_ist": "Sat 5 Sep 2026, 23:30 IST",
+    "home_team": "Al Ittihad",
+    "away_team": "Al-Nassr",
+    "competition": "Saudi Pro League"
+  },
+  {
+    "match_id": "54329243",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/inter-miami-vs-atlanta-united/54329243",
+    "desktop_url": "https://www.allfootballapp.com/match/54329243",
+    "kickoff_utc": "2026-09-05T23:30:00Z",
+    "kickoff_local": "Sun 6 Sep 2026, 01:30 CEST",
+    "kickoff_ist": "Sun 6 Sep 2026, 05:00 IST",
+    "home_team": "Inter Miami",
+    "away_team": "Atlanta United",
+    "competition": "MLS"
+  }
+]
