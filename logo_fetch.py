@@ -488,6 +488,8 @@ COMPETITION_ALIASES = {
     'pre-season-friendly': 'friendly',
     'preseason-friendly': 'friendly',
     'international-friendly': 'friendly',
+    '1st-lig': 'süper-lig',
+    'Turkish-sl': 'süper-lig'
 }
 
 COMPETITION_DISPLAY = {
@@ -515,6 +517,7 @@ COMPETITION_DISPLAY = {
     'saudi-pro-league': 'Saudi Pro League',
     'leagues-cup': 'Leagues Cup',
     'friendly': 'Club Friendly',
+    'süper-lig': 'Süper Lig'
 }
 
 
