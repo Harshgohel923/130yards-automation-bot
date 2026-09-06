@@ -41,7 +41,7 @@
     "home_team": "Arsenal",
     "away_team": "Chelsea",
     "competition": "Premier League",
-    "post_ht": false,
+    "post_ht": true,
     "post_ft_stats": true,
     "post_lineups": true,
     "lineups_first": "home",
