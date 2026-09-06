@@ -1,20 +1,5 @@
 [
   {
-    "match_id": "54329243",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/inter-miami-vs-atlanta-united/54329243",
-    "desktop_url": "https://www.allfootballapp.com/match/54329243",
-    "kickoff_utc": "2026-09-05T23:30:00Z",
-    "kickoff_local": "Sun 6 Sep 2026, 01:30 CEST",
-    "kickoff_ist": "Sun 6 Sep 2026, 05:00 IST",
-    "home_team": "Inter Miami",
-    "away_team": "Atlanta United",
-    "competition": "MLS",
-    "post_ht": false,
-    "post_ft_stats": true,
-    "knockout_match": false,
-    "records": []
-  },
-  {
     "match_id": "54483614",
     "scraper_url": "https://m.allfootballapp.com/match/Main/Everton-vs-Man-Utd/54483614",
     "desktop_url": "https://www.allfootballapp.com/match/54483614",
