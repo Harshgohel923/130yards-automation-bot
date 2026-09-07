@@ -8,7 +8,13 @@
     "kickoff_ist": "Tue 8 Sep 2026, 22:15 IST",
     "home_team": "AEK Athens",
     "away_team": "Lask",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577231",
@@ -19,7 +25,13 @@
     "kickoff_ist": "Tue 8 Sep 2026, 22:15 IST",
     "home_team": "Club Brugge",
     "away_team": "Aston Villa",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577265",
@@ -30,7 +42,13 @@
     "kickoff_ist": "Wed 9 Sep 2026, 00:30 IST",
     "home_team": "Borussia Dortmund",
     "away_team": "Villarreal",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577285",
@@ -41,7 +59,13 @@
     "kickoff_ist": "Wed 9 Sep 2026, 00:30 IST",
     "home_team": "FC Porto",
     "away_team": "Manchester City",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": true,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577326",
@@ -52,7 +76,13 @@
     "kickoff_ist": "Wed 9 Sep 2026, 00:30 IST",
     "home_team": "Lille",
     "away_team": "Real Betis",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577357",
@@ -63,7 +93,13 @@
     "kickoff_ist": "Wed 9 Sep 2026, 00:30 IST",
     "home_team": "Real Madrid",
     "away_team": "Inter Milan",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": true,
+    "knockout_match": false,
+    "post_lineups": true,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577215",
@@ -74,7 +110,13 @@
     "kickoff_ist": "Wed 9 Sep 2026, 22:15 IST",
     "home_team": "Barcelona",
     "away_team": "Feyenoord",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": true,
+    "knockout_match": false,
+    "post_lineups": true,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577422",
@@ -85,7 +127,13 @@
     "kickoff_ist": "Wed 9 Sep 2026, 22:15 IST",
     "home_team": "Vfb Stuttgart",
     "away_team": "Viking",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54533623",
@@ -96,7 +144,13 @@
     "kickoff_ist": "Wed 9 Sep 2026, 23:30 IST",
     "home_team": "Al-Nassr",
     "away_team": "Abha",
-    "competition": "Saudi Pro League"
+    "competition": "Saudi Pro League",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577074",
@@ -107,7 +161,13 @@
     "kickoff_ist": "Thu 10 Sep 2026, 00:30 IST",
     "home_team": "Chelsea",
     "away_team": "Leeds United",
-    "competition": "EFL Cup"
+    "competition": "EFL Cup",
+    "post_ht": false,
+    "knockout_match": true,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577329",
@@ -118,7 +178,13 @@
     "kickoff_ist": "Thu 10 Sep 2026, 00:30 IST",
     "home_team": "Liverpool",
     "away_team": "Atlético Madrid",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": true,
+    "knockout_match": false,
+    "post_lineups": true,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577341",
@@ -129,7 +195,13 @@
     "kickoff_ist": "Thu 10 Sep 2026, 00:30 IST",
     "home_team": "Napoli",
     "away_team": "Arsenal",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": true,
+    "knockout_match": false,
+    "post_lineups": true,
+    "lineups_first": "away",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577348",
@@ -140,7 +212,13 @@
     "kickoff_ist": "Thu 10 Sep 2026, 00:30 IST",
     "home_team": "Paris Saint-Germain",
     "away_team": "S Bratislava",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577386",
@@ -151,7 +229,13 @@
     "kickoff_ist": "Thu 10 Sep 2026, 00:30 IST",
     "home_team": "Sporting CP",
     "away_team": "Galatasaray",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54329265",
@@ -162,7 +246,13 @@
     "kickoff_ist": "Thu 10 Sep 2026, 06:00 IST",
     "home_team": "Chicago Fire FC",
     "away_team": "Inter Miami",
-    "competition": "MLS"
+    "competition": "MLS",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577290",
@@ -173,7 +263,13 @@
     "kickoff_ist": "Thu 10 Sep 2026, 22:15 IST",
     "home_team": "Fenerbahçe",
     "away_team": "Roma",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577351",
@@ -184,7 +280,13 @@
     "kickoff_ist": "Thu 10 Sep 2026, 22:15 IST",
     "home_team": "PSV",
     "away_team": "Shakhtar",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577219",
@@ -195,7 +297,13 @@
     "kickoff_ist": "Fri 11 Sep 2026, 00:30 IST",
     "home_team": "Bayern Munich",
     "away_team": "Bodo Glimt",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": true,
+    "knockout_match": false,
+    "post_lineups": true,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577236",
@@ -206,7 +314,13 @@
     "kickoff_ist": "Fri 11 Sep 2026, 00:30 IST",
     "home_team": "Como 1907",
     "away_team": "RB Leipzig",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577340",
@@ -217,7 +331,13 @@
     "kickoff_ist": "Fri 11 Sep 2026, 00:30 IST",
     "home_team": "Manchester United",
     "away_team": "Sabah",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   },
   {
     "match_id": "54577379",
@@ -228,6 +348,12 @@
     "kickoff_ist": "Fri 11 Sep 2026, 00:30 IST",
     "home_team": "Slavia Praha",
     "away_team": "Rc Lens",
-    "competition": "UEFA Champions League"
+    "competition": "UEFA Champions League",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
   }
 ]
