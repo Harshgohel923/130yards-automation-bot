@@ -1,1 +1,233 @@
-[]
+[
+  {
+    "match_id": "54577178",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/AEK-Athens-vs-LASK-Linz/54577178",
+    "desktop_url": "https://www.allfootballapp.com/match/54577178",
+    "kickoff_utc": "2026-09-08T16:45:00Z",
+    "kickoff_local": "Tue 8 Sep 2026, 18:45 CEST",
+    "kickoff_ist": "Tue 8 Sep 2026, 22:15 IST",
+    "home_team": "AEK Athens",
+    "away_team": "Lask",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54577231",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Club-Brugge-vs-Aston-Villa/54577231",
+    "desktop_url": "https://www.allfootballapp.com/match/54577231",
+    "kickoff_utc": "2026-09-08T16:45:00Z",
+    "kickoff_local": "Tue 8 Sep 2026, 18:45 CEST",
+    "kickoff_ist": "Tue 8 Sep 2026, 22:15 IST",
+    "home_team": "Club Brugge",
+    "away_team": "Aston Villa",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54577265",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Dortmund-vs-Villarreal/54577265",
+    "desktop_url": "https://www.allfootballapp.com/match/54577265",
+    "kickoff_utc": "2026-09-08T19:00:00Z",
+    "kickoff_local": "Tue 8 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Wed 9 Sep 2026, 00:30 IST",
+    "home_team": "Borussia Dortmund",
+    "away_team": "Villarreal",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54577285",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Porto-vs-Man-City/54577285",
+    "desktop_url": "https://www.allfootballapp.com/match/54577285",
+    "kickoff_utc": "2026-09-08T19:00:00Z",
+    "kickoff_local": "Tue 8 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Wed 9 Sep 2026, 00:30 IST",
+    "home_team": "FC Porto",
+    "away_team": "Manchester City",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54577326",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Lille-vs-Betis/54577326",
+    "desktop_url": "https://www.allfootballapp.com/match/54577326",
+    "kickoff_utc": "2026-09-08T19:00:00Z",
+    "kickoff_local": "Tue 8 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Wed 9 Sep 2026, 00:30 IST",
+    "home_team": "Lille",
+    "away_team": "Real Betis",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54577357",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Real-Madrid-vs-Inter/54577357",
+    "desktop_url": "https://www.allfootballapp.com/match/54577357",
+    "kickoff_utc": "2026-09-08T19:00:00Z",
+    "kickoff_local": "Tue 8 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Wed 9 Sep 2026, 00:30 IST",
+    "home_team": "Real Madrid",
+    "away_team": "Inter Milan",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54577215",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Barcelona-vs-Feyenoord/54577215",
+    "desktop_url": "https://www.allfootballapp.com/match/54577215",
+    "kickoff_utc": "2026-09-09T16:45:00Z",
+    "kickoff_local": "Wed 9 Sep 2026, 18:45 CEST",
+    "kickoff_ist": "Wed 9 Sep 2026, 22:15 IST",
+    "home_team": "Barcelona",
+    "away_team": "Feyenoord",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54577422",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Stuttgart-vs-Viking/54577422",
+    "desktop_url": "https://www.allfootballapp.com/match/54577422",
+    "kickoff_utc": "2026-09-09T16:45:00Z",
+    "kickoff_local": "Wed 9 Sep 2026, 18:45 CEST",
+    "kickoff_ist": "Wed 9 Sep 2026, 22:15 IST",
+    "home_team": "Vfb Stuttgart",
+    "away_team": "Viking",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54533623",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/al-nassr-vs-abha/54533623",
+    "desktop_url": "https://www.allfootballapp.com/match/54533623",
+    "kickoff_utc": "2026-09-09T18:00:00Z",
+    "kickoff_local": "Wed 9 Sep 2026, 20:00 CEST",
+    "kickoff_ist": "Wed 9 Sep 2026, 23:30 IST",
+    "home_team": "Al-Nassr",
+    "away_team": "Abha",
+    "competition": "Saudi Pro League"
+  },
+  {
+    "match_id": "54577074",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Chelsea-vs-Leeds-United/54577074",
+    "desktop_url": "https://www.allfootballapp.com/match/54577074",
+    "kickoff_utc": "2026-09-09T19:00:00Z",
+    "kickoff_local": "Wed 9 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Thu 10 Sep 2026, 00:30 IST",
+    "home_team": "Chelsea",
+    "away_team": "Leeds United",
+    "competition": "EFL Cup"
+  },
+  {
+    "match_id": "54577329",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Liverpool-vs-Atletico/54577329",
+    "desktop_url": "https://www.allfootballapp.com/match/54577329",
+    "kickoff_utc": "2026-09-09T19:00:00Z",
+    "kickoff_local": "Wed 9 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Thu 10 Sep 2026, 00:30 IST",
+    "home_team": "Liverpool",
+    "away_team": "Atlético Madrid",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54577341",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Napoli-vs-Arsenal/54577341",
+    "desktop_url": "https://www.allfootballapp.com/match/54577341",
+    "kickoff_utc": "2026-09-09T19:00:00Z",
+    "kickoff_local": "Wed 9 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Thu 10 Sep 2026, 00:30 IST",
+    "home_team": "Napoli",
+    "away_team": "Arsenal",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54577348",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/PSG-vs-SK-Slovan-Bratislava/54577348",
+    "desktop_url": "https://www.allfootballapp.com/match/54577348",
+    "kickoff_utc": "2026-09-09T19:00:00Z",
+    "kickoff_local": "Wed 9 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Thu 10 Sep 2026, 00:30 IST",
+    "home_team": "Paris Saint-Germain",
+    "away_team": "S Bratislava",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54577386",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Sporting-CP-vs-Galatasaray/54577386",
+    "desktop_url": "https://www.allfootballapp.com/match/54577386",
+    "kickoff_utc": "2026-09-09T19:00:00Z",
+    "kickoff_local": "Wed 9 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Thu 10 Sep 2026, 00:30 IST",
+    "home_team": "Sporting CP",
+    "away_team": "Galatasaray",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54329265",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/chicago-fire-vs-inter-miami/54329265",
+    "desktop_url": "https://www.allfootballapp.com/match/54329265",
+    "kickoff_utc": "2026-09-10T00:30:00Z",
+    "kickoff_local": "Thu 10 Sep 2026, 02:30 CEST",
+    "kickoff_ist": "Thu 10 Sep 2026, 06:00 IST",
+    "home_team": "Chicago Fire FC",
+    "away_team": "Inter Miami",
+    "competition": "MLS"
+  },
+  {
+    "match_id": "54577290",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Fenerbah%C3%A7e-vs-Roma/54577290",
+    "desktop_url": "https://www.allfootballapp.com/match/54577290",
+    "kickoff_utc": "2026-09-10T16:45:00Z",
+    "kickoff_local": "Thu 10 Sep 2026, 18:45 CEST",
+    "kickoff_ist": "Thu 10 Sep 2026, 22:15 IST",
+    "home_team": "Fenerbahçe",
+    "away_team": "Roma",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54577351",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/PSV-Eindhoven-vs-Shakhtar/54577351",
+    "desktop_url": "https://www.allfootballapp.com/match/54577351",
+    "kickoff_utc": "2026-09-10T16:45:00Z",
+    "kickoff_local": "Thu 10 Sep 2026, 18:45 CEST",
+    "kickoff_ist": "Thu 10 Sep 2026, 22:15 IST",
+    "home_team": "PSV",
+    "away_team": "Shakhtar",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54577219",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Bayern-vs-Bodo-Glimt/54577219",
+    "desktop_url": "https://www.allfootballapp.com/match/54577219",
+    "kickoff_utc": "2026-09-10T19:00:00Z",
+    "kickoff_local": "Thu 10 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Fri 11 Sep 2026, 00:30 IST",
+    "home_team": "Bayern Munich",
+    "away_team": "Bodo Glimt",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54577236",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Como-vs-Leipzig/54577236",
+    "desktop_url": "https://www.allfootballapp.com/match/54577236",
+    "kickoff_utc": "2026-09-10T19:00:00Z",
+    "kickoff_local": "Thu 10 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Fri 11 Sep 2026, 00:30 IST",
+    "home_team": "Como 1907",
+    "away_team": "RB Leipzig",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54577340",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Man-Utd-vs-Sabah/54577340",
+    "desktop_url": "https://www.allfootballapp.com/match/54577340",
+    "kickoff_utc": "2026-09-10T19:00:00Z",
+    "kickoff_local": "Thu 10 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Fri 11 Sep 2026, 00:30 IST",
+    "home_team": "Manchester United",
+    "away_team": "Sabah",
+    "competition": "UEFA Champions League"
+  },
+  {
+    "match_id": "54577379",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/SK-Slavia-Praha-vs-Lens/54577379",
+    "desktop_url": "https://www.allfootballapp.com/match/54577379",
+    "kickoff_utc": "2026-09-10T19:00:00Z",
+    "kickoff_local": "Thu 10 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Fri 11 Sep 2026, 00:30 IST",
+    "home_team": "Slavia Praha",
+    "away_team": "Rc Lens",
+    "competition": "UEFA Champions League"
+  }
+]
