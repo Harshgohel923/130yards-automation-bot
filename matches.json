@@ -1,20 +1,5 @@
 [
   {
-    "match_id": "54329277",
-    "scraper_url": "https://m.allfootballapp.com/match/Global/Inter-Miami-CF-vs-Nashville-SC/54329277",
-    "desktop_url": "https://www.allfootballapp.com/match/54329277",
-    "kickoff_utc": "2026-09-12T23:30:00Z",
-    "kickoff_local": "Sun 13 Sep 2026, 01:30 CEST",
-    "kickoff_ist": "Sun 13 Sep 2026, 05:00 IST",
-    "home_team": "Inter Miami",
-    "away_team": "Nashville SC",
-    "competition": "MLS",
-    "post_ht": false,
-    "post_ft_stats": true,
-    "knockout_match": false,
-    "records": []
-  },
-  {
     "match_id": "54493226",
     "scraper_url": "https://m.allfootballapp.com/match/Main/Levante-vs-Barcelona/54493226",
     "desktop_url": "https://www.allfootballapp.com/match/54493226",
