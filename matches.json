@@ -1,1 +1,36 @@
-[]
+[
+  {
+    "match_id": "54577067",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Man-City-vs-Norwich/54577067",
+    "desktop_url": "https://www.allfootballapp.com/match/54577067",
+    "kickoff_utc": "2026-09-17T18:30:00Z",
+    "kickoff_local": "Thu 17 Sep 2026, 20:30 CEST",
+    "kickoff_ist": "Fri 18 Sep 2026, 00:00 IST",
+    "home_team": "Manchester City",
+    "away_team": "Norwich City",
+    "competition": "EFL Cup",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
+  },
+  {
+    "match_id": "54579523",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Juventus-vs-NVAV-NEC/54579523",
+    "desktop_url": "https://www.allfootballapp.com/match/54579523",
+    "kickoff_utc": "2026-09-17T19:00:00Z",
+    "kickoff_local": "Thu 17 Sep 2026, 21:00 CEST",
+    "kickoff_ist": "Fri 18 Sep 2026, 00:30 IST",
+    "home_team": "Juventus",
+    "away_team": "NEC Nijmegen",
+    "competition": "UEFA Europa League",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
+  }
+]
