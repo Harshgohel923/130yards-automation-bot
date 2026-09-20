@@ -288,7 +288,7 @@ def _draw_glass_panel(img, box, chamfer):
     w, h = x2 - x1, y2 - y1
 
     region = img.crop(box).convert('RGB')
-    region = region.filter(ImageFilter.GaussianBlur(radius=6))
+    # region = region.filter(ImageFilter.GaussianBlur(radius=6))
     region = region.convert('RGBA')
     region.alpha_composite(Image.new('RGBA', (w, h), PANEL_FILL))
 
@@ -306,24 +306,48 @@ def _draw_glass_panel(img, box, chamfer):
     img.alpha_composite(panel, (x1, y1))
 
 
-def _apply_bottom_fade(img, panel_top_y, blend_h, max_alpha=30):
-    """Black gradient that blends the photo into the graphic: it ramps from
-    fully transparent down to max_alpha across `blend_h` pixels ending exactly
-    at the panel's top edge, then holds that darkness behind the panel to the
-    bottom of the image. Nothing above the ramp is touched."""
+# def _apply_bottom_fade(img, panel_top_y, blend_h, max_alpha=130):
+#     """Black gradient that blends the photo into the graphic: it ramps from
+#     fully transparent down to max_alpha across `blend_h` pixels ending exactly
+#     at the panel's top edge, then holds that darkness behind the panel to the
+#     bottom of the image. Nothing above the ramp is touched."""
+#     w, h = img.size
+#     y0 = max(0, panel_top_y - blend_h)
+#     total_h = h - y0
+#     if total_h <= 0:
+#         return
+#     ramp_len = panel_top_y - y0
+#     t = np.ones(total_h, dtype=np.float32)
+#     if ramp_len > 0:
+#         t[:ramp_len] = np.linspace(0.0, 1.0, ramp_len, dtype=np.float32) ** 1.2
+#     alpha_col = (t * max_alpha).astype(np.uint8)
+#     gradient = np.zeros((total_h, w, 4), dtype=np.uint8)
+#     gradient[..., 3] = alpha_col.reshape(-1, 1)
+#     img.alpha_composite(Image.fromarray(gradient, mode='RGBA'), (0, y0))
+
+def _apply_bottom_fade(img, y0, max_alpha=190):
+    """Black gradient: fully transparent at y0, darkest at the bottom of the image."""
     w, h = img.size
-    y0 = max(0, panel_top_y - blend_h)
-    total_h = h - y0
-    if total_h <= 0:
+    if y0 >= h:
         return
-    ramp_len = panel_top_y - y0
-    t = np.ones(total_h, dtype=np.float32)
-    if ramp_len > 0:
-        t[:ramp_len] = np.linspace(0.0, 1.0, ramp_len, dtype=np.float32) ** 1.2
-    alpha_col = (t * max_alpha).astype(np.uint8)
-    gradient = np.zeros((total_h, w, 4), dtype=np.uint8)
-    gradient[..., 3] = alpha_col.reshape(-1, 1)
-    img.alpha_composite(Image.fromarray(gradient, mode='RGBA'), (0, y0))
+    s = np.linspace(0.0, 1.0, h - y0, dtype=np.float32)
+    t = s * s * (3 - 2 * s)                      # smoothstep: soft at both ends
+    gradient = np.zeros((h - y0, w, 4), dtype=np.uint8)
+    gradient[..., 3] = (t * max_alpha).astype(np.uint8).reshape(-1, 1)
+    img.alpha_composite(Image.fromarray(gradient), (0, y0))
+
+
+def _apply_bottom_blur(img, y0, radius=8):
+    """Blur that is zero at y0 and strongest at the bottom of the image."""
+    w, h = img.size
+    if y0 >= h:
+        return
+    region = img.crop((0, y0, w, h))
+    blurred = region.filter(ImageFilter.GaussianBlur(radius))
+    s = np.linspace(0.0, 1.0, h - y0, dtype=np.float32)
+    ramp = (s * s * (3 - 2 * s) * 255).astype(np.uint8)
+    mask = Image.fromarray(np.tile(ramp[:, None], (1, w)))
+    img.paste(blurred, (0, y0), mask)
 
 
 # ── Scorer lines rendering (scorecard.py layout, panel-scaled) ────────────────
@@ -518,9 +542,12 @@ def add_scorecard_overlay(image_path, output_path, home_team, away_team,
     panel_h = header_h + n_lines * line_step + bottom_pad
     py1 = py2 - panel_h
     panel_box = (px1, py1, px2, py2)
+    fade_start = py1                     # ← where the gradient ends (top of ramp)
 
     # ── Bottom fade: blends into the panel, ending at its top edge ───────
-    _apply_bottom_fade(img, panel_top_y=py1, blend_h=int(h * 0.11))
+    # _apply_bottom_fade(img, panel_top_y=py1, blend_h=int(h * 0.18))
+    _apply_bottom_blur(img, y0=fade_start, radius=3)
+    _apply_bottom_fade(img, y0=fade_start, max_alpha=190)
 
     # ── Closed chamfered glass panel ─────────────────────────────────────
     _draw_glass_panel(img, panel_box, chamfer=int(h * 0.035))
