@@ -16,6 +16,9 @@ data/
 bot.db
 state.json
 .bot_session
+54493249-Barcelona-vs-Racing.json
+54493263_FT.png
+sample_scorebar.png
 
 # macOS
 .DS_Store

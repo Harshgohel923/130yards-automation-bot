@@ -34,7 +34,7 @@ COLOR_GOLD = (212, 175, 90, 255)
 COLOR_SCORER = (230, 233, 240, 255)
 COLOR_MINUTE = (255, 200, 60, 255)
 COLOR_LABEL = (212, 175, 90, 255)   # FULL TIME / HALF TIME / PENALTIES
-PANEL_FILL = (8, 10, 14, 105)
+PANEL_FILL = (8, 10, 14, 60)
 PANEL_BORDER = (212, 175, 90, 130)
 
 # Curated primary/secondary colors per team for the partition line under the
@@ -56,9 +56,19 @@ FALLBACK_COLORS = [(212, 175, 90), (245, 247, 250)]
 # Event types shown as scorer lines — same set scorecard.py displays.
 DISPLAY_TYPES = {'goal', 'penalty_goal', 'own_goal', 'red_card', 'penalty_missed'}
 
-MAX_VISIBLE_LINES = 6          # beyond this, collapse into "& N more"
-SCORER_FONT_MAX_RATIO = 0.021  # of image height
-SCORER_FONT_MIN_RATIO = 0.013
+# MAX_VISIBLE_LINES = 6          # beyond this, collapse into "& N more"
+# SCORER_FONT_MAX_RATIO = 0.021  # of image height
+# SCORER_FONT_MIN_RATIO = 0.013
+
+SCORER_FONT_MAX_RATIO = 0.021
+SCORER_FONT_MIN_RATIO = 0.011
+
+SCORER_GAP_RATIO        = 0.012   # default gap between scorer lines (of image height)
+SCORER_GAP_MIN_RATIO    = 0.004   # tightest gap, tried before the panel grows
+SCORER_BLOCK_BASE_RATIO = 0.11    # scorer block height the panel starts with
+MAX_PANEL_GROWTH_RATIO  = 0.12    # extra height the panel may grow (the "lift")
+PANEL_GROWTH_STEP_RATIO = 0.01
+
 SYMBOL_TEXT_GAP_RATIO = 0.35   # of scorer font size
 MINUTE_NAME_GAP_RATIO = 0.45
 
@@ -269,7 +279,7 @@ def _draw_glass_panel(img, box, chamfer):
     w, h = x2 - x1, y2 - y1
 
     region = img.crop(box).convert('RGB')
-    region = region.filter(ImageFilter.GaussianBlur(radius=14))
+    region = region.filter(ImageFilter.GaussianBlur(radius=6))
     region = region.convert('RGBA')
     region.alpha_composite(Image.new('RGBA', (w, h), PANEL_FILL))
 
@@ -287,7 +297,7 @@ def _draw_glass_panel(img, box, chamfer):
     img.alpha_composite(panel, (x1, y1))
 
 
-def _apply_bottom_fade(img, panel_top_y, blend_h, max_alpha=185):
+def _apply_bottom_fade(img, panel_top_y, blend_h, max_alpha=110):
     """Black gradient that blends the photo into the graphic: it ramps from
     fully transparent down to max_alpha across `blend_h` pixels ending exactly
     at the panel's top edge, then holds that darkness behind the panel to the
@@ -309,24 +319,66 @@ def _apply_bottom_fade(img, panel_top_y, blend_h, max_alpha=185):
 
 # ── Scorer lines rendering (scorecard.py layout, panel-scaled) ────────────────
 
-def _fit_scorer_font(draw, home_lines, away_lines, col_w, h):
-    """Largest font size (within ratio bounds) where every line fits its column."""
+# def _fit_scorer_font(draw, home_lines, away_lines, col_w, h):
+#     """Largest font size (within ratio bounds) where every line fits its column."""
+#     max_size = int(h * SCORER_FONT_MAX_RATIO)
+#     min_size = max(10, int(h * SCORER_FONT_MIN_RATIO))
+#     for size in range(max_size, min_size - 1, -1):
+#         font = _font(size)
+#         _, lh = _text_size(draw, "Ag", font)
+#         ok = True
+#         for entry in home_lines + away_lines:
+#             mw, _ = _text_size(draw, entry['minute'], font)
+#             nw, _ = _text_size(draw, entry['name'], font)
+#             total = lh + int(size * SYMBOL_TEXT_GAP_RATIO) + mw + int(size * MINUTE_NAME_GAP_RATIO) + nw
+#             if total > col_w:
+#                 ok = False
+#                 break
+#         if ok:
+#             return size
+#     return min_size
+
+def _fit_scorers(draw, home_lines, away_lines, col_w, h):
+    """
+    Same order as scorecard._fit_scorers:
+      1. keep the font large and tighten the line gap
+      2. still tight? let the panel grow taller
+      3. only then shrink the font
+    Returns (font_size, line_gap, growth).
+    """
+    entries = home_lines + away_lines
+    n = max(len(home_lines), len(away_lines))
+    base = int(h * SCORER_BLOCK_BASE_RATIO)
+    growths = list(range(0, int(h * MAX_PANEL_GROWTH_RATIO) + 1,
+                         max(1, int(h * PANEL_GROWTH_STEP_RATIO))))
+    gap_max = int(h * SCORER_GAP_RATIO)
+    gap_min = int(h * SCORER_GAP_MIN_RATIO)
     max_size = int(h * SCORER_FONT_MAX_RATIO)
     min_size = max(10, int(h * SCORER_FONT_MIN_RATIO))
+
     for size in range(max_size, min_size - 1, -1):
         font = _font(size)
         _, lh = _text_size(draw, "Ag", font)
-        ok = True
-        for entry in home_lines + away_lines:
-            mw, _ = _text_size(draw, entry['minute'], font)
-            nw, _ = _text_size(draw, entry['name'], font)
-            total = lh + int(size * SYMBOL_TEXT_GAP_RATIO) + mw + int(size * MINUTE_NAME_GAP_RATIO) + nw
-            if total > col_w:
-                ok = False
+
+        # Width doesn't depend on gap or growth, so check it once per size.
+        sym_gap = int(size * SYMBOL_TEXT_GAP_RATIO)
+        min_gap = int(size * MINUTE_NAME_GAP_RATIO)
+        too_wide = False
+        for e in entries:
+            mw, _ = _text_size(draw, e['minute'], font)
+            nw, _ = _text_size(draw, e['name'], font)
+            if lh + sym_gap + mw + min_gap + nw > col_w:
+                too_wide = True
                 break
-        if ok:
-            return size
-    return min_size
+        if too_wide:
+            continue
+
+        for growth in growths:
+            for gap in range(gap_max, gap_min - 1, -1):
+                if n * (lh + gap) - gap <= base + growth:
+                    return size, gap, growth
+
+    return min_size, gap_min, growths[-1]
 
 
 def _truncate_name(draw, name, font, max_w):
@@ -339,7 +391,8 @@ def _truncate_name(draw, name, font, max_w):
     return name
 
 
-def _draw_scorer_lines(img, draw, lines, box, align, font_size, step):
+# def _draw_scorer_lines(img, draw, lines, box, align, font_size, step):
+def _draw_scorer_lines(img, draw, lines, box, align, font_size, step, max_visible):
     """
     HOME (left):  [symbol] [gap] [minute] [gap] [name]
     AWAY (right): [name] [gap] [minute] [gap] [symbol]
@@ -351,8 +404,14 @@ def _draw_scorer_lines(img, draw, lines, box, align, font_size, step):
     sym_gap = int(font_size * SYMBOL_TEXT_GAP_RATIO)
     min_gap = int(font_size * MINUTE_NAME_GAP_RATIO)
 
-    visible = lines[:MAX_VISIBLE_LINES]
-    hidden = len(lines) - len(visible)
+    # visible = lines[:MAX_VISIBLE_LINES]
+    # hidden = len(lines) - len(visible)
+
+    if len(lines) <= max_visible:
+        visible, hidden = lines, 0
+    else:
+        visible = lines[:max(0, max_visible - 1)]   # last slot reserved for "& N MORE"
+        hidden = len(lines) - len(visible)
 
     for i, entry in enumerate(visible):
         # Anchor text and symbol to the same vertical midline so the symbol
@@ -421,16 +480,33 @@ def add_scorecard_overlay(image_path, output_path, home_team, away_team,
     cx = (px1 + px2) // 2
     py2 = h - int(h * 0.025)
 
-    n_lines = max(1, min(len(home_events), MAX_VISIBLE_LINES + 1),
-                  min(len(away_events), MAX_VISIBLE_LINES + 1))
+    # n_lines = max(1, min(len(home_events), MAX_VISIBLE_LINES + 1),
+    #               min(len(away_events), MAX_VISIBLE_LINES + 1))
 
-    scorer_col_w = int(pw * 0.42)
-    scorer_size = _fit_scorer_font(draw, home_events, away_events, scorer_col_w, h)
-    _, scorer_lh = _text_size(draw, "Ag", _font(scorer_size))
-    line_step = scorer_lh + int(h * 0.012)
+    # scorer_col_w = int(pw * 0.42)
+    # scorer_size = _fit_scorer_font(draw, home_events, away_events, scorer_col_w, h)
+    # _, scorer_lh = _text_size(draw, "Ag", _font(scorer_size))
+    # line_step = scorer_lh + int(h * 0.012)
+
+    # header_h = int(h * 0.215)                     # logo half → underline → scorer top
+    # panel_h = header_h + n_lines * line_step + int(h * 0.022)
+    # py1 = py2 - panel_h
+    # panel_box = (px1, py1, px2, py2)
 
     header_h = int(h * 0.215)                     # logo half → underline → scorer top
-    panel_h = header_h + n_lines * line_step + int(h * 0.022)
+    bottom_pad = int(h * 0.022)
+    scorer_col_w = int(pw * 0.42)
+
+    scorer_size, scorer_gap, growth = _fit_scorers(
+        draw, home_events, away_events, scorer_col_w, h)
+    _, scorer_lh = _text_size(draw, "Ag", _font(scorer_size))
+    line_step = scorer_lh + scorer_gap
+
+    block_budget = int(h * SCORER_BLOCK_BASE_RATIO) + growth
+    max_lines = max(1, (block_budget + scorer_gap) // line_step)
+    n_lines = max(1, min(max(len(home_events), len(away_events)), max_lines))
+
+    panel_h = header_h + n_lines * line_step + bottom_pad
     py1 = py2 - panel_h
     panel_box = (px1, py1, px2, py2)
 
@@ -513,8 +589,11 @@ def add_scorecard_overlay(image_path, output_path, home_team, away_team,
     scorers_top = py1 + header_h
     home_box = (px1 + int(pw * 0.05), scorers_top, px1 + int(pw * 0.05) + scorer_col_w, py2)
     away_box = (px2 - int(pw * 0.05) - scorer_col_w, scorers_top, px2 - int(pw * 0.05), py2)
-    _draw_scorer_lines(img, draw, home_events, home_box, 'left', scorer_size, line_step)
-    _draw_scorer_lines(img, draw, away_events, away_box, 'right', scorer_size, line_step)
+    # _draw_scorer_lines(img, draw, home_events, home_box, 'left', scorer_size, line_step)
+    # _draw_scorer_lines(img, draw, away_events, away_box, 'right', scorer_size, line_step)
+
+    _draw_scorer_lines(img, draw, home_events, home_box, 'left', scorer_size, line_step, max_lines)
+    _draw_scorer_lines(img, draw, away_events, away_box, 'right', scorer_size, line_step, max_lines)
 
     # ── 130 Yards brand logo, small, top-left of the photo ────────────────
     margin_x, margin_y = int(w * 0.035), int(h * 0.025)
@@ -619,8 +698,8 @@ def _render_from_scraper_data(data, image_path, output_path, event_type='FT',
 
 
 if __name__ == '__main__':
-    src = sys.argv[1] if len(sys.argv) > 1 else 'sample_upscaled.png'
+    src = sys.argv[1] if len(sys.argv) > 1 else '54493263_FT.png'
     dst = sys.argv[2] if len(sys.argv) > 2 else 'sample_scorebar.png'
-    data_path = sys.argv[3] if len(sys.argv) > 3 else 'data/54328023-Argentina-vs-Egypt.json'
+    data_path = sys.argv[3] if len(sys.argv) > 3 else '54493249-Barcelona-vs-Racing.json'
     evt = sys.argv[4] if len(sys.argv) > 4 else 'FT'
     add_scorecard_overlay_from_json(src, dst, data_path, event_type=evt)
