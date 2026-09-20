@@ -192,6 +192,15 @@ def _drop_shadow(glyph, blur=6, alpha=160):
     shadow.putalpha(alpha_ch.point(lambda a: alpha if a > 0 else 0))
     return shadow.filter(ImageFilter.GaussianBlur(blur))
 
+def _circle_shadow(w, h, blur=6, alpha=160):
+    """Circular drop shadow exactly the size of the logo. Returns (shadow, pad);
+    the canvas is padded so the blur isn't clipped into a square edge."""
+    pad = blur * 3
+    sh = Image.new('RGBA', (w + 2 * pad, h + 2 * pad), (0, 0, 0, 0))
+    ImageDraw.Draw(sh).ellipse((pad, pad, pad + w - 1, pad + h - 1),
+                               fill=(0, 0, 0, alpha))
+    return sh.filter(ImageFilter.GaussianBlur(blur)), pad
+
 
 def _glow(diameter, color, blur_ratio=0.5, alpha=120):
     size = int(diameter * 2.2)
@@ -297,7 +306,7 @@ def _draw_glass_panel(img, box, chamfer):
     img.alpha_composite(panel, (x1, y1))
 
 
-def _apply_bottom_fade(img, panel_top_y, blend_h, max_alpha=110):
+def _apply_bottom_fade(img, panel_top_y, blend_h, max_alpha=30):
     """Black gradient that blends the photo into the graphic: it ramps from
     fully transparent down to max_alpha across `blend_h` pixels ending exactly
     at the panel's top edge, then holds that darkness behind the panel to the
@@ -599,8 +608,16 @@ def add_scorecard_overlay(image_path, output_path, home_team, away_team,
     margin_x, margin_y = int(w * 0.035), int(h * 0.025)
     logo_h = int(h * 0.034)
     brand_logo = _load_brand_logo(logo_h)
+    # if brand_logo:
+    #     img.alpha_composite(_drop_shadow(brand_logo), (margin_x, margin_y))
+    #     img.alpha_composite(brand_logo, (margin_x, margin_y))
+    #     draw = ImageDraw.Draw(img)
     if brand_logo:
-        img.alpha_composite(_drop_shadow(brand_logo), (margin_x, margin_y))
+        shadow, pad = _circle_shadow(brand_logo.width, brand_logo.height, blur=0, alpha=10)
+        sx, sy = margin_x - pad, margin_y - pad
+        # crop the shadow if the padding would poke outside the photo
+        img.alpha_composite(shadow, (max(0, sx), max(0, sy)),
+                            (max(0, -sx), max(0, -sy)))
         img.alpha_composite(brand_logo, (margin_x, margin_y))
         draw = ImageDraw.Draw(img)
 
