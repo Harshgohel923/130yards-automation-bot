@@ -1,1 +1,36 @@
-[]
+[
+  {
+    "match_id": "54419019",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Portugal-vs-Wales/54419019",
+    "desktop_url": "https://www.allfootballapp.com/match/54419019",
+    "kickoff_utc": "2026-09-24T18:45:00Z",
+    "kickoff_local": "Thu 24 Sep 2026, 20:45 CEST",
+    "kickoff_ist": "Fri 25 Sep 2026, 00:15 IST",
+    "home_team": "Portugal",
+    "away_team": "Wales",
+    "competition": "UEFA Nations League",
+    "post_ht": true,
+    "knockout_match": false,
+    "post_lineups": true,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
+  },
+  {
+    "match_id": "54419020",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Netherlands-vs-Germany/54419020",
+    "desktop_url": "https://www.allfootballapp.com/match/54419020",
+    "kickoff_utc": "2026-09-24T18:45:00Z",
+    "kickoff_local": "Thu 24 Sep 2026, 20:45 CEST",
+    "kickoff_ist": "Fri 25 Sep 2026, 00:15 IST",
+    "home_team": "Netherlands",
+    "away_team": "Germany",
+    "competition": "UEFA Nations League",
+    "post_ht": false,
+    "knockout_match": false,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "post_ft_stats": true,
+    "records": []
+  }
+]
