@@ -28,8 +28,6 @@
     "competition": "UEFA Nations League",
     "post_ht": false,
     "post_ft_stats": true,
-    "post_lineups": false,
-    "lineups_first": "home",
     "knockout_match": false,
     "records": []
   },
@@ -45,8 +43,6 @@
     "competition": "UEFA Nations League",
     "post_ht": false,
     "post_ft_stats": true,
-    "post_lineups": false,
-    "lineups_first": "home",
     "knockout_match": false,
     "records": []
   }
