@@ -1,1 +1,53 @@
-[]
+[
+  {
+    "match_id": "54419045",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/England-vs-Spain/54419045",
+    "desktop_url": "https://www.allfootballapp.com/match/54419045",
+    "kickoff_utc": "2026-09-26T18:45:00Z",
+    "kickoff_local": "Sat 26 Sep 2026, 20:45 CEST",
+    "kickoff_ist": "Sun 27 Sep 2026, 00:15 IST",
+    "home_team": "England",
+    "away_team": "Spain",
+    "competition": "UEFA Nations League",
+    "post_ht": true,
+    "post_ft_stats": true,
+    "post_lineups": true,
+    "lineups_first": "home",
+    "knockout_match": false,
+    "records": []
+  },
+  {
+    "match_id": "54419048",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/North-Macedonia-vs-Switzerland/54419048",
+    "desktop_url": "https://www.allfootballapp.com/match/54419048",
+    "kickoff_utc": "2026-09-26T18:45:00Z",
+    "kickoff_local": "Sat 26 Sep 2026, 20:45 CEST",
+    "kickoff_ist": "Sun 27 Sep 2026, 00:15 IST",
+    "home_team": "North Macedonia",
+    "away_team": "Switzerland",
+    "competition": "UEFA Nations League",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "knockout_match": false,
+    "records": []
+  },
+  {
+    "match_id": "54419049",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Czech-vs-Croatia/54419049",
+    "desktop_url": "https://www.allfootballapp.com/match/54419049",
+    "kickoff_utc": "2026-09-26T18:45:00Z",
+    "kickoff_local": "Sat 26 Sep 2026, 20:45 CEST",
+    "kickoff_ist": "Sun 27 Sep 2026, 00:15 IST",
+    "home_team": "Czechia",
+    "away_team": "Croatia",
+    "competition": "UEFA Nations League",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "post_lineups": false,
+    "lineups_first": "home",
+    "knockout_match": false,
+    "records": []
+  }
+]
