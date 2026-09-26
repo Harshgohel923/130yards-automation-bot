@@ -45,5 +45,52 @@
     "post_ft_stats": true,
     "knockout_match": false,
     "records": []
+  },
+  {
+    "match_id": "54419054",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Serbia-vs-Netherlands/54419054",
+    "desktop_url": "https://www.allfootballapp.com/match/54419054",
+    "kickoff_utc": "2026-09-27T16:00:00Z",
+    "kickoff_local": "Sun 27 Sep 2026, 18:00 CEST",
+    "kickoff_ist": "Sun 27 Sep 2026, 21:30 IST",
+    "home_team": "Serbia",
+    "away_team": "Netherlands",
+    "competition": "UEFA Nations League",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  },
+  {
+    "match_id": "54419055",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Germany-vs-Greece/54419055",
+    "desktop_url": "https://www.allfootballapp.com/match/54419055",
+    "kickoff_utc": "2026-09-27T18:45:00Z",
+    "kickoff_local": "Sun 27 Sep 2026, 20:45 CEST",
+    "kickoff_ist": "Mon 28 Sep 2026, 00:15 IST",
+    "home_team": "Germany",
+    "away_team": "Greece",
+    "competition": "UEFA Nations League",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  },
+  {
+    "match_id": "54419056",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Norway-vs-Portugal/54419056",
+    "desktop_url": "https://www.allfootballapp.com/match/54419056",
+    "kickoff_utc": "2026-09-27T18:45:00Z",
+    "kickoff_local": "Sun 27 Sep 2026, 20:45 CEST",
+    "kickoff_ist": "Mon 28 Sep 2026, 00:15 IST",
+    "home_team": "Norway",
+    "away_team": "Portugal",
+    "competition": "UEFA Nations League",
+    "post_ht": true,
+    "post_ft_stats": true,
+    "post_lineups": true,
+    "lineups_first": "home",
+    "knockout_match": false,
+    "records": []
   }
 ]
