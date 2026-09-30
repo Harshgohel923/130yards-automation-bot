@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Argentina-vs-Bolivia/54609314",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": true,
+    "records": []
+  },
+  {
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Greece-vs-Netherlands/54419430",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  },
+  {
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Germany-vs-Serbia/54419431",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  },
+  {
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Denmark-vs-Portugal/54419433",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  }
+]
