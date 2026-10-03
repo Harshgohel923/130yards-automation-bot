@@ -1,20 +1,5 @@
 [
   {
-    "match_id": "54601824",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Argentina-vs-Burkina-Faso/54601824",
-    "desktop_url": "https://www.allfootballapp.com/match/54601824",
-    "kickoff_utc": "2026-10-02T16:00:00Z",
-    "kickoff_local": "Fri 2 Oct 2026, 18:00 CEST",
-    "kickoff_ist": "Fri 2 Oct 2026, 21:30 IST",
-    "home_team": "Argentina",
-    "away_team": "Burkina Faso",
-    "competition": "Club Friendly",
-    "post_ht": false,
-    "post_ft_stats": true,
-    "knockout_match": false,
-    "records": []
-  },
-  {
     "match_id": "54537912",
     "scraper_url": "https://m.allfootballapp.com/match/Main/India-vs-Brazil/54537912",
     "desktop_url": "https://www.allfootballapp.com/match/54537912",
