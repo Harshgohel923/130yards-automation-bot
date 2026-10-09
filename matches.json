@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "match_id": "54494481",
+    "scraper_url": "https://m.allfootballapp.com/match/Global/Dortmund-vs-Bremen/54494481",
+    "desktop_url": "https://www.allfootballapp.com/match/54494481",
+    "kickoff_utc": "2026-10-09T18:30:00Z",
+    "kickoff_local": "Fri 9 Oct 2026, 20:30 CEST",
+    "kickoff_ist": "Sat 10 Oct 2026, 00:00 IST",
+    "home_team": "Borussia Dortmund",
+    "away_team": "Bremer Sv",
+    "competition": "Bundesliga",
+    "post_ht": false,
+    "knockout_match": false,
+    "records": [],
+    "post_ft_stats": true
+  }
+]
