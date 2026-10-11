@@ -1,20 +1,5 @@
 [
   {
-    "match_id": "54329152",
-    "scraper_url": "https://m.allfootballapp.com/match/Global/Inter-Miami-CF-vs-DC-United/54329152",
-    "desktop_url": "https://www.allfootballapp.com/match/54329152",
-    "kickoff_utc": "2026-10-10T23:30:00Z",
-    "kickoff_local": "Sun 11 Oct 2026, 01:30 CEST",
-    "kickoff_ist": "Sun 11 Oct 2026, 05:00 IST",
-    "home_team": "Inter Miami",
-    "away_team": "Dc United",
-    "competition": "MLS",
-    "post_ht": false,
-    "post_ft_stats": true,
-    "knockout_match": false,
-    "records": []
-  },
-  {
     "match_id": "54470868",
     "scraper_url": "https://m.allfootballapp.com/match/Main/Como-vs-Roma/54470868",
     "desktop_url": "https://www.allfootballapp.com/match/54470868",
