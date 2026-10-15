@@ -1,20 +1,5 @@
 [
   {
-    "match_id": "54329123",
-    "scraper_url": "https://m.allfootballapp.com/match/Global/Inter-Miami-CF-vs-New-York-City/54329123",
-    "desktop_url": "https://www.allfootballapp.com/match/54329123",
-    "kickoff_utc": "2026-10-14T23:30:00Z",
-    "kickoff_local": "Thu 15 Oct 2026, 01:30 CEST",
-    "kickoff_ist": "Thu 15 Oct 2026, 05:00 IST",
-    "home_team": "Inter Miami",
-    "away_team": "New York City FC",
-    "competition": "MLS",
-    "post_ht": false,
-    "post_ft_stats": true,
-    "knockout_match": false,
-    "records": []
-  },
-  {
     "match_id": "54579609",
     "scraper_url": "https://m.allfootballapp.com/match/Main/Salzburg-vs-Milan/54579609",
     "desktop_url": "https://www.allfootballapp.com/match/54579609",
