@@ -1,20 +1,5 @@
 [
   {
-    "match_id": "54602439",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Fleetwood-Town-vs-Arsenal/54602439",
-    "desktop_url": "https://www.allfootballapp.com/match/54602439",
-    "kickoff_utc": "2026-10-27T20:00:00Z",
-    "kickoff_local": "Tue 27 Oct 2026, 21:00 CET",
-    "kickoff_ist": "Wed 28 Oct 2026, 01:30 IST",
-    "home_team": "Fleetwood Town",
-    "away_team": "Arsenal",
-    "competition": "EFL Cup",
-    "post_ht": false,
-    "post_ft_stats": true,
-    "knockout_match": true,
-    "records": []
-  },
-  {
     "match_id": "54603145",
     "scraper_url": "https://m.allfootballapp.com/match/Main/Man-City-vs-Brighton/54603145",
     "desktop_url": "https://www.allfootballapp.com/match/54603145",
