@@ -9,7 +9,7 @@
     "home_team": "Chelsea",
     "away_team": "Manchester United",
     "competition": "Premier League",
-    "post_ht": false,
+    "post_ht": true,
     "post_ft_stats": true,
     "knockout_match": false,
     "records": []
@@ -69,7 +69,7 @@
     "home_team": "Bayern Munich",
     "away_team": "Borussia Dortmund",
     "competition": "Bundesliga",
-    "post_ht": false,
+    "post_ht": true,
     "post_ft_stats": true,
     "post_lineups": true,
     "lineups_first": "home",
@@ -103,7 +103,7 @@
     "home_team": "Barcelona",
     "away_team": "Deportivo",
     "competition": "La Liga",
-    "post_ht": false,
+    "post_ht": true,
     "post_ft_stats": true,
     "knockout_match": false,
     "records": []
