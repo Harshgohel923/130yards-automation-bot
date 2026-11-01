@@ -24,7 +24,7 @@
     "home_team": "Liverpool",
     "away_team": "Arsenal",
     "competition": "Premier League",
-    "post_ht": false,
+    "post_ht": true,
     "post_ft_stats": true,
     "knockout_match": false,
     "records": []
