@@ -2,6 +2,7 @@
 
 One file per day, in German local time. Newest first.
 
+- [Tuesday, 3 November 2026](2026-11-03.md)
 - [Monday, 2 November 2026](2026-11-02.md)
 - [Sunday, 1 November 2026](2026-11-01.md)
 - [Saturday, 31 October 2026](2026-10-31.md)
