@@ -1,1 +1,47 @@
-[]
+[
+  {
+    "match_id": "54419539",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Italy-vs-France/54419539",
+    "desktop_url": "https://www.allfootballapp.com/match/54419539",
+    "kickoff_utc": "2026-11-12T19:45:00Z",
+    "kickoff_local": "Thu 12 Nov 2026, 20:45 CET",
+    "kickoff_ist": "Fri 13 Nov 2026, 01:15 IST",
+    "home_team": "Italy",
+    "away_team": "France",
+    "competition": "UEFA Nations League",
+    "post_ht": true,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  },
+  {
+    "match_id": "54419540",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Czech-vs-Spain/54419540",
+    "desktop_url": "https://www.allfootballapp.com/match/54419540",
+    "kickoff_utc": "2026-11-12T19:45:00Z",
+    "kickoff_local": "Thu 12 Nov 2026, 20:45 CET",
+    "kickoff_ist": "Fri 13 Nov 2026, 01:15 IST",
+    "home_team": "Czechia",
+    "away_team": "Spain",
+    "competition": "UEFA Nations League",
+    "post_ht": true,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  },
+  {
+    "match_id": "54419541",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/England-vs-Croatia/54419541",
+    "desktop_url": "https://www.allfootballapp.com/match/54419541",
+    "kickoff_utc": "2026-11-12T19:45:00Z",
+    "kickoff_local": "Thu 12 Nov 2026, 20:45 CET",
+    "kickoff_ist": "Fri 13 Nov 2026, 01:15 IST",
+    "home_team": "England",
+    "away_team": "Croatia",
+    "competition": "UEFA Nations League",
+    "post_ht": true,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  }
+]
