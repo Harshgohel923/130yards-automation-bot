@@ -1,17 +1,1 @@
-[
-  {
-    "match_id": "54419558",
-    "scraper_url": "https://m.allfootballapp.com/match/Main/Portugal-vs-Denmark/54419558",
-    "desktop_url": "https://www.allfootballapp.com/match/54419558",
-    "kickoff_utc": "2026-11-14T19:45:00Z",
-    "kickoff_local": "Sat 14 Nov 2026, 20:45 CET",
-    "kickoff_ist": "Sun 15 Nov 2026, 01:15 IST",
-    "home_team": "Portugal",
-    "away_team": "Denmark",
-    "competition": "UEFA Nations League",
-    "post_ht": true,
-    "post_ft_stats": true,
-    "knockout_match": false,
-    "records": []
-  }
-]
+[]
