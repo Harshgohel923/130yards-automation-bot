@@ -1,1 +1,32 @@
-[]
+[
+  {
+    "match_id": "54533642",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/al-ahli-sfc-vs-al-nassr/54533642",
+    "desktop_url": "https://www.allfootballapp.com/match/54533642",
+    "kickoff_utc": "2026-11-20T17:30:00Z",
+    "kickoff_local": "Fri 20 Nov 2026, 18:30 CET",
+    "kickoff_ist": "Fri 20 Nov 2026, 23:00 IST",
+    "home_team": "Al Ahli",
+    "away_team": "Al-Nassr",
+    "competition": "Saudi Pro League",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  },
+  {
+    "match_id": "54494605",
+    "scraper_url": "https://m.allfootballapp.com/match/Main/Bayern-vs-Cologne/54494605",
+    "desktop_url": "https://www.allfootballapp.com/match/54494605",
+    "kickoff_utc": "2026-11-20T19:30:00Z",
+    "kickoff_local": "Fri 20 Nov 2026, 20:30 CET",
+    "kickoff_ist": "Sat 21 Nov 2026, 01:00 IST",
+    "home_team": "Bayern Munich",
+    "away_team": "Koln",
+    "competition": "Bundesliga",
+    "post_ht": false,
+    "post_ft_stats": true,
+    "knockout_match": false,
+    "records": []
+  }
+]
