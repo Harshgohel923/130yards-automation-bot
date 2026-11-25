@@ -228,11 +228,26 @@ def _card_symbol(height, color):
     return card
 
 
+YELLOW_CARD_RGB = (240, 200, 20)
+
+
+def _second_yellow_symbol(height):
+    """Two yellow cards side by side — a red shown for a second booking."""
+    card = _card_symbol(height, YELLOW_CARD_RGB)
+    gap = max(2, card.width // 4)
+    pair = Image.new('RGBA', (card.width * 2 + gap, card.height), (0, 0, 0, 0))
+    pair.alpha_composite(card, (0, 0))
+    pair.alpha_composite(card, (card.width + gap, 0))
+    return pair
+
+
 def _event_symbol(event_type, height):
+    if event_type == 'second_yellow':
+        return _second_yellow_symbol(height)
     if event_type == 'red_card':
         return _card_symbol(height, (206, 30, 30))
     if event_type == 'yellow_card':
-        return _card_symbol(height, (240, 200, 20))
+        return _card_symbol(height, YELLOW_CARD_RGB)
     mapping = {'penalty_goal': 'penalty_goal', 'own_goal': 'own_goal', 'penalty_missed': 'penalty_missed'}
     path = LOCAL_SYMBOLS.get(mapping.get(event_type, 'normal_goal'), '')
     if not path:
@@ -265,7 +280,8 @@ def _extract_scorer_lines(events, team_name):
         if ev.get('team') != team_name:
             continue
         lines.append({
-            'type': ev['type'],
+            # A red for a second booking is drawn as the two yellows behind it.
+            'type': 'second_yellow' if ev.get('second_yellow') else ev['type'],
             'minute': format_minute(ev),
             'name': _format_player_name(ev.get('player', '?')),
         })

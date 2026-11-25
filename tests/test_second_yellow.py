@@ -116,3 +116,22 @@ def test_it_makes_a_live_card_stale():
 def test_manual_cards_accept_it_by_name():
     for typed in ('second yellow', 'double yellow', '2y'):
         assert manual_match.EVENT_ALIASES[typed] == 'red_card'
+
+
+def test_the_overlay_draws_it_as_two_yellow_cards():
+    (line,) = overlay_scorebar._extract_scorer_lines([EVENT], 'Villarreal')
+    assert line['type'] == 'second_yellow'
+
+    one = overlay_scorebar._event_symbol('yellow_card', 40)
+    pair = overlay_scorebar._event_symbol('second_yellow', 40)
+    assert pair.height == one.height
+    assert pair.width > 2 * one.width                  # two cards and a gap
+    # Both cards are yellow — no red anywhere in the glyph.
+    reds = [p for p in pair.convert("RGBA").get_flattened_data() if p[3] == 255 and p[0] > 180 and p[1] < 80]
+    assert not reds
+
+
+def test_a_straight_red_is_still_one_red_card():
+    straight = dict(EVENT, second_yellow=None)
+    (line,) = overlay_scorebar._extract_scorer_lines([straight], 'Villarreal')
+    assert line['type'] == 'red_card'
