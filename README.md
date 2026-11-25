@@ -2008,6 +2008,32 @@ but it is still a seam. Staged photos are safe; they live on Cloudinary.
 
 ---
 
+## Football news — post ideas
+
+`news.py`, run by the dispatcher (at most once per 15 minutes), posts top-5
+league news to the group as **post ideas**:
+
+- **Sources**: BBC Sport, The Guardian, Sky Sports and ESPN RSS, plus a Google
+  News search per league (Premier League, La Liga, Serie A, Bundesliga,
+  Ligue 1). Google searches go one at a time — a burst gets 429s.
+- **Gemini edits**: merges one story reported by many outlets, drops anything
+  outside the top five, sorts each story into breaking or regular, scores it
+  1–5, flags trending ones, and recognises an update to a story already sent.
+- **🚨 Breaking news** goes out at once — only when Gemini says breaking *and*
+  scores it 4+, at most 3 per run (the rest join the round-up).
+- **📰 Regular news**: once an hour, the top five (trending first, then by
+  importance), 🔥 marking trending ones.
+- **Never twice**: a story is only sent again as **🔄 UPDATE** when there is
+  material new information (what changed is shown).
+- Links show as "Read on <outlet>" — an outlet's own link wherever one of its
+  items is in the story.
+- Memory: `news/state.json` on Cloudinary (seen items, sent stories, the
+  round-up queue), kept 48 hours. The very first run only looks back an hour.
+- `TELEGRAM_NEWS_CHAT_ID` sends news to its own chat/group; otherwise it goes
+  to the alerts chat. `NEWS_ENABLED=0` switches it off. If Gemini is down the
+  items wait for the next run. Try it without sending anything:
+  `python news.py --dry-run`.
+
 ## Telegram alerts
 
 Every failure point alerts you with a plain-language description and its

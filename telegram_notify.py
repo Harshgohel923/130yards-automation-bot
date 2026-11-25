@@ -106,6 +106,34 @@ def send_photos(items: list[tuple[str, str]]) -> bool:
         return False
 
 
+def send_news(text: str, preview: bool = False) -> bool:
+    """
+    A news message (see news.py). Goes to TELEGRAM_NEWS_CHAT_ID when set — so
+    the news can live in its own group or topic — and to the alerts chat
+    otherwise. The text is HTML (bold headlines, short "Read on …" links).
+    Link previews are off unless asked for: a digest of five links would
+    otherwise be five preview cards. Never raises.
+    """
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    chat_id = os.getenv('TELEGRAM_NEWS_CHAT_ID', '').strip() or _chat_id()
+    if not token or not chat_id:
+        print(f'[telegram_notify] Not configured — news dropped:\n{text}')
+        return False
+    try:
+        res = requests.post(
+            f'https://api.telegram.org/bot{token}/sendMessage',
+            data={'chat_id': chat_id, 'text': text[:4096], 'parse_mode': 'HTML',
+                  'disable_web_page_preview': 'false' if preview else 'true'},
+            timeout=10)
+        if not res.ok:
+            print(f'[telegram_notify] news send failed (HTTP {res.status_code}): '
+                  f'{res.text[:200]}')
+        return res.ok
+    except Exception as e:
+        print(f'[telegram_notify] news send error: {e}')
+        return False
+
+
 def edit_message(message_id: int, text: str) -> bool:
     """
     Replace the text of a message this bot sent, removing its buttons.

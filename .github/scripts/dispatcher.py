@@ -341,6 +341,21 @@ def publish_carousel_groups(registry: list):
                 pass
 
 
+def publish_news() -> None:
+    """Breaking news now, regular news hourly — see news.py. Never raises:
+    imported lazily and wrapped, so news can never stop match dispatching.
+    Set NEWS_ENABLED=0 in the environment to switch it off."""
+    if os.getenv('NEWS_ENABLED', '1').strip() == '0':
+        return
+    try:
+        import news
+        sent = news.run()
+        if sent:
+            note(f'- 📰 news — {len(sent)} message(s) sent')
+    except Exception as e:
+        print(f'[dispatcher] WARNING: news run failed: {e}')
+
+
 def _pending_carousel_groups(registry: list) -> set:
     """
     Groups that have not been posted yet.
@@ -627,6 +642,11 @@ def main():
     # Publish any carousel group that is now complete. Runs after dispatching so
     # a slow or failing post can never delay a worker for a kicking-off match.
     publish_carousel_groups(registry)
+
+    # Football news for the group — post ideas (news.py). Last of the work, so a
+    # slow feed or a Gemini hiccup never delays anything above; it limits itself
+    # to one run per 15 minutes however often the dispatcher is woken.
+    publish_news()
 
     # Then tidy the registry. After publishing, so a group that just went out
     # stops holding its fixtures back.
