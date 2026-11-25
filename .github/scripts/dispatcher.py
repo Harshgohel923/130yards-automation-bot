@@ -331,7 +331,9 @@ def publish_carousel_groups(registry: list):
                 send_alert(
                     f"❌ The '{group}' carousel couldn't be posted.\n\n"
                     f"Every scorecard in it is safely saved, so nothing is "
-                    f"lost. The bot tries again by itself every 15 minutes.\n\n"
+                    f"lost. While a match worker is still up it asks for a "
+                    f"retry every minute; otherwise the bot tries again every "
+                    f"15 minutes.\n\n"
                     f"Technical detail: {e}",
                     key=f'carousel:{group}:publish', cooldown=1800,
                 )

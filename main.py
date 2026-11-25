@@ -40,7 +40,7 @@ from allfootball_desktop import enrich as enrich_with_desktop
 from caption import (generate_caption, generate_event_caption,
                      generate_lineup_caption)
 from config import get_crest_url
-from carousel import nudge_dispatcher, submit_match
+from carousel import group_status, nudge_dispatcher, submit_match
 from cloudinary_upload import upload_image, upload_match_data, delete_image
 from database import (init_db, is_event_posted, mark_event_posted,
                       unmark_event_posted, upsert_match)
@@ -518,6 +518,65 @@ def _run_group_pipeline(entry: dict, scraper_data: dict) -> bool:
     # its next scheduled run anyway.
     nudge_dispatcher()
     return True
+
+
+# How many consecutive "not every card is in" reads end a group watch. One
+# could be a Cloudinary listing hiccup; three in a row is a member still
+# playing, whose own worker takes the watch over when it hands its card in.
+GROUP_WATCH_WAITING_POLLS = 3
+
+
+def _watch_group_publish(entry: dict, until: datetime) -> None:
+    """
+    After handing a card over, make sure the carousel actually goes out.
+
+    Only the dispatcher posts a group, so two matches ending together can't
+    post it twice — but it only runs every 15 minutes, so one failed publish
+    used to leave the whole carousel off the page for another quarter of an
+    hour, and again after each failure. So once every card is in, the worker
+    stays up and nudges the dispatcher every minute until the POSTED marker
+    appears. The nudges queue on the dispatcher's concurrency group (at most
+    one waiting run), so this never runs two publishers side by side.
+    """
+    match_id = entry['match_id']
+    group = _carousel_group_of(entry)
+    waiting_polls = 0
+    nudges = 0
+    while datetime.now(timezone.utc) < until:
+        # The handover has just nudged once, so look before nudging again.
+        time.sleep(POLL_INTERVAL_SECS)
+        status = group_status(group)
+        if status == 'posted':
+            print(f"[{match_id}] Carousel '{group}' is posted — done.")
+            if nudges:
+                matchlog.log(f"carousel '{group}' posted",
+                             f'after {nudges} retr{"y" if nudges == 1 else "ies"}',
+                             force=True)
+            return
+        if status == 'waiting':
+            waiting_polls += 1
+            if waiting_polls >= GROUP_WATCH_WAITING_POLLS:
+                print(f"[{match_id}] Carousel '{group}' is still waiting for "
+                      f"other matches — leaving the watch to them.")
+                return
+            continue
+        waiting_polls = 0
+        nudges += 1
+        print(f"[{match_id}] Carousel '{group}' has every card but hasn't "
+              f"posted — nudging the dispatcher (retry {nudges}).")
+        nudge_dispatcher()
+
+    print(f"[{match_id}] Worker ceiling reached with carousel '{group}' unposted.")
+    matchlog.warn(f"carousel '{group}' still unposted",
+                  'worker ceiling reached — the dispatcher keeps trying every 15 min')
+    send_alert(
+        f"🙋 The '{group}' carousel still hasn't posted, and this match's "
+        f"worker has run out of time to keep pushing it.\n\n"
+        f"Every scorecard is saved. The dispatcher keeps retrying every "
+        f"15 minutes, but repeated failures usually mean something needs "
+        f"looking at — check the earlier ❌ alerts for the reason.",
+        key=f'carousel:{group}:watch-expired', cooldown=3600,
+    )
 
 
 def _run_pipeline(entry: dict, event_type: str, scraper_data: dict) -> bool:
@@ -2123,6 +2182,7 @@ def match_worker(entry: dict):
                             MATCH_STATE[match_id]['ft_posted'] = True
                             _save_state()
                         _archive_match_data(entry)
+                        _watch_group_publish(entry, deadline_utc)
                         break
             elif _eft_done and active_ft_ig:
                 stale = _early_card_stale(early_ft_score, early_ft_events,

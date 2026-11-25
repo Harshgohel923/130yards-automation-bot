@@ -220,6 +220,18 @@ The worker's nudge (`workflow_dispatch` on `dispatcher.yml`, which is why
 gets the group posted in about a minute instead of up to fifteen. If it fails,
 nothing breaks.
 
+**If the post itself fails**, the worker that handed in the last card doesn't
+exit. Once every card is in, it checks the group every minute and nudges the
+dispatcher again until the `POSTED` marker appears, so a failed Instagram
+publish is retried within a minute or two instead of at the next 15-minute
+tick. The nudges queue on the dispatcher's `concurrency` group — at most one
+run waiting — so there is still only ever one publisher, and extra waiting
+runs show up as *cancelled* in the Actions tab, which is expected. It gives up
+at the worker's own ceiling with a 🙋 alert; the dispatcher's 15-minute retries
+carry on after that. If a member's card is still missing (that match is still
+being played), the watch is left to that match's worker, which takes it over
+when it hands its own card in.
+
 **If a member never arrives**, the group still posts. Four hours after the last
 kickoff in the group (`GROUP_TIMEOUT_HOURS`), the dispatcher posts what it has
 and Telegram-alerts which matches were left out.
