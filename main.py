@@ -352,7 +352,12 @@ def _generate_card(entry: dict, event_type: str, scraper_data: dict) -> str:
     # Second leg of a two-legged tie: stamp the aggregate where both renderers
     # and the caption read it. Clears it for every other fixture.
     two_legs.annotate(scraper_data, entry, event_type)
-    photo_path = fetch_match_photo(match_id, event_type)
+    # An HT card asked for on Telegram with "standard template" means exactly
+    # that — even if a photo for the moment was uploaded earlier.
+    with STATE_LOCK:
+        forced_template = (event_type == 'HT' and
+                           MATCH_STATE.get(match_id, {}).get('ht_optin_style') == 'template')
+    photo_path = None if forced_template else fetch_match_photo(match_id, event_type)
     if photo_path:
         try:
             path = generate_overlay_scorecard(scraper_data, photo_path,
@@ -615,15 +620,19 @@ def _ht_wanted_on_request(entry: dict, current_score) -> bool:
         matchlog.log('asked about an HT card', 'post_ht is off for this match')
         return False
 
-    answer = ht_optin.read_answer(match_id)
-    if answer is None:
+    payload = ht_optin.read_answer(match_id)
+    if payload is None:
         return False
+    answer, style = payload.get('answer'), payload.get('style')
     with STATE_LOCK:
-        MATCH_STATE[match_id]['ht_optin_answer'] = answer
+        s = MATCH_STATE[match_id]
+        s['ht_optin_answer'] = answer
+        s['ht_optin_style'] = style
         _save_state()
-    print(f"[{match_id}] HT card requested: {answer}.")
-    matchlog.log('HT card on request', 'yes — posting it' if answer == 'post'
-                 else 'no thanks', force=True)
+    print(f"[{match_id}] HT card requested: {answer} ({style or '-'}).")
+    matchlog.log('HT card on request',
+                 f"yes — {'your photo' if style == 'photo' else 'standard template'}"
+                 if answer == 'post' else 'no thanks', force=True)
     return answer == 'post'
 
 

@@ -112,11 +112,14 @@ Each worker thread handles one match end-to-end:
   with the permalink instead — see *Deleting a superseded post*.
 - **HT card on request**: a fixture with `"post_ht": false` still gets a 🙋
   Telegram question at the half-time whistle — *Post the HT card* / *No
-  thanks* — because sometimes the first half is the story. A tap on Post is
-  recorded by the bot on Cloudinary (`optin/ht/<match_id>.json`, see
-  `ht_optin.py`) and the worker posts the HT card on its next poll, exactly as
-  a `post_ht` fixture would (a photo sent with /start first is used). An
-  unanswered question has its buttons taken off when the second half starts.
+  thanks* — because sometimes the first half is the story. Post leads on to
+  the background: send a photo (saved as the match's HT photo, as /start
+  would) or tap *Use the standard template* — which wins even over a photo
+  uploaded earlier. Only then is the go-ahead recorded on Cloudinary
+  (`optin/ht/<match_id>.json`, see `ht_optin.py`), and the worker posts the
+  HT card on its next poll, exactly as a `post_ht` fixture would. A photo
+  arriving after half time is turned away. An unanswered question has its
+  buttons taken off when the second half starts.
 - **Failed posts retry every poll.** A card is only marked posted once
   Instagram has accepted it. A failed HT card retries every minute while the
   scraper reports the interval; if the second half starts first, you get one

@@ -88,6 +88,7 @@ Setup:
 """
 
 import asyncio
+import time
 import json
 import logging
 import os
@@ -1693,35 +1694,141 @@ async def staged_drop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 # compute from the picture itself: a digest of its public_id, and the id of
 # the player being offered. See event_photos.digest and main._ask_who_it_is.
 
-async def ht_optin_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """A tap on a worker's "post an HT card anyway?" buttons.
+# ── HT card on request ───────────────────────────────────────────────────────
+# A worker asks at half time whether to post an HT card for a match that isn't
+# set to (see ht_optin.py). "No thanks" is one tap. "Post" leads on to the
+# background — a photo, or the standard template — and only once that is
+# settled is the answer recorded for the worker to act on.
 
-    The worker reads the answer from Cloudinary on its next poll — see
-    ht_optin.py — so this only has to record it and say what happens next.
-    """
+HT_BG = 40   # numbered clear of every other conversation's states
+
+
+def _ht_question_line(query) -> str:
+    """The question's first line — which match — kept on every edit."""
+    return (query.message.text or '').split('\n\n')[0] if query.message else ''
+
+
+async def ht_skip_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if not _allowed(update):
         await query.answer("Not authorized.", show_alert=True)
         return
     await query.answer()
-
     import ht_optin
     try:
-        reply = await asyncio.to_thread(ht_optin.record_tap, query.data)
+        reply = await asyncio.to_thread(ht_optin.record_skip, query.data)
     except Exception as e:
         log.warning("Could not record an HT card answer: %s", e)
         await query.message.reply_text(
-            f"I couldn't save that: {e}\n\nTap it again in a moment — the "
-            f"question stays open until the second half starts."
-        )
+            f"I couldn't save that: {e}\n\nTap it again in a moment.")
         return
-
-    # Keep the question above the answer, so the chat still says which match.
-    question = (query.message.text or '').split('\n\n')[0]
+    question = _ht_question_line(query)
     try:
         await query.edit_message_text(f"{question}\n\n{reply}" if question else reply)
     except Exception as e:
         log.info("HT question not edited: %s", e)
+
+
+async def ht_post_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """"Post the HT card" — ask for the background before anything is posted."""
+    import ht_optin
+    query = update.callback_query
+    if not _allowed(update):
+        await query.answer("Not authorized.", show_alert=True)
+        return ConversationHandler.END
+    await query.answer()
+    parsed = ht_optin.parse_callback(query.data)
+    if parsed is None:
+        return ConversationHandler.END
+    question = _ht_question_line(query)
+    context.user_data['ht_bg'] = {'match_id': parsed[0], 'since': time.time(),
+                                  'question': question}
+    _touch_session()
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(
+        "🖼 Use the standard template",
+        callback_data=ht_optin.template_callback(parsed[0]))]])
+    await query.edit_message_text(
+        f"{question}\n\n{ht_optin.background_prompt()}" if question
+        else ht_optin.background_prompt(),
+        reply_markup=keyboard)
+    return HT_BG
+
+
+def _ht_window_open(pending: dict) -> bool:
+    import ht_optin
+    return time.time() - pending.get('since', 0) <= ht_optin.PHOTO_WINDOW_SECS
+
+
+async def _ht_record_post(msg, pending: dict, style: str) -> bool:
+    import ht_optin
+    try:
+        await asyncio.to_thread(ht_optin.write_answer, pending['match_id'],
+                                'post', style)
+    except Exception as e:
+        log.warning("Could not record an HT card answer: %s", e)
+        await msg.reply_text(
+            f"I couldn't save the go-ahead: {e}\n\nTry again in a moment.")
+        return False
+    return True
+
+
+async def ht_bg_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """The background photo: upload it as the match's HT photo, then go."""
+    import ht_optin
+    msg = update.message
+    pending = context.user_data.get('ht_bg')
+    if not pending:
+        return ConversationHandler.END
+    if not _ht_window_open(pending):
+        context.user_data.pop('ht_bg', None)
+        await msg.reply_text("Half time is over, so there's no half-time card "
+                             "for this one any more.")
+        return ConversationHandler.END
+    ref = _photo_ref(msg)
+    if ref is None:
+        await msg.reply_text("That file isn't an image — send a JPG or PNG, or "
+                             "tap the button for the standard template.")
+        return HT_BG
+
+    match_id = pending['match_id']
+    match = next((m for m in _load_matches() if str(m.get('match_id')) == match_id),
+                 {'match_id': match_id, 'home_team': pending.get('question', ''),
+                  'away_team': ''})
+    if not await _upload_photo(msg, context, match, 'HT', ref,
+                               descriptor='half-time card background'):
+        return HT_BG          # _upload_photo has said why; send it again
+    if not await _ht_record_post(msg, pending, 'photo'):
+        return HT_BG
+    context.user_data.pop('ht_bg', None)
+    await msg.reply_text(ht_optin.answered_text('post', 'photo'))
+    return ConversationHandler.END
+
+
+async def ht_bg_template(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """"Use the standard template" — go without a photo."""
+    import ht_optin
+    query = update.callback_query
+    if not _allowed(update):
+        await query.answer("Not authorized.", show_alert=True)
+        return ConversationHandler.END
+    await query.answer()
+    pending = context.user_data.get('ht_bg') or {}
+    match_id = ht_optin.parse_template_callback(query.data)
+    if not match_id:
+        return ConversationHandler.END
+    pending = dict(pending, match_id=match_id)
+    if pending.get('since') and not _ht_window_open(pending):
+        context.user_data.pop('ht_bg', None)
+        await query.edit_message_text("Half time is over, so there's no "
+                                      "half-time card for this one any more.")
+        return ConversationHandler.END
+    if not await _ht_record_post(query.message, pending, 'template'):
+        return HT_BG
+    context.user_data.pop('ht_bg', None)
+    question = pending.get('question') or _ht_question_line(query)
+    reply = ht_optin.answered_text('post', 'template')
+    await query.edit_message_text(f"{question}\n\n{reply}" if question else reply)
+    return ConversationHandler.END
 
 
 async def carousel_order_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3215,9 +3322,26 @@ def main() -> None:
             CommandHandler('newphoto', start),
         ],
     )
+    # The HT background step goes first: while it waits for a photo, the photo
+    # must reach it rather than start the general photo flow (photo_first).
+    ht_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(ht_post_tap, pattern=r'^ht:[^:]+:post$')],
+        states={
+            HT_BG: [
+                MessageHandler(PHOTO_ENTRY_FILTER, ht_bg_photo),
+                CallbackQueryHandler(ht_bg_template, pattern=r'^htbg:'),
+            ],
+        },
+        fallbacks=common_fallbacks,
+        allow_reentry=True,
+    )
+    app.add_handler(ht_conv)
     app.add_handler(card_conv)
     app.add_handler(event_conv)
     app.add_handler(conv)
+    # A template tap that arrives with no conversation open (the bot was
+    # restarted in between) still has to count.
+    app.add_handler(CallbackQueryHandler(ht_bg_template, pattern=r'^htbg:'))
     # Outside any conversation these still have to answer.
     app.add_handler(CommandHandler('help', help_cmd))
     app.add_handler(CommandHandler('cancel', cancel))
@@ -3231,7 +3355,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(staged_drop, pattern=r'^sd:'))
     app.add_handler(CallbackQueryHandler(staged_clarify, pattern=r'^ec:'))
     app.add_handler(CallbackQueryHandler(carousel_order_tap, pattern=r'^co:'))
-    app.add_handler(CallbackQueryHandler(ht_optin_tap, pattern=r'^ht:[^:]+:(post|skip)$'))
+    app.add_handler(CallbackQueryHandler(ht_skip_tap, pattern=r'^ht:[^:]+:skip$'))
     # Group -1 runs first and consumes nothing — see keep_alive.
     app.add_handler(MessageHandler(filters.ALL, keep_alive), group=-1)
     app.add_handler(CallbackQueryHandler(keep_alive), group=-1)

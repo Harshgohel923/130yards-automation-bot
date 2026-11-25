@@ -101,13 +101,13 @@ def test_it_asks_once_at_the_whistle(run):
 
 
 def test_a_yes_posts_the_ht_card(run):
-    rec = run([_ht()] * 4, answers={2: 'post'})
+    rec = run([_ht()] * 4, answers={2: {'answer': 'post', 'style': 'photo'}})
     assert rec['posts'] == ['HT']
     assert rec['state']['ht_posted'] is True
 
 
 def test_a_no_posts_nothing_and_stops_asking_cloudinary(run):
-    rec = run([_ht()] * 5, answers={1: 'skip'})
+    rec = run([_ht()] * 5, answers={1: {'answer': 'skip'}})
     assert rec['posts'] == []
     assert rec['reads'] == 1
 
@@ -120,7 +120,7 @@ def test_unanswered_question_is_closed_when_play_resumes(run):
 
 
 def test_an_answered_question_is_left_alone_after_ht(run):
-    rec = run([_ht(), _ht(), _2h()], answers={1: 'skip'})
+    rec = run([_ht(), _ht(), _2h()], answers={1: {'answer': 'skip'}})
     assert rec['edits'] == []
 
 
@@ -134,6 +134,27 @@ def test_no_question_outside_half_time(run):
     assert rec['asked'] == [] and rec['edits'] == []
 
 
+def test_standard_template_wins_over_an_uploaded_photo(monkeypatch):
+    main.MATCH_STATE.clear()
+    main.MATCH_STATE[MATCH_ID] = {'ht_optin_style': 'template'}
+    used = {}
+    monkeypatch.setattr(main, 'fetch_match_photo',
+                        lambda *a: used.setdefault('photo_fetched', True) and 'p.png')
+    monkeypatch.setattr(main, 'generate_scorecard',
+                        lambda *a, **k: used.setdefault('card', 'template'))
+    monkeypatch.setattr(main, 'generate_overlay_scorecard',
+                        lambda *a, **k: used.setdefault('card', 'overlay'))
+    monkeypatch.setattr(matchlog, 'log', lambda *a, **k: None)
+    entry = {'match_id': MATCH_ID, 'home_team': 'Home', 'away_team': 'Away'}
+    main._generate_card(entry, 'HT', {'matchSample': {}})
+    assert used == {'card': 'template'}           # photo never even looked up
+
+    # The FT card of the same match still uses a photo if there is one.
+    used.clear()
+    main._generate_card(entry, 'FT', {'matchSample': {}})
+    assert used.get('card') == 'overlay'
+
+
 # ── The bot's side ───────────────────────────────────────────────────────────
 
 def test_callbacks_round_trip():
@@ -144,36 +165,124 @@ def test_callbacks_round_trip():
     assert len(ht_optin.callback('manual-20261125-ARSCHE', 'post').encode()) <= 64
 
 
-def test_a_tap_is_recorded(monkeypatch):
+def test_no_thanks_is_recorded(monkeypatch):
     written = []
     monkeypatch.setattr(ht_optin, 'write_answer',
-                        lambda mid, ans: written.append((mid, ans)))
-    assert 'Posting the half-time card' in ht_optin.record_tap('ht:42:post')
-    assert written == [('42', 'post')]
+                        lambda mid, ans, style=None: written.append((mid, ans)))
+    assert 'no half-time card' in ht_optin.record_skip('ht:42:skip')
+    assert written == [('42', 'skip')]
 
 
-def test_the_bot_handler_records_and_keeps_the_question_line(monkeypatch):
-    import asyncio
+class _Msg:
+    def __init__(self, text='🙋 Home vs Away — half time, 1-0.\n\nMore…'):
+        self.text = text
+        self.replies = []
+        self.photo, self.document = [], None
+
+    async def reply_text(self, text, **k):
+        self.replies.append(text)
+
+
+class _Query:
+    def __init__(self, data):
+        self.data = data
+        self.message = _Msg()
+        self.edits = []
+
+    async def answer(self, *a, **k):
+        pass
+
+    async def edit_message_text(self, text, reply_markup=None, **k):
+        self.edits.append((text, reply_markup))
+
+
+@pytest.fixture
+def bot(monkeypatch):
     import types
     import telegram_bot as tb
-    edits = []
-
-    class Query:
-        data = 'ht:42:post'
-        message = types.SimpleNamespace(text='🙋 Home vs Away — half time, 1-0.\n\nMore…')
-
-        async def answer(self, *a, **k):
-            pass
-
-        async def edit_message_text(self, text, **k):
-            edits.append(text)
-
+    written = []
     monkeypatch.setattr(tb, '_allowed', lambda u: True)
-    monkeypatch.setattr(ht_optin, 'write_answer', lambda *a: None)
-    asyncio.run(tb.ht_optin_tap(types.SimpleNamespace(callback_query=Query()), None))
-    (text,) = edits
-    assert text.startswith('🙋 Home vs Away — half time, 1-0.')
-    assert 'Posting the half-time card' in text
+    monkeypatch.setattr(tb, '_touch_session', lambda: None)
+    monkeypatch.setattr(ht_optin, 'write_answer',
+                        lambda mid, ans, style=None: written.append((mid, ans, style)))
+    ctx = types.SimpleNamespace(user_data={}, chat_data={})
+    return tb, ctx, written
 
+
+def test_post_asks_for_a_background_and_records_nothing_yet(bot):
+    import asyncio, types
+    tb, ctx, written = bot
+    q = _Query('ht:42:post')
+    state = asyncio.run(tb.ht_post_tap(types.SimpleNamespace(callback_query=q), ctx))
+    assert state == tb.HT_BG
+    text, markup = q.edits[0]
+    assert text.startswith('🙋 Home vs Away — half time, 1-0.')
+    assert 'background photo' in text
+    assert markup.inline_keyboard[0][0].callback_data == 'htbg:42'
+    assert written == []                          # the worker must wait
+
+
+def test_the_template_button_records_post_on_the_template(bot):
+    import asyncio, types
+    tb, ctx, written = bot
+    asyncio.run(tb.ht_post_tap(types.SimpleNamespace(callback_query=_Query('ht:42:post')), ctx))
+    q = _Query('htbg:42')
+    state = asyncio.run(tb.ht_bg_template(types.SimpleNamespace(callback_query=q), ctx))
+    assert state == tb.ConversationHandler.END
+    assert written == [('42', 'post', 'template')]
+    assert 'standard template' in q.edits[0][0]
+
+
+def test_a_photo_is_uploaded_as_the_ht_photo_then_recorded(bot, monkeypatch):
+    import asyncio, types
+    tb, ctx, written = bot
+    asyncio.run(tb.ht_post_tap(types.SimpleNamespace(callback_query=_Query('ht:42:post')), ctx))
+    uploads = []
+
+    async def fake_upload(msg, context, match, event_type, ref, **k):
+        uploads.append((match['match_id'], event_type))
+        return True
+
+    monkeypatch.setattr(tb, '_upload_photo', fake_upload)
+    monkeypatch.setattr(tb, '_photo_ref', lambda msg: ('file-id', 1000))
+    monkeypatch.setattr(tb, '_load_matches', lambda: [])
+    msg = _Msg()
+    state = asyncio.run(tb.ht_bg_photo(types.SimpleNamespace(message=msg), ctx))
+    assert state == tb.ConversationHandler.END
+    assert uploads == [('42', 'HT')]
+    assert written == [('42', 'post', 'photo')]
+    assert 'with your photo' in msg.replies[-1]
+
+
+def test_a_failed_upload_records_nothing_and_waits_for_another(bot, monkeypatch):
+    import asyncio, types
+    tb, ctx, written = bot
+    asyncio.run(tb.ht_post_tap(types.SimpleNamespace(callback_query=_Query('ht:42:post')), ctx))
+
+    async def failed_upload(*a, **k):
+        return False
+
+    monkeypatch.setattr(tb, '_upload_photo', failed_upload)
+    monkeypatch.setattr(tb, '_photo_ref', lambda msg: ('file-id', 1000))
+    monkeypatch.setattr(tb, '_load_matches', lambda: [])
+    state = asyncio.run(tb.ht_bg_photo(types.SimpleNamespace(message=_Msg()), ctx))
+    assert state == tb.HT_BG and written == []
+
+
+def test_a_photo_after_half_time_is_turned_away(bot, monkeypatch):
+    import asyncio, types
+    tb, ctx, written = bot
+    asyncio.run(tb.ht_post_tap(types.SimpleNamespace(callback_query=_Query('ht:42:post')), ctx))
+    ctx.user_data['ht_bg']['since'] -= ht_optin.PHOTO_WINDOW_SECS + 1
+    msg = _Msg()
+    state = asyncio.run(tb.ht_bg_photo(types.SimpleNamespace(message=msg), ctx))
+    assert state == tb.ConversationHandler.END
+    assert written == [] and 'Half time is over' in msg.replies[-1]
+
+
+def test_the_conversation_is_wired_ahead_of_the_photo_flow():
+    import telegram_bot as tb
     src = open(tb.__file__, encoding='utf-8').read()
-    assert "CallbackQueryHandler(ht_optin_tap, pattern=r'^ht:[^:]+:(post|skip)$')" in src
+    assert src.index('app.add_handler(ht_conv)') < src.index('app.add_handler(conv)')
+    assert "CallbackQueryHandler(ht_post_tap, pattern=r'^ht:[^:]+:post$')" in src
+    assert "CallbackQueryHandler(ht_skip_tap, pattern=r'^ht:[^:]+:skip$')" in src
