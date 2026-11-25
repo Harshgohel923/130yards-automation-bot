@@ -19,6 +19,7 @@ import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from allfootball_desktop import format_minute
+import two_legs
 from config import (
     BRAND_LOGO,
     CLOUD_NAME,
@@ -546,10 +547,13 @@ def _draw_scorer_lines(img, draw, lines, box, align, font_size, step, max_visibl
 def add_scorecard_overlay(image_path, output_path, home_team, away_team,
                            home_score, away_score, event_type='FT',
                            penalties=None, home_events=None, away_events=None,
-                           competition=None, match_date=None):
+                           competition=None, match_date=None, aggregate=None):
     """
     penalties: optional (home_pen, away_pen) strings shown as
                'PENALTIES: h - a' below the final score.
+    aggregate: optional (home, away) for the second leg of a two-legged tie,
+               shown as 'AGG h - a' in that same line — sharing it with the
+               shootout when there is one. See two_legs.result_line.
     match_date: optional '21 AUG 2026', stamped in the top-right corner
                opposite the brand mark. Only hand-entered matches pass one —
                see manual_match.py.
@@ -671,11 +675,14 @@ def add_scorecard_overlay(image_path, output_path, home_team, away_team,
             draw.line((sx + i * seg_w, partition_y, sx + (i + 1) * seg_w, partition_y),
                       fill=(*col, 255), width=3)
 
-    # ── PENALTIES line (only when the match went to a shootout) ───────────
-    if penalties:
+    # ── Result line: aggregate and/or shootout, under the score ───────────
+    # One line between the score and the team names: that gap holds one, and
+    # aggregate + penalties are short enough to share it.
+    result_text = two_legs.result_line(aggregate, penalties)
+    if result_text:
         pen_font = _font(int(h * 0.017))
-        pen_text = f"PENALTIES: {penalties[0]} - {penalties[1]}"
-        draw.text((cx, py1 + int(h * 0.155)), pen_text, font=pen_font, fill=COLOR_LABEL, anchor='mm')
+        draw.text((cx, py1 + int(h * 0.155)), result_text, font=pen_font,
+                  fill=COLOR_LABEL, anchor='mm')
 
     # ── Scorer lines ──────────────────────────────────────────────────────
     scorers_top = py1 + header_h
@@ -794,6 +801,8 @@ def _render_from_scraper_data(data, image_path, output_path, event_type='FT',
         # Set by manual_match.build_scraper_data() and nothing else, so a
         # scraped fixture never grows a date it didn't ask for.
         match_date=str(sample.get('card_date') or '').strip() or None,
+        # Stamped by two_legs.annotate() for a second leg only.
+        aggregate=two_legs.aggregate_of(sample),
     )
 
 

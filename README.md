@@ -2123,6 +2123,8 @@ any reasonable spelling survives `validate_matches.py`.
 | `lineups_first` | `"home"` (default) or `"away"` — which team's XI is slide one. Only meaningful with `post_lineups`. |
 | `coaches` | `{"home": …, "away": …}` — the managers, printed on the line-up cards. Optional, and the only line there no feed provides. |
 | `knockout_match` | Wait through a level scoreline at 90' for ET/penalties rather than posting early. |
+| `second_leg` | Second leg of a two-legged tie: the card shows the aggregate under the score (`AGG 3 - 2`, or `AGG 2 - 2  •  PENS 4 - 2` when it goes to a shootout) and the caption is told who goes through. Needs `first_leg_score`. Usually set together with `knockout_match`. |
+| `first_leg_score` | The first leg's result **as it finished, first leg's home team first** — e.g. Liverpool 2-1 Club Brugge in the first leg is `"2-1"` on the return fixture Club Brugge vs Liverpool. The code turns it round to tonight's sides; `validate_matches.py` prints the reading back ("first leg Liverpool 2-1 Club Brugge → aggregate before kickoff Club Brugge 1-2 Liverpool") so a score typed the wrong way round is caught. Shootout goals never count towards the aggregate. |
 | `carousel_group` | Post with every other match carrying the same id, as one carousel. Omit for a normal solo post. Max 10 matches per group. |
 
 ---

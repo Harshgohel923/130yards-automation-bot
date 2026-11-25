@@ -8,6 +8,7 @@ from google.genai import types
 from event_photos import EVENT_DESCRIPTION
 from hashtags import build_group_hashtags, build_hashtags, competition_label
 from lineup_card import build_rows, formation_label
+import two_legs
 
 load_dotenv()
 
@@ -222,6 +223,18 @@ def generate_caption(scraper_data: dict, event_type: str = 'FT',
         except (ValueError, TypeError):
             result_context = "result unknown"
 
+    # Second leg of a two-legged tie: who goes through is decided by the
+    # aggregate, not by tonight's result — say so, or the caption can crown a
+    # team that won the night and went out. Stamped by two_legs.annotate().
+    pens = None
+    if event_type != 'HT':
+        ps_a = str(match_sample.get('ps_A') or '').strip()
+        ps_b = str(match_sample.get('ps_B') or '').strip()
+        pens = (ps_a, ps_b) if ps_a and ps_b else None
+    tie_str = two_legs.tie_summary(home_team, away_team,
+                                   two_legs.aggregate_of(match_sample), pens,
+                                   final=event_type != 'HT')
+
     goals_str = _summarise_events(scraper_data.get('events', []))
     stats_str = _summarise_stats(scraper_data.get('statistics', {}))
     # Same story as the statistics field: a placeholder string when there is
@@ -319,7 +332,7 @@ Match Details:
 - Moment: {moment_tag} ({moment})
 - EXACT SCORE LINE (use this verbatim when showing the score — do not recompute or reformat it): {score_line}
 - Match ended via: {match_ending}
-- Result: {result_context}
+- Result: {result_context}{('\n- Two-legged tie (this is the SECOND LEG — who advances is decided by the aggregate, so frame the result around it and never say a team is through or out unless this line says so): ' + tie_str) if tie_str else ''}
 - Goals: {goals_str}
 {('- Stats: ' + stats_str) if stats_str else ''}{('\n- H2H: ' + h2h_str) if h2h_str else ''}{('\n- Recent form: ' + form_str) if form_str else ''}{('\n- Group table: ' + group_table_str) if group_table_str else ''}{('\n' + records_block) if records_block else ''}
 

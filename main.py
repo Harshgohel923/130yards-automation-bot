@@ -60,6 +60,7 @@ from overlay_scorebar import generate_overlay_scorecard
 from scorecard import generate_scorecard
 from stats_card import generate_stats_card
 import matchlog
+import two_legs
 
 load_dotenv()
 
@@ -345,6 +346,9 @@ def _generate_card(entry: dict, event_type: str, scraper_data: dict) -> str:
     """
     match_id = entry['match_id']
     competition = _competition_of(entry, scraper_data)
+    # Second leg of a two-legged tie: stamp the aggregate where both renderers
+    # and the caption read it. Clears it for every other fixture.
+    two_legs.annotate(scraper_data, entry, event_type)
     photo_path = fetch_match_photo(match_id, event_type)
     if photo_path:
         try:

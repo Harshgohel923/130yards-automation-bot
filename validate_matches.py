@@ -61,6 +61,7 @@ import requests
 
 from config import IST_TZ, LOCAL_TZ, get_crest_url
 from football_scraper_dom import get_match_data
+import two_legs
 from logo_fetch import (COMPETITION_DISPLAY, COMPETITIONS, _scrape_hash,
                         _slugify, fetch_competition_logo, fetch_logo,
                         normalize_team_name, resolve_competition, resolve_team)
@@ -84,7 +85,8 @@ AUTO_FIELDS = ('match_id', 'kickoff_utc', 'home_team', 'away_team', 'competition
 FIELD_ORDER = ('match_id', 'scraper_url', 'desktop_url', 'kickoff_utc',
                'kickoff_local', 'kickoff_ist', 'home_team', 'away_team',
                'competition', 'post_ht', 'post_ft_stats', 'post_lineups', 'lineups_first',
-               'coaches', 'knockout_match', 'carousel_group', 'records')
+               'coaches', 'knockout_match', 'second_leg', 'first_leg_score',
+               'carousel_group', 'records')
 
 # Instagram will not accept more slides than this in one post, and a carousel
 # group is one slide per match.
@@ -471,6 +473,22 @@ def _check_structure(matches: list) -> list[str]:
                     f"field to post this match on its own, or give the group a "
                     f"name shared with the other matches it posts with.")
 
+        if 'second_leg' in entry and not isinstance(entry['second_leg'], bool):
+            problems.append(
+                f"match {match_id}: second_leg must be true or false, got "
+                f"{entry['second_leg']!r}.")
+        elif entry.get('second_leg'):
+            if two_legs.parse_first_leg(entry.get('first_leg_score')) is None:
+                problems.append(
+                    f"match {match_id}: second_leg is set, so first_leg_score is "
+                    f"needed to work out the aggregate — the first leg's result "
+                    f"as it finished, first leg's home team first, e.g. "
+                    f"\"2-1\". Got {entry.get('first_leg_score')!r}.")
+        elif 'first_leg_score' in entry:
+            problems.append(
+                f"match {match_id}: first_leg_score is set but second_leg isn't — "
+                f"add \"second_leg\": true, or the aggregate won't be shown.")
+
         kickoff = entry.get('kickoff_utc')
         if kickoff:
             # Parsed exactly as main.py does, so this catches what it would hit.
@@ -489,6 +507,27 @@ def _check_structure(matches: list) -> list[str]:
 
     problems += _check_carousel_sizes(matches)
     return problems
+
+
+def _second_leg_notes(matches: list) -> list[str]:
+    """
+    Read each first_leg_score back in words. The score is typed as the first
+    leg finished — first leg's home team first, which is tonight's away team —
+    and a pair typed the other way round looks just as valid, so the only real
+    check is a person seeing which team it credited.
+    """
+    notes = []
+    for entry in matches:
+        if not isinstance(entry, dict) or not entry.get('second_leg'):
+            continue
+        leg = two_legs.parse_first_leg(entry.get('first_leg_score'))
+        if leg is None:
+            continue
+        home, away = entry.get('home_team', '?'), entry.get('away_team', '?')
+        notes.append(
+            f"{home} vs {away}: first leg {away} {leg[0]}-{leg[1]} {home} → "
+            f"aggregate before kickoff {home} {leg[1]}-{leg[0]} {away}")
+    return notes
 
 
 def _carousel_groups(matches: list) -> dict[str, list[dict]]:
@@ -720,6 +759,12 @@ def main() -> int:
     if notes:
         print('\nCarousel groups:')
         for n in notes:
+            print(f'  {n}')
+
+    legs = _second_leg_notes(matches)
+    if legs:
+        print('\nSecond legs — check the first leg reads right:')
+        for n in legs:
             print(f'  {n}')
 
     # Now the teams have been normalized, a URL built from a desktop link can

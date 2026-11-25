@@ -15,6 +15,7 @@ from config import (get_crest_url, get_competition_logo_url, get_brand_logo_url,
                     select_template_key,
                     STADIUM_NAME_ALIASES, LOCAL_SYMBOLS, TEAM_NAME_ALIASES)
 from allfootball_desktop import format_minute
+import two_legs
 from cloudinary_utils import LOCAL_CACHE_DIR as TEMPLATE_CACHE_DIR, fetch_template
 # Read-only reuse of the overlay card's colour logic so both styles agree.
 from overlay_scorebar import TEAM_COLORS, FALLBACK_COLORS, _dominant_colors
@@ -744,13 +745,16 @@ def generate_scorecard(scraper_data: dict, event_type: str = 'FT', match_id_over
             _draw_text_at_size(draw, score_val, box, FONT_BOLD, score_size, COLOR_SCORE)
     _draw_score_dash(draw, home_score_box, away_score_box)
 
-    # ── Penalty shootout score — only shown when match went to penalties ───────
+    # ── Result line: shootout and/or aggregate, between the team names ─────────
+    # A second leg's aggregate shares the penalties slot (two_legs.result_line):
+    # the box holds one line, and both are short.
     ps_home = ps_home_raw if event_type != 'HT' else ''
     ps_away = ps_away_raw if event_type != 'HT' else ''
-    if ps_home and ps_away and penalty_box != (0, 0, 0, 0):
+    result_text = two_legs.result_line(two_legs.aggregate_of(match_sample),
+                                       (ps_home, ps_away) if ps_home and ps_away else None)
+    if result_text and penalty_box != (0, 0, 0, 0):
         # Gold text, no backing plate — the card-wide shadow carries it.
-        penalty_text = f"PENALTIES: {ps_home}-{ps_away}"
-        _draw_centered_text(draw, penalty_text, penalty_box,
+        _draw_centered_text(draw, result_text, penalty_box,
                             FONT_BOLD, PENALTY_FONT_MAX, PENALTY_FONT_MIN, COLOR_PENALTY)
 
     # ── Stadium — center aligned ──────────────────────────────────────────────
