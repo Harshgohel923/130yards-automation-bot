@@ -1988,6 +1988,97 @@ async def staged_drop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 # compute from the picture itself: a digest of its public_id, and the id of
 # the player being offered. See event_photos.digest and main._ask_who_it_is.
 
+# ── "The scoreline changed since your photo" ─────────────────────────────────
+# The worker asks when a lead changes hands after the HT/FT photo was sent
+# (see story_photo.py) and holds the card for the answer. "Post the older one"
+# is one tap; "Upload new photo" waits here for the picture, which replaces the
+# background directly — the person asked for exactly this, so no "already
+# there" warning.
+
+STORY_WAIT = 53   # numbered clear of every other conversation's states
+
+
+async def story_old_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    import story_photo
+    query = update.callback_query
+    if not _allowed(update):
+        await query.answer("Not authorized.", show_alert=True)
+        return
+    await query.answer()
+    try:
+        text, _state = await asyncio.to_thread(story_photo.record_choice, query.data)
+    except Exception as e:
+        log.warning("Could not record a photo answer: %s", e)
+        await query.message.reply_text(f"I couldn't save that: {e}\n\nTap it again.")
+        return
+    try:
+        await query.edit_message_text(text)
+    except Exception as e:
+        log.info("Photo question not edited: %s", e)
+
+
+async def story_new_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    import story_photo
+    query = update.callback_query
+    if not _allowed(update):
+        await query.answer("Not authorized.", show_alert=True)
+        return ConversationHandler.END
+    await query.answer()
+    try:
+        text, state = await asyncio.to_thread(story_photo.record_choice, query.data)
+    except Exception as e:
+        log.warning("Could not record a photo answer: %s", e)
+        await query.message.reply_text(f"I couldn't save that: {e}\n\nTap it again.")
+        return ConversationHandler.END
+    try:
+        await query.edit_message_text(text)
+    except Exception as e:
+        log.info("Photo question not edited: %s", e)
+    if state is None:
+        return ConversationHandler.END
+    match_id, moment, qid, _choice = story_photo.parse_callback(query.data)
+    context.user_data['story'] = {'match_id': match_id, 'moment': moment,
+                                  'qid': qid, 'since': time.time()}
+    _touch_session()
+    return STORY_WAIT
+
+
+async def story_photo_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    import story_photo
+    msg = update.message
+    pending = context.user_data.get('story')
+    if not pending:
+        return ConversationHandler.END
+    if time.time() - pending['since'] > story_photo.PHOTO_WAIT_SECS:
+        context.user_data.pop('story', None)
+        await msg.reply_text("That's more than 10 minutes — the card has gone out "
+                             "with the older photo.")
+        return ConversationHandler.END
+    ref = _photo_ref(msg)
+    if ref is None:
+        await msg.reply_text("That file isn't an image — send a JPG or PNG.")
+        return STORY_WAIT
+
+    match_id, moment = pending['match_id'], pending['moment']
+    match = next((m for m in _load_matches() if str(m.get('match_id')) == match_id),
+                 {'match_id': match_id, 'home_team': 'this match', 'away_team': ''})
+    if not await _upload_photo(msg, context, match, moment, ref,
+                               descriptor=f"new {story_photo.moment_name(moment)} photo"):
+        return STORY_WAIT
+    try:
+        in_time = await asyncio.to_thread(story_photo.record_upload, match_id,
+                                          moment, pending['qid'])
+    except Exception as e:
+        await msg.reply_text(f"The photo is up, but I couldn't tell the worker: {e}. "
+                             f"It'll still be used if the card hasn't gone yet.")
+        in_time = True
+    context.user_data.pop('story', None)
+    await msg.reply_text(story_photo.resolved_text('uploaded') if in_time else
+                         "The photo is up, but the card had already gone out with "
+                         "the older one.")
+    return ConversationHandler.END
+
+
 # ── HT card on request ───────────────────────────────────────────────────────
 # A worker asks at half time whether to post an HT card for a match that isn't
 # set to (see ht_optin.py). "No thanks" is one tap. "Post" leads on to the
@@ -3655,6 +3746,16 @@ def main() -> None:
         fallbacks=common_fallbacks,
         allow_reentry=True,
     )
+    # Same reasoning as ht_conv: while it waits for the new photo, the photo
+    # must reach it rather than start the general photo flow.
+    story_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(
+            story_new_tap, pattern=r'^st:[^:]+:(HT|FT):\d+:new$')],
+        states={STORY_WAIT: [MessageHandler(PHOTO_ENTRY_FILTER, story_photo_received)]},
+        fallbacks=common_fallbacks,
+        allow_reentry=True,
+    )
+    app.add_handler(story_conv)
     app.add_handler(ht_conv)
     app.add_handler(card_conv)
     app.add_handler(event_conv)
@@ -3676,6 +3777,8 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(staged_clarify, pattern=r'^ec:'))
     app.add_handler(CallbackQueryHandler(carousel_order_tap, pattern=r'^co:'))
     app.add_handler(CallbackQueryHandler(ht_skip_tap, pattern=r'^ht:[^:]+:skip$'))
+    app.add_handler(CallbackQueryHandler(story_old_tap,
+                                         pattern=r'^st:[^:]+:(HT|FT):\d+:old$'))
     # Group -1 runs first and consumes nothing — see keep_alive.
     app.add_handler(MessageHandler(filters.ALL, keep_alive), group=-1)
     app.add_handler(CallbackQueryHandler(keep_alive), group=-1)

@@ -60,6 +60,7 @@ from telegram_notify import (
 )
 import ht_optin
 import ht_judge
+import story_photo
 from overlay_scorebar import generate_overlay_scorecard
 from scorecard import generate_scorecard
 from stats_card import generate_stats_card
@@ -525,6 +526,123 @@ def _post_slides(entry: dict, event_type: str, scraper_data: dict) -> tuple[list
     return public_ids, ig_id
 
 
+# ── "The scoreline changed since your photo" ─────────────────────────────────
+# See story_photo.py. _watch_story notes who is ahead once a photo is there
+# late on, and asks when that changes; _story_ready is the hold every posting
+# path checks before it renders a card — or deletes a live one to correct it.
+
+def _story_key(moment: str) -> str:
+    return f'story_{moment}'
+
+
+def _watch_story(entry: dict, moment: str, current_score) -> None:
+    """Called every poll from 35'/80' until the moment's card is final."""
+    match_id = entry['match_id']
+    who = story_photo.leader(*current_score)
+    if who is None:
+        return
+    with STATE_LOCK:
+        st = dict(MATCH_STATE[match_id].get(_story_key(moment)) or {})
+    if st.get('baseline') is None:
+        # The comparison starts once there is a photo to compare against.
+        if not match_photo_exists(match_id, moment):
+            return
+        st.update(baseline=who, base_score=list(current_score))
+        with STATE_LOCK:
+            MATCH_STATE[match_id][_story_key(moment)] = st
+            _save_state()
+        print(f"[{match_id}] {moment} photo is in — noting the story: {who}.")
+        return
+    if who == st['baseline']:
+        return
+
+    before = story_photo.describe(entry['home_team'], entry['away_team'], st['base_score'])
+    now = story_photo.describe(entry['home_team'], entry['away_team'], current_score)
+    # The question stands for the new story; a change while one is still open
+    # just moves the baseline, so the same photo isn't asked about twice.
+    st.update(baseline=who, base_score=list(current_score))
+    q = st.get('q')
+    if q and not q.get('resolved'):
+        with STATE_LOCK:
+            MATCH_STATE[match_id][_story_key(moment)] = st
+            _save_state()
+        return
+
+    qid = int(time.time())
+    try:
+        story_photo.write_state(match_id, moment, {'qid': qid})
+    except Exception as e:
+        print(f"[{match_id}] Could not open the photo question ({e}) — not asking.")
+        return
+    msg_id = send_choice(
+        story_photo.question_text(_label(entry), moment, before, now),
+        story_photo.options(match_id, moment, qid))
+    st['q'] = {'qid': qid, 'asked_ts': qid, 'msg_id': msg_id}
+    with STATE_LOCK:
+        MATCH_STATE[match_id][_story_key(moment)] = st
+        _save_state()
+    print(f"[{match_id}] Scoreline changed since the {moment} photo — asked for a new one.")
+    matchlog.log(f'{moment} photo may be out of date',
+                 f'{before} → {now} — asked for a new photo', force=True)
+
+
+def _story_resolve(entry: dict, moment: str, st: dict, reason: str,
+                   close: bool) -> None:
+    match_id = entry['match_id']
+    q = st['q']
+    q['resolved'] = reason
+    with STATE_LOCK:
+        MATCH_STATE[match_id][_story_key(moment)] = st
+        _save_state()
+    if close:
+        # Late taps must not look like they did something.
+        try:
+            remote = story_photo.read_state(match_id, moment) or {'qid': q['qid']}
+            if remote.get('qid') == q['qid']:
+                story_photo.write_state(match_id, moment, dict(remote, closed=True))
+        except Exception as e:
+            print(f"[{match_id}] Could not close the photo question: {e}")
+        if q.get('msg_id'):
+            edit_message(q['msg_id'], story_photo.resolved_text(reason))
+    matchlog.log(f'{moment} photo question settled', reason)
+
+
+def _story_ready(entry: dict, moment: str) -> bool:
+    """
+    May the card for this moment be rendered now? False while a "scoreline
+    changed" question is waiting on an answer or a new photo — the caller
+    skips this poll and tries again on the next.
+    """
+    match_id = entry['match_id']
+    with STATE_LOCK:
+        st = dict(MATCH_STATE.get(match_id, {}).get(_story_key(moment)) or {})
+    q = st.get('q')
+    if not q or q.get('resolved'):
+        return True
+    remote = story_photo.read_state(match_id, moment) or {}
+    if remote.get('qid') != q['qid']:
+        remote = {}
+    now = time.time()
+    answer = remote.get('answer')
+    if answer == 'old':
+        _story_resolve(entry, moment, st, 'old', close=False)
+        return True
+    if answer == 'new':
+        if remote.get('uploaded'):
+            _story_resolve(entry, moment, st, 'uploaded', close=False)
+            return True
+        if now - remote.get('answered_ts', q['asked_ts']) < story_photo.PHOTO_WAIT_SECS:
+            print(f"[{match_id}] Waiting for the new {moment} photo…")
+            return False
+        _story_resolve(entry, moment, st, 'no-photo', close=True)
+        return True
+    if now - q['asked_ts'] < story_photo.ANSWER_WAIT_SECS:
+        print(f"[{match_id}] Holding the {moment} card for an answer about the photo…")
+        return False
+    _story_resolve(entry, moment, st, 'no-answer', close=True)
+    return True
+
+
 def _run_group_pipeline(entry: dict, scraper_data: dict) -> bool:
     """
     Full time for a match that belongs to a carousel group.
@@ -538,6 +656,8 @@ def _run_group_pipeline(entry: dict, scraper_data: dict) -> bool:
     """
     match_id = entry['match_id']
     group = _carousel_group_of(entry)
+    if not _story_ready(entry, 'FT'):
+        return False
     print(f"[{match_id}] Full time — handing over to carousel group '{group}'…")
 
     try:
@@ -714,16 +834,19 @@ def _close_ht_question(entry: dict) -> None:
     print(f"[{match_id}] Second half started — closed the unanswered HT question.")
 
 
-def _run_pipeline(entry: dict, event_type: str, scraper_data: dict) -> bool:
+def _run_pipeline(entry: dict, event_type: str, scraper_data: dict) -> bool | None:
     """
     Shared pipeline for both HT and FT:
       scraper_data → scorecard image → Cloudinary → caption → Instagram → DB
     event_type: 'HT' or 'FT'
 
     Returns True once the card is on Instagram. On False nothing went out, and
-    the caller must leave the moment open so the next poll tries again.
+    the caller must leave the moment open so the next poll tries again. None
+    means held (a "scoreline changed" photo question is open) — not a failure.
     """
     match_id = entry['match_id']
+    if not _story_ready(entry, event_type):
+        return None      # held for a photo answer — not a failure; next poll
     print(f"[{match_id}] Running {event_type} pipeline…")
 
     try:
@@ -1723,6 +1846,8 @@ def _early_pipeline(entry: dict, event_type: str, scraper_data: dict) -> tuple[l
     Returns (cloudinary_public_ids, ig_media_id), or (None, None) on failure.
     """
     match_id = entry['match_id']
+    if not _story_ready(entry, event_type):
+        return None, None   # held for a photo answer — retried next poll, no alert
     print(f"[{match_id}] Running early {event_type} pipeline…")
     try:
         cids, ig_id = _post_slides(entry, event_type, scraper_data)
@@ -1830,6 +1955,8 @@ def _settle_early_card(entry: dict, event_type: str, stale: str | None,
               f"({stale}) and the scorer list lags — retrying next poll.")
         return False
 
+    if not _story_ready(entry, event_type):
+        return False      # don't take the live card down until the photo is settled
     print(f"[{match_id}] {moment} confirmed — live card is out of date "
           f"({stale}) — correcting…")
     _delete_early_post(entry, event_type)
@@ -2108,6 +2235,25 @@ def match_worker(entry: dict):
                     lineups_posted = True
 
         # ══════════════════════════════════════════════════════════════════════
+        # "SCORELINE CHANGED SINCE YOUR PHOTO"  (late on, before the card goes)
+        # ══════════════════════════════════════════════════════════════════════
+        # Wrapped: a photo question must never get in the way of the coverage.
+        try:
+            if (entry.get('post_ht', True) and not ht_posted
+                    and not is_event_posted(match_id, 'HT')
+                    and (raw_status == 'HT'
+                         or (raw_status == '1H'
+                             and minute >= story_photo.WATCH_FROM_MINUTE['HT']))):
+                _watch_story(entry, 'HT', current_score)
+            if (not ft_posted and not is_event_posted(match_id, 'FT')
+                    and (raw_status in ('ET', 'AP', 'FT')
+                         or (raw_status == '2H'
+                             and minute >= story_photo.WATCH_FROM_MINUTE['FT']))):
+                _watch_story(entry, 'FT', current_score)
+        except Exception as e:
+            print(f"[{match_id}] Photo story check failed: {e}")
+
+        # ══════════════════════════════════════════════════════════════════════
         # PHOTO REMINDERS  (ask before the card is needed, not after)
         # ══════════════════════════════════════════════════════════════════════
         if (raw_status == '1H' and minute >= PHOTO_REMINDER_HT_MINUTE
@@ -2170,7 +2316,8 @@ def match_worker(entry: dict):
             elif early_ht_posted and early_ht_ig_id and early_ht_score:
                 stale = _early_card_stale(early_ht_score, early_ht_events,
                                           current_score, current_events)
-                if stale and not _wait_for_scorers(match_id, lagging):
+                if (stale and not _wait_for_scorers(match_id, lagging)
+                        and _story_ready(entry, 'HT')):
                     print(f"[{match_id}] Early HT card is out of date ({stale}) — correcting…")
                     _delete_early_post(entry, 'HT')
                     cids, ig_id = _early_pipeline(entry, 'HT', scraper_data)
@@ -2246,7 +2393,7 @@ def match_worker(entry: dict):
                     with STATE_LOCK:
                         if ok:
                             MATCH_STATE[match_id]['ht_posted'] = True
-                        else:
+                        elif ok is False:      # None = held, not failed
                             MATCH_STATE[match_id]['ht_failed'] = True
                         _save_state()
 
@@ -2292,7 +2439,8 @@ def match_worker(entry: dict):
                             MATCH_STATE[match_id]['early_ft_score']  = list(current_score)
                             MATCH_STATE[match_id]['early_ft_events'] = current_events
                             _save_state()
-                    elif not _wait_for_scorers(match_id, lagging):
+                    elif (not _wait_for_scorers(match_id, lagging)
+                            and _story_ready(entry, 'FT')):
                         print(f"[{match_id}] Early FT card is out of date ({stale}) — correcting…")
                         _delete_early_post(entry, 'FT')
                         cids, ig_id = _early_pipeline(entry, 'FT', scraper_data)
@@ -2399,7 +2547,8 @@ def match_worker(entry: dict):
                                     s['early_ft_score']         = list(current_score)
                                     s['early_ft_events']        = current_events
                                     _save_state()
-                    elif et_stale and not _wait_for_scorers(match_id, lagging):
+                    elif (et_stale and not _wait_for_scorers(match_id, lagging)
+                            and _story_ready(entry, 'FT')):
                         print(f"[{match_id}] Early ET card is out of date ({et_stale}) — correcting…")
                         _delete_early_post(entry, 'FT')
                         cids, ig_id = _early_pipeline(entry, 'FT', scraper_data)

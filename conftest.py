@@ -26,3 +26,15 @@ for path in (ROOT, ROOT / '.github' / 'scripts'):
 os.environ.setdefault('GEMINI_API_KEY', 'test-key-not-real')
 os.environ.setdefault('GH_TOKEN', 'test-token-not-real')
 os.environ.setdefault('GITHUB_REPOSITORY', 'test-owner/test-repo')
+
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _no_photo_lookups_from_the_worker(monkeypatch):
+    """Worker-loop tests reach the "is there a photo?" check late in each half
+    (story_photo, from 35'/80'). It is a network call, so it answers "no photo"
+    unless a test sets it — tests/test_story_photo.py does."""
+    import main
+    monkeypatch.setattr(main, 'match_photo_exists', lambda *a, **k: False)

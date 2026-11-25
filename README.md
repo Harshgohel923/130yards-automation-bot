@@ -105,6 +105,15 @@ Each worker thread handles one match end-to-end:
   *In-match event photos* below. Runs before kickoff, because that is the last
   moment a mis-typed name can still be fixed by a person.
 - **Photo reminders** at 35', 80' and 110' — see *Reminders* below.
+- **"Scoreline changed since your photo"**: from 35' (HT card) / 80' (FT
+  card), once a background photo is there, the worker notes who is ahead. If
+  that changes before the card goes — an equaliser, a lead change, a comeback;
+  not a goal that only stretches a lead — it asks on Telegram: **📸 Upload new
+  photo** / **Post the older one**, and holds the card, early posts and
+  corrections included (a live early card is never taken down while held):
+  "older one" posts now; no answer posts the old photo after **2 minutes**;
+  "new photo" waits up to **10 minutes** for it (it replaces the background
+  directly), then falls back to the old one. See `story_photo.py`.
 - **Early posting**: posts the HT card at scraper minute 45 and the FT card
   at minute 90, without waiting for the official whistle. If the score
   changes before the whistle (stoppage-time goal), it deletes the outdated
