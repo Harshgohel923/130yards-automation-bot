@@ -135,3 +135,80 @@ def test_a_straight_red_is_still_one_red_card():
     straight = dict(EVENT, second_yellow=None)
     (line,) = overlay_scorebar._extract_scorer_lines([straight], 'Villarreal')
     assert line['type'] == 'red_card'
+
+
+# ── Classic card, and minutes staying in line ────────────────────────────────
+
+def test_the_classic_card_draws_it_as_two_yellow_cards():
+    (line,) = scorecard._extract_scorer_lines([EVENT], 'Villarreal')
+    assert line['second_yellow'] is True
+    pair = scorecard._entry_symbol(line, 40)
+    one = scorecard._load_symbol(scorecard.LOCAL_SYMBOLS['yellow_card'], 40)
+    assert one is not None                       # the asset path is real
+    assert pair.width > 2 * one.width and pair.height == 40
+    # Left half is the yellow asset, not the red one.
+    r, g, b, _ = pair.getpixel((one.width // 2, 20))
+    assert r > 150 and g > 150 and b < 120
+
+
+def _minute_starts(module, lines, align):
+    """x of every minute the renderer draws, read off its draw.text calls."""
+    from PIL import Image, ImageDraw
+    img = Image.new('RGBA', (1000, 600), (0, 0, 0, 0))
+    calls = []
+
+    class Spy:
+        def __init__(self, real):
+            self.real = real
+
+        def text(self, xy, text, **kw):
+            calls.append((text, xy[0], kw.get('anchor')))
+            return self.real.text(xy, text, **kw)
+
+        def __getattr__(self, name):
+            return getattr(self.real, name)
+
+    draw = Spy(ImageDraw.Draw(img))
+    box = (100, 100, 600, 500)
+    if module is scorecard:
+        scorecard._draw_scorer_lines(img, draw, lines, box, align, 40, 10)
+        minutes = {ln['minute'] for ln in lines}
+    else:
+        overlay_scorebar._draw_scorer_lines(img, draw, lines, box, align, 40,
+                                            60, 10)
+        minutes = {ln['minute'] for ln in lines}
+    return [x for text, x, _ in calls if text in minutes]
+
+
+def test_minutes_line_up_beside_a_second_yellow_on_both_cards():
+    goal_ev = dict(EVENT, type='goal', minute="5'", player='Buchanan',
+                   second_yellow=None)
+    events = [goal_ev, EVENT]
+
+    # Classic home side: minutes are left-anchored, so their x must match.
+    lines = scorecard._extract_scorer_lines(events, 'Villarreal')
+    xs = _minute_starts(scorecard, lines, 'left')
+    assert len(xs) == 2 and xs[0] == xs[1]
+
+    # Photo card, both sides: 'lm' / 'rm' anchors, so the x must match too.
+    lines = overlay_scorebar._extract_scorer_lines(events, 'Villarreal')
+    for align in ('left', 'right'):
+        xs = _minute_starts(overlay_scorebar, lines, align)
+        assert len(xs) == 2 and xs[0] == xs[1], align
+
+
+def test_width_helpers_match_what_is_drawn():
+    # The fitting pass sizes the layout from these without loading images,
+    # so they must agree with the real symbols to the pixel.
+    for t in ('goal', 'penalty_goal', 'own_goal', 'penalty_missed',
+              'red_card', 'second_yellow'):
+        for h in (20, 31, 44):
+            assert (overlay_scorebar._event_symbol(t, h).width
+                    == overlay_scorebar._symbol_width(t, h)), (t, h)
+    for t in ('goal', 'penalty_goal', 'own_goal', 'penalty_missed', 'red_card'):
+        for flag in (False, True):
+            e = {'symbol_path': scorecard._goal_symbol_path(t),
+                 'second_yellow': flag}
+            for h in (20, 31, 44):
+                assert (scorecard._entry_symbol(e, h).width
+                        == scorecard._symbol_width(e, h)), (t, flag, h)

@@ -298,7 +298,7 @@ CLOUDINARY_TEAM_CRESTS = {
 LOCAL_SYMBOLS = {
     "normal_goal":    "assets/symbols/normal_goal.png",
     "red_card":       "assets/symbols/red_card.jpg",
-    "yellow_card":    "assets/symbols/yellow_card.png",
+    "yellow_card":    "assets/symbols/yellow_card.jpg",
     "penalty_goal":   "assets/symbols/penalty_goal.png",
     "own_goal":       "assets/symbols/own_goal.png",
     "penalty_missed": "assets/symbols/penalty_missed.png",

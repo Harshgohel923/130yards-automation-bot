@@ -7,6 +7,7 @@ Coordinate boxes are sourced from coords_log.txt (FT_template.png, 2448x3264 px)
 """
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from functools import lru_cache
 import glob
 import os
 
@@ -195,6 +196,59 @@ def _load_symbol(path, height):
         return None
 
 
+@lru_cache(maxsize=None)
+def _symbol_size(path):
+    """(width, height) of a symbol asset, or None when it is missing. Reads
+    the header only, so the fitting loop can ask for widths cheaply."""
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with Image.open(path) as im:
+            return im.size
+    except Exception:
+        return None
+
+
+def _scaled_width(path, height):
+    """_load_symbol's width for this height, rounding included; 0 if missing."""
+    size = _symbol_size(path)
+    return max(1, int(size[0] * (height / size[1]))) if size else 0
+
+
+def _pair_gap(card_w):
+    return max(2, card_w // 4)
+
+
+def _symbol_width(entry, height):
+    """Width the entry's symbol will be drawn at — without loading it."""
+    if entry.get('second_yellow'):
+        card_w = _scaled_width(LOCAL_SYMBOLS.get('yellow_card', ''), height)
+        if card_w:
+            return 2 * card_w + _pair_gap(card_w)
+    return _scaled_width(entry.get('symbol_path', ''), height)
+
+
+def _entry_symbol(entry, height):
+    """The symbol for one scorer line. A red for a second booking is drawn as
+    the two yellow cards behind it, side by side."""
+    if not entry.get('second_yellow'):
+        return _load_symbol(entry.get('symbol_path'), height)
+    card = _load_symbol(LOCAL_SYMBOLS.get('yellow_card', ''), height)
+    if card is None:
+        return _load_symbol(entry.get('symbol_path'), height)
+    gap = _pair_gap(card.width)
+    pair = Image.new('RGBA', (card.width * 2 + gap, card.height), (0, 0, 0, 0))
+    pair.paste(card, (0, 0))
+    pair.paste(card, (card.width + gap, 0))
+    return pair
+
+
+def _symbol_column(lines, height):
+    """One symbol column per team, as wide as its widest symbol, so every
+    minute in the list starts (or, mirrored, ends) on the same line."""
+    return max((_symbol_width(e, height) for e in lines), default=0)
+
+
 def _will_fit(lines, box, font_size, gap=None):
     """Return True if all scorer lines fit inside box (both height and width)."""
     if not lines:
@@ -210,12 +264,13 @@ def _will_fit(lines, box, font_size, gap=None):
     needed_h = len(lines) * (lh + gap) - gap
     if needed_h > bh:
         return False
+    # Symbols are sized to lh (line height), not font_size, and share a column.
+    col_w = _symbol_column(lines, lh)
     for entry in lines:
         mw, _ = _text_size(draw, entry['minute'], font)
         nw, _ = _text_size(draw, entry['display_name'], font)
         text_w = mw + MINUTE_NAME_GAP + nw
-        # symbol is sized to lh (line height), not font_size
-        total_w = lh + SYMBOL_TEXT_GAP + text_w
+        total_w = col_w + (SYMBOL_TEXT_GAP if col_w else 0) + text_w
         if total_w > bw:
             return False
     return True
@@ -321,9 +376,10 @@ def _extract_scorer_lines(events: list, team_name: str) -> list[dict]:
         minute = format_minute(ev)
 
         lines.append({
-            'display_name': player,
-            'minute':       minute,
-            'symbol_path':  _goal_symbol_path(ev_type),
+            'display_name':  player,
+            'minute':        minute,
+            'symbol_path':   _goal_symbol_path(ev_type),
+            'second_yellow': bool(ev.get('second_yellow')),
         })
     return lines
 
@@ -444,6 +500,10 @@ def _draw_scorer_lines(img, draw, lines, box, align, font_size, gap=None):
       HOME (left-aligned):  [symbol] [gap] [minute] [gap] [name]
       AWAY (right-aligned): [name] [gap] [minute] [gap] [symbol]
 
+    Symbols sit centred in a column as wide as the widest one in the list, so
+    a wide symbol (a second yellow's two cards) doesn't push its own minute
+    out of line with the rest.
+
     Symbol is sized to match the text line height so they sit on the same baseline.
     Minute drawn in COLOR_MINUTE, scorer name in COLOR_SCORER.
 
@@ -468,19 +528,22 @@ def _draw_scorer_lines(img, draw, lines, box, align, font_size, gap=None):
         else:
             visible.append(entry)
 
+    col_w   = _symbol_column(visible, sym_h)
+    col_gap = SYMBOL_TEXT_GAP if col_w else 0
+
     for i, entry in enumerate(visible):
         cy      = y1 + i * step
         minute  = entry['minute']
         name    = entry['display_name']
 
-        sym_img = _load_symbol(entry['symbol_path'], sym_h)
+        sym_img = _entry_symbol(entry, sym_h)
         sw      = sym_img.width if sym_img else 0
 
         mw, _ = _text_size(draw, minute, font)
         nw, _ = _text_size(draw, name, font)
 
         # Truncate name if the full block is too wide
-        max_text_w = (x2 - x1) - sw - (SYMBOL_TEXT_GAP if sw else 0)
+        max_text_w = (x2 - x1) - col_w - col_gap
         full_w = mw + MINUTE_NAME_GAP + nw
         if full_w > max_text_w:
             while len(name) > 1:
@@ -493,13 +556,13 @@ def _draw_scorer_lines(img, draw, lines, box, align, font_size, gap=None):
 
         if align == 'left':
             # [symbol] [gap] [minute] [gap] [name]
-            sym_x    = x1
-            minute_x = x1 + sw + (SYMBOL_TEXT_GAP if sw else 0)
+            sym_x    = x1 + (col_w - sw) // 2
+            minute_x = x1 + col_w + col_gap
             name_x   = minute_x + mw + MINUTE_NAME_GAP
         else:
             # [name] [gap] [minute] [gap] [symbol]
-            sym_x    = x2 - sw
-            minute_x = x2 - sw - (SYMBOL_TEXT_GAP if sw else 0) - mw
+            sym_x    = x2 - col_w + (col_w - sw) // 2
+            minute_x = x2 - col_w - col_gap - mw
             name_x   = minute_x - MINUTE_NAME_GAP - nw
             name_x   = max(x1, name_x)
 

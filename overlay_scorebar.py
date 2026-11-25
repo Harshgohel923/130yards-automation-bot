@@ -12,6 +12,7 @@ import io
 import json
 import os
 import sys
+from functools import lru_cache
 
 import numpy as np
 import requests
@@ -219,7 +220,7 @@ def _card_symbol(height, color):
     """Draw a booking-card glyph natively — the card assets on disk are JPEGs
     with no alpha channel and would show as hard rectangles on the panel."""
     ch = int(height)
-    cw = max(2, int(ch * 0.72))
+    cw = _card_width(ch)
     card = Image.new('RGBA', (cw, ch), (0, 0, 0, 0))
     d = ImageDraw.Draw(card)
     r = max(2, ch // 8)
@@ -229,6 +230,37 @@ def _card_symbol(height, color):
 
 
 YELLOW_CARD_RGB = (240, 200, 20)
+_GOAL_SYMBOL_KEYS = {'penalty_goal': 'penalty_goal', 'own_goal': 'own_goal',
+                     'penalty_missed': 'penalty_missed'}
+
+
+def _card_width(height):
+    return max(2, int(int(height) * 0.72))
+
+
+def _symbol_width(event_type, height):
+    """Width _event_symbol will draw at, without rendering or loading it."""
+    if event_type in ('red_card', 'yellow_card'):
+        return _card_width(height)
+    if event_type == 'second_yellow':
+        cw = _card_width(height)
+        return 2 * cw + max(2, cw // 4)
+    path = LOCAL_SYMBOLS.get(_GOAL_SYMBOL_KEYS.get(event_type, 'normal_goal'), '')
+    size = _asset_size(path)
+    if not size:
+        return 0
+    # The same arithmetic as the resize in _event_symbol, rounding included.
+    return max(1, int(size[0] * (height / size[1])))
+
+
+@lru_cache(maxsize=None)
+def _asset_size(path):
+    """(width, height) of a symbol file, header only; None if unreadable."""
+    try:
+        with Image.open(path) as im:
+            return im.size
+    except Exception:
+        return None
 
 
 def _second_yellow_symbol(height):
@@ -248,8 +280,7 @@ def _event_symbol(event_type, height):
         return _card_symbol(height, (206, 30, 30))
     if event_type == 'yellow_card':
         return _card_symbol(height, YELLOW_CARD_RGB)
-    mapping = {'penalty_goal': 'penalty_goal', 'own_goal': 'own_goal', 'penalty_missed': 'penalty_missed'}
-    path = LOCAL_SYMBOLS.get(mapping.get(event_type, 'normal_goal'), '')
+    path = LOCAL_SYMBOLS.get(_GOAL_SYMBOL_KEYS.get(event_type, 'normal_goal'), '')
     if not path:
         return None
     try:
@@ -413,10 +444,13 @@ def _fit_scorers(draw, home_lines, away_lines, col_w, h):
         sym_gap = int(size * SYMBOL_TEXT_GAP_RATIO)
         min_gap = int(size * MINUTE_NAME_GAP_RATIO)
         too_wide = False
+        # Each team's symbols share a column as wide as its widest symbol.
+        sym_cols = {id(e): max(_symbol_width(x['type'], lh) for x in side)
+                    for side in (home_lines, away_lines) for e in side}
         for e in entries:
             mw, _ = _text_size(draw, e['minute'], font)
             nw, _ = _text_size(draw, e['name'], font)
-            if lh + sym_gap + mw + min_gap + nw > col_w:
+            if sym_cols[id(e)] + sym_gap + mw + min_gap + nw > col_w:
                 too_wide = True
                 break
         if too_wide:
@@ -462,6 +496,11 @@ def _draw_scorer_lines(img, draw, lines, box, align, font_size, step, max_visibl
         visible = lines[:max(0, max_visible - 1)]   # last slot reserved for "& N MORE"
         hidden = len(lines) - len(visible)
 
+    # One symbol column per team, as wide as its widest symbol, with each
+    # symbol centred in it — so a wide one (a second yellow's two cards)
+    # doesn't push its own minute out of line with the rest.
+    col_w = max((_symbol_width(e['type'], lh) for e in visible), default=0)
+
     for i, entry in enumerate(visible):
         # Anchor text and symbol to the same vertical midline so the symbol
         # sits flush with the glyphs instead of floating above them.
@@ -470,18 +509,18 @@ def _draw_scorer_lines(img, draw, lines, box, align, font_size, step, max_visibl
         sw = sym.width if sym else 0
         mw, _ = _text_size(draw, entry['minute'], font)
 
-        max_name_w = (x2 - x1) - sw - sym_gap - mw - min_gap
+        max_name_w = (x2 - x1) - col_w - sym_gap - mw - min_gap
         name = _truncate_name(draw, entry['name'], font, max_name_w)
 
         if align == 'left':
-            sym_x = x1
-            minute_x = x1 + sw + sym_gap
+            sym_x = x1 + (col_w - sw) // 2
+            minute_x = x1 + col_w + sym_gap
             name_x = minute_x + mw + min_gap
             draw.text((minute_x, cy_mid), entry['minute'], font=font, fill=COLOR_MINUTE, anchor='lm')
             draw.text((name_x, cy_mid), name, font=font, fill=COLOR_SCORER, anchor='lm')
         else:
-            sym_x = x2 - sw
-            minute_x = sym_x - sym_gap
+            sym_x = x2 - col_w + (col_w - sw) // 2
+            minute_x = x2 - col_w - sym_gap
             draw.text((minute_x, cy_mid), entry['minute'], font=font, fill=COLOR_MINUTE, anchor='rm')
             draw.text((minute_x - mw - min_gap, cy_mid), name, font=font, fill=COLOR_SCORER, anchor='rm')
 
