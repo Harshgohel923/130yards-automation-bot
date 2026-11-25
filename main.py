@@ -52,10 +52,12 @@ from instagram import (post_to_instagram, post_carousel_to_instagram,
                        delete_instagram_post, get_post_permalink,
                        publishing_limit)
 from telegram_notify import (
+    edit_message,
     send_alert as _send_alert_raw,
     send_choice as _send_choice_raw,
     send_music_reminder,
 )
+import ht_optin
 from overlay_scorebar import generate_overlay_scorecard
 from scorecard import generate_scorecard
 from stats_card import generate_stats_card
@@ -81,14 +83,15 @@ def send_alert(text: str, key: str | None = None, cooldown: int = 0) -> None:
 
 
 def send_choice(text: str, options: list[tuple[str, str]],
-                key: str | None = None, cooldown: int = 0) -> None:
-    """An alert whose answers are buttons — logged like any other alert."""
+                key: str | None = None, cooldown: int = 0) -> int | None:
+    """An alert whose answers are buttons — logged like any other alert.
+    Returns the message id, so the question can be closed later."""
     matchlog.log(
         'alert sent',
         ' '.join(str(text).split())[:200],
         level=_ALERT_LEVEL.get(str(text)[:2].strip(), matchlog.INFO),
     )
-    _send_choice_raw(text, options, key=key, cooldown=cooldown)
+    return _send_choice_raw(text, options, key=key, cooldown=cooldown)
 
 # ── Tunables ──────────────────────────────────────────────────────────────────
 REGISTRY_FILE       = 'matches.json'
@@ -581,6 +584,64 @@ def _watch_group_publish(entry: dict, until: datetime) -> None:
         f"looking at — check the earlier ❌ alerts for the reason.",
         key=f'carousel:{group}:watch-expired', cooldown=3600,
     )
+
+
+def _ht_wanted_on_request(entry: dict, current_score) -> bool:
+    """
+    For a fixture with post_ht off: ask at the whistle whether to post an HT
+    card anyway, and report whether the answer so far is yes.
+
+    Asks once. Each later poll during the interval reads the answer the bot
+    recorded (see ht_optin.py) until there is one. Only ever called while the
+    scraper reports half time, so the card can't be posted mid-second-half.
+    """
+    match_id = entry['match_id']
+    with STATE_LOCK:
+        s = MATCH_STATE[match_id]
+        answer, asked = s.get('ht_optin_answer'), s.get('ht_optin_asked')
+    if answer:
+        return answer == 'post'
+
+    if not asked:
+        score = f"{current_score[0]}-{current_score[1]}"
+        msg_id = send_choice(ht_optin.question_text(_label(entry), score),
+                             ht_optin.options(match_id))
+        with STATE_LOCK:
+            s = MATCH_STATE[match_id]
+            s['ht_optin_asked'] = True
+            s['ht_optin_msg'] = msg_id
+            _save_state()
+        print(f"[{match_id}] HT reached — asked whether to post an HT card.")
+        matchlog.log('asked about an HT card', 'post_ht is off for this match')
+        return False
+
+    answer = ht_optin.read_answer(match_id)
+    if answer is None:
+        return False
+    with STATE_LOCK:
+        MATCH_STATE[match_id]['ht_optin_answer'] = answer
+        _save_state()
+    print(f"[{match_id}] HT card requested: {answer}.")
+    matchlog.log('HT card on request', 'yes — posting it' if answer == 'post'
+                 else 'no thanks', force=True)
+    return answer == 'post'
+
+
+def _close_ht_question(entry: dict) -> None:
+    """Once the second half starts, take the buttons off an unanswered HT
+    question — a half-time card is stale by then, and a tap would do nothing."""
+    match_id = entry['match_id']
+    with STATE_LOCK:
+        s = MATCH_STATE[match_id]
+        if (not s.get('ht_optin_asked') or s.get('ht_optin_answer')
+                or s.get('ht_optin_closed')):
+            return
+        s['ht_optin_closed'] = True
+        msg_id = s.get('ht_optin_msg')
+        _save_state()
+    if msg_id:
+        edit_message(msg_id, ht_optin.closed_text(_label(entry)))
+    print(f"[{match_id}] Second half started — closed the unanswered HT question.")
 
 
 def _run_pipeline(entry: dict, event_type: str, scraper_data: dict) -> bool:
@@ -2055,7 +2116,10 @@ def match_worker(entry: dict):
         # ── HT retries ran out ───────────────────────────────────────────────
         # A failed HT card retries every poll while the scraper reports the
         # interval. Once play resumes the card is no longer worth posting, so
-        # say so once instead of going quiet.
+        # say so once instead of going quiet — and close an HT question nobody
+        # answered.
+        if raw_status in ('2H', 'ET', 'AP', 'FT'):
+            _close_ht_question(entry)
         if (raw_status in ('2H', 'ET', 'AP', 'FT')
                 and not ht_posted
                 and not is_event_posted(match_id, 'HT')):
@@ -2095,7 +2159,8 @@ def match_worker(entry: dict):
                     with STATE_LOCK:
                         MATCH_STATE[match_id]['ht_posted'] = True
                         _save_state()
-            elif entry.get('post_ht', True):
+            elif (entry.get('post_ht', True)
+                    or _ht_wanted_on_request(entry, current_score)):
                 print(f"[{match_id}] HT confirmed — running fallback HT pipeline…")
                 if _wait_for_scorers(match_id, lagging):
                     print(f"[{match_id}] HT confirmed but scorer list lagging — retrying next poll.")

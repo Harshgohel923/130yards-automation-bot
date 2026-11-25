@@ -1693,6 +1693,37 @@ async def staged_drop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 # compute from the picture itself: a digest of its public_id, and the id of
 # the player being offered. See event_photos.digest and main._ask_who_it_is.
 
+async def ht_optin_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """A tap on a worker's "post an HT card anyway?" buttons.
+
+    The worker reads the answer from Cloudinary on its next poll — see
+    ht_optin.py — so this only has to record it and say what happens next.
+    """
+    query = update.callback_query
+    if not _allowed(update):
+        await query.answer("Not authorized.", show_alert=True)
+        return
+    await query.answer()
+
+    import ht_optin
+    try:
+        reply = await asyncio.to_thread(ht_optin.record_tap, query.data)
+    except Exception as e:
+        log.warning("Could not record an HT card answer: %s", e)
+        await query.message.reply_text(
+            f"I couldn't save that: {e}\n\nTap it again in a moment — the "
+            f"question stays open until the second half starts."
+        )
+        return
+
+    # Keep the question above the answer, so the chat still says which match.
+    question = (query.message.text or '').split('\n\n')[0]
+    try:
+        await query.edit_message_text(f"{question}\n\n{reply}" if question else reply)
+    except Exception as e:
+        log.info("HT question not edited: %s", e)
+
+
 async def carousel_order_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """A tap on the dispatcher's "which order?" buttons for a carousel group.
 
@@ -3200,6 +3231,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(staged_drop, pattern=r'^sd:'))
     app.add_handler(CallbackQueryHandler(staged_clarify, pattern=r'^ec:'))
     app.add_handler(CallbackQueryHandler(carousel_order_tap, pattern=r'^co:'))
+    app.add_handler(CallbackQueryHandler(ht_optin_tap, pattern=r'^ht:[^:]+:(post|skip)$'))
     # Group -1 runs first and consumes nothing — see keep_alive.
     app.add_handler(MessageHandler(filters.ALL, keep_alive), group=-1)
     app.add_handler(CallbackQueryHandler(keep_alive), group=-1)
