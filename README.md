@@ -901,7 +901,7 @@ same question and nothing typed earlier is lost.
 | 3 | **HT or FT** | a button tap | — (typed text re-asks) |
 | 4 | **Score**, home first | `2-1`. Separator may be `-`, `–`, `—`, `:` or `x`; spaces ignored; one or two digits a side | anything else — `3`, `two-one`, `2-1-1` |
 | 5 | **Competition** | A name, 1–60 characters, at least one letter. `Premier League`, `Club Friendly` | as team name, with the longer limit. **Then the competition badge is checked** |
-| 6 | **Date** | `21/08/2026` (day first), `2026-08-21`, `21-08-2026`, `21.08.2026`, `21 Aug 2026`, `21 August 2026`, `21/08/26` | unparseable; before 1900; or more than two days in the future — a result can't be entered for a match that hasn't been played, so that's a transposed year |
+| 6 | **Date** — optional | `21/08/2026` (day first), `2026-08-21`, `21-08-2026`, `21.08.2026`, `21 Aug 2026`, `21 August 2026`, `21/08/26`. Or the **No date on the card** button, or type `skip` / `none` / `-`, to leave the top-right corner empty | unparseable; before 1900; or more than two days in the future — a result can't be entered for a match that hasn't been played, so that's a transposed year |
 | 7 | **Home scorers** | `minute name (type)`, one per line — see below. Or `none`, or the **Nothing to add** button | any line that doesn't fit, quoted back with what was wrong with it. Then the goals are counted against the score |
 | 8 | **Away scorers** | as above | as above |
 | 9 | **Background photo** | a photo, an image document, or the *Use the standard template* button | a non-image document; over 20 MB (refused before the download, since Telegram won't serve it to a bot) |
@@ -1847,8 +1847,10 @@ fixtures post within minutes of the whistle, where a date is noise; a match
 typed in weeks later needs to say when it was played.
 
 That is carried by `matchSample['card_date']`, which only
-`manual_match.build_scraper_data()` sets. Both renderers draw it if and only if
-it is present, which is how scraped fixtures stay free of one. Everything else
+`manual_match.build_scraper_data()` sets — and only when a date was given. The
+date step is optional; skip it and the card comes out exactly like a scraped
+one, with the corner empty. Both renderers draw it if and only if it is
+present, which is how scraped fixtures stay free of one. Everything else
 — crests, competition logo, scorer symbols, caption, hashtags — runs through
 the ordinary pipeline unchanged and unaware. That is deliberate: if a manual
 card looks wrong, the automated one is wrong the same way.

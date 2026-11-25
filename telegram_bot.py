@@ -1822,6 +1822,11 @@ SCORERS_NONE_KEYBOARD = InlineKeyboardMarkup([
     [InlineKeyboardButton("Nothing to add", callback_data="scorers:none")],
 ])
 
+# The date is optional: this leaves the card's top-right corner empty.
+NO_DATE_KEYBOARD = InlineKeyboardMarkup([
+    [InlineKeyboardButton("No date on the card", callback_data="manual:nodate")],
+])
+
 # Shown when the goals entered don't match the score already given.
 SCORERS_MISMATCH_KEYBOARD = InlineKeyboardMarkup([
     [InlineKeyboardButton("✅ That's right, carry on", callback_data="scorers:ok")],
@@ -2035,17 +2040,22 @@ async def card_competition(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def _ask_date(msg) -> int:
     """Step 6, split out for the same reason as _ask_moment."""
     await msg.reply_text(
-        "What *date* was it played?\n\n"
+        "What *date* was it played? _(optional)_\n\n"
         "_`21/08/2026` (day/month/year), `2026-08-21` or `21 Aug 2026`. "
         "Day comes before month. This is what goes in the card's top-right "
-        "corner._",
+        "corner._\n\n"
+        "Don't want a date on the card? Tap the button, or type `skip`.",
         parse_mode='Markdown',
-        reply_markup=_typed_reply('21/08/2026'),
+        reply_markup=NO_DATE_KEYBOARD,
     )
     return M_DATE
 
 
 async def card_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if manual_match.wants_no_date(update.message.text):
+        _manual(context)['when'] = None
+        await update.message.reply_text("No date on the card.")
+        return await _ask_scorers(update.message, context, 'home')
     try:
         when = manual_match.parse_date(update.message.text)
     except manual_match.ParseError as e:
@@ -2056,6 +2066,15 @@ async def card_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     data['when'] = when
     await update.message.reply_text(f"{manual_match.format_card_date(when)}.")
     return await _ask_scorers(update.message, context, 'home')
+
+
+async def card_no_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """The date step's button: leave the date off the card."""
+    query = update.callback_query
+    await query.answer()
+    _manual(context)['when'] = None
+    await query.edit_message_text("No date on the card.")
+    return await _ask_scorers(query.message, context, 'home')
 
 
 async def _ask_background(msg) -> int:
@@ -2463,7 +2482,7 @@ def _render_manual(data: dict, photo_path: str | None) -> tuple[str, dict]:
     scraper_data = manual_match.build_scraper_data(
         home_team=data['home_team'], away_team=data['away_team'],
         home_score=data['home_score'], away_score=data['away_score'],
-        competition=data['competition'], when=data['when'],
+        competition=data['competition'], when=data.get('when'),
         event_type=data['event_type'],
         home_events=data.get('home_events', []),
         away_events=data.get('away_events', []),
@@ -2498,7 +2517,7 @@ def _summary(data: dict, scraper_data: dict, styled: bool,
         f"*{data['home_team']} {data['home_score']}–{data['away_score']} {data['away_team']}*",
         f"{data['competition']} · "
         f"{'Half time' if data['event_type'] == 'HT' else 'Full time'} · "
-        f"{manual_match.format_card_date(data['when'])}",
+        f"{manual_match.format_card_date(data['when']) if data.get('when') else 'no date'}",
         f"Background: {'your photo' if styled else 'standard template'}",
     ]
 
@@ -3038,7 +3057,10 @@ def main() -> None:
             M_EVENT:        [CallbackQueryHandler(card_event, pattern=r'^manual:evt:')],
             M_SCORE:        [MessageHandler(MANUAL_TEXT_FILTER, card_score)],
             M_COMPETITION:  [MessageHandler(MANUAL_TEXT_FILTER, card_competition)],
-            M_DATE:         [MessageHandler(MANUAL_TEXT_FILTER, card_date)],
+            M_DATE:         [
+                MessageHandler(MANUAL_TEXT_FILTER, card_date),
+                CallbackQueryHandler(card_no_date, pattern=r'^manual:nodate$'),
+            ],
             M_HOME_SCORERS: [
                 MessageHandler(MANUAL_TEXT_FILTER, card_home_scorers),
                 CallbackQueryHandler(scorers_choice,
