@@ -178,22 +178,43 @@ def test_validation_reads_the_first_leg_back_in_words():
                     '→ aggregate before kickoff Club Brugge 1-2 Liverpool')
 
 
-# ── Bold labels on the photo card ────────────────────────────────────────────
+# ── Labels on the photo card: a real bold, properly tracked ──────────────────
 
-def test_photo_card_labels_are_drawn_bold(monkeypatch):
+def test_labels_use_oswald_bold_not_a_faked_stroke():
+    import os
     import overlay_scorebar as ob
-    calls = []
+    assert os.path.exists(ob.LABEL_FONT_PATH)
+    font = ob._label_font(29)
+    assert 'Oswald' in font.getname()[0]
+    assert font.getname()[1] == 'Bold'
+    src = open(ob.__file__, encoding='utf-8').read()
+    assert 'stroke_width' not in src
+
+
+def test_tracked_text_is_centred_and_evenly_spaced():
+    import overlay_scorebar as ob
+    xs = []
 
     class Draw:
-        def text(self, xy, text, **kw):
-            calls.append((text, kw.get('stroke_width', 0), kw.get('stroke_fill'),
-                          kw.get('fill')))
+        def text(self, xy, ch, **kw):
+            xs.append((ch, xy[0]))
 
-    font = ob._font(29)
-    ob._draw_bold(Draw(), (0, 0), 'AGG 5 - 5', font, ob.COLOR_LABEL)
-    (text, stroke, stroke_fill, fill), = calls
-    assert stroke >= 1 and stroke_fill == fill == ob.COLOR_LABEL
+    font = ob._label_font(20)
+    ob._draw_tracked(Draw(), (500, 0), 'AGG', font, (0, 0, 0, 255), tracking=4)
+    widths = [font.getlength(c) for c in 'AGG']
+    total = sum(widths) + 2 * 4
+    assert xs[0][1] == pytest.approx(500 - total / 2)
+    assert xs[1][1] - xs[0][1] == pytest.approx(widths[0] + 4)
 
-    src = open(ob.__file__, encoding='utf-8').read()
-    assert "_draw_bold(draw, (cx, label_y), spaced, label_font, COLOR_LABEL)" in src
-    assert src.count('_draw_bold(draw, (cx, ') >= 3      # label, AGG, PENALTIES
+
+def test_half_time_label_renders(tmp_path, monkeypatch):
+    from PIL import Image
+    import overlay_scorebar as ob
+    for name in ('_fetch_crest', '_load_competition_logo', '_load_brand_logo'):
+        monkeypatch.setattr(ob, name, lambda *a, **k: None)
+    photo = tmp_path / 'p.png'
+    Image.new('RGB', (900, 1200), (30, 60, 120)).save(photo)
+    out = tmp_path / 'o.png'
+    ob.add_scorecard_overlay(str(photo), str(out), 'A', 'B', '1', '0',
+                             event_type='HT', aggregate=('2', '1'))
+    assert out.exists()
