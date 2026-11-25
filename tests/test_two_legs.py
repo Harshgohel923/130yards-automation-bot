@@ -176,3 +176,24 @@ def test_validation_reads_the_first_leg_back_in_words():
     (note,) = vm._second_leg_notes([ENTRY])
     assert note == ('Club Brugge vs Liverpool: first leg Liverpool 2-1 Club Brugge '
                     '→ aggregate before kickoff Club Brugge 1-2 Liverpool')
+
+
+# ── Bold labels on the photo card ────────────────────────────────────────────
+
+def test_photo_card_labels_are_drawn_bold(monkeypatch):
+    import overlay_scorebar as ob
+    calls = []
+
+    class Draw:
+        def text(self, xy, text, **kw):
+            calls.append((text, kw.get('stroke_width', 0), kw.get('stroke_fill'),
+                          kw.get('fill')))
+
+    font = ob._font(29)
+    ob._draw_bold(Draw(), (0, 0), 'AGG 5 - 5', font, ob.COLOR_LABEL)
+    (text, stroke, stroke_fill, fill), = calls
+    assert stroke >= 1 and stroke_fill == fill == ob.COLOR_LABEL
+
+    src = open(ob.__file__, encoding='utf-8').read()
+    assert "_draw_bold(draw, (cx, label_y), spaced, label_font, COLOR_LABEL)" in src
+    assert src.count('_draw_bold(draw, (cx, ') >= 3      # label, AGG, PENALTIES
