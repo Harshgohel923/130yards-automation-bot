@@ -1,5 +1,5 @@
 """
-/help and /info: an intro with a button per topic, each topic in full.
+/help: an intro with a button per topic, each topic in full.
 
 Every topic is one Telegram message, so it must fit in 4,096 characters and
 use only the HTML Telegram accepts — a bad tag and Telegram refuses the whole
@@ -56,7 +56,6 @@ def test_each_message_fits_and_is_valid_telegram_html(key, text):
     'Monday at 09:00 German time', 'LOSER', 'Re-uploads count too',  # weekly recap
     'No date on the card',                                        # optional date
     'positions', 'aggregate', 'two yellow cards',                 # line-ups, cards
-    '/info',
 ])
 def test_the_manual_covers_it(phrase):
     assert phrase in ht.HELP_TEXT
@@ -110,7 +109,7 @@ def test_back_shows_the_intro_and_all_topics():
     assert labels == [label for _k, label, _t in ht.HELP_TOPICS]
 
 
-def test_help_and_info_send_the_intro(monkeypatch):
+def test_help_sends_the_intro(monkeypatch):
     sent = []
 
     class Msg:
@@ -126,5 +125,6 @@ def test_help_and_info_send_the_intro(monkeypatch):
     text, kw = sent[0]
     assert text == ht.HELP_INTRO and kw['parse_mode'] == 'HTML'
     src = open(tb.__file__, encoding='utf-8').read()
-    assert src.count("CommandHandler('info', help_cmd)") == 2      # in flows and out
+    assert "CommandHandler('info'" not in src
+    assert 'info' not in tb.KNOWN_COMMANDS
     assert "CallbackQueryHandler(help_topic, pattern=r'^help:')" in src

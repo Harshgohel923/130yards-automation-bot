@@ -212,7 +212,6 @@ BOT_COMMANDS = [
     BotCommand('list', 'Every fixture in the registry, with what will post'),
     BotCommand('cancel', 'Abandon whatever is in progress'),
     BotCommand('help', 'How everything works — tap a topic'),
-    BotCommand('info', 'Same as /help'),
 ]
 KNOWN_COMMANDS = tuple(c.command for c in BOT_COMMANDS)
 
@@ -971,7 +970,7 @@ BACK_TO_TOPICS = InlineKeyboardMarkup([[InlineKeyboardButton(
 
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/help and /info — the intro, with a button per topic."""
+    """/help — the intro, with a button per topic."""
     if not _allowed(update):
         await update.message.reply_text("Not authorized.")
         return
@@ -3597,7 +3596,6 @@ def main() -> None:
     common_fallbacks = [
         CommandHandler('cancel', cancel),
         CommandHandler('help', help_cmd),
-        CommandHandler('info', help_cmd),
         CommandHandler('batch', batch_cmd),
     ]
 
@@ -3759,7 +3757,6 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(ht_bg_template, pattern=r'^htbg:'))
     # Outside any conversation these still have to answer.
     app.add_handler(CommandHandler('help', help_cmd))
-    app.add_handler(CommandHandler('info', help_cmd))
     # Topic buttons work anywhere — mid-flow too, since they only show text.
     app.add_handler(CallbackQueryHandler(help_topic, pattern=r'^help:'))
     app.add_handler(CommandHandler('cancel', cancel))

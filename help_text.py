@@ -1,7 +1,7 @@
 """
-Everything /help and /info say — the bot's manual, in plain words.
+Everything /help says — the bot's manual, in plain words.
 
-/help (or /info) sends HELP_INTRO with a button per topic; tapping one swaps
+/help sends HELP_INTRO with a button per topic; tapping one swaps
 the message for that topic, with a button back. Each topic is one Telegram
 message, so it has to stay under 4,096 characters (a test checks).
 
@@ -248,7 +248,7 @@ COMMANDS = """\
 /batch — cards waiting to be posted together
 /list — every fixture, with kickoff times and what will post
 /cancel — stop whatever you're in the middle of
-/help or /info — this manual
+/help — this manual
 
 You can also just <b>send a photo</b> with no command: it becomes a scorecard background, and I ask which match and HT or FT.
 

@@ -774,7 +774,7 @@ rendered. The Markdown in git is the permanent copy.
 
 ## The Telegram bot, step by step
 
-**`/help` and `/info`** are the bot's manual for the people using it
+**`/help`** is the bot's manual for the people using it
 (`help_text.py`): a short intro and cheat sheet, with a button per topic —
 scorecard photo, FT extra photos, event photo, making a card, during a match,
 carousels, news, Weekly Recap, what the messages mean, all commands. Tapping a
