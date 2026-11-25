@@ -19,11 +19,19 @@ import requests
 #   assist           →  "qwrv"
 #   yellow_card      →  "l8te"
 #   red_card         →  "widj"
+#   second yellow    →  "iun8"   the yellow-and-red icon; emitted as red_card
+#                                with second_yellow=True (see below)
 #   substitution_in  →  "ualv"
 #   substitution_out →  "ekur"
 #   half_time        →  filename == "ht.png"
 #   var              →  "var"
 # ─────────────────────────────────────────────────────────────────────────────
+def is_second_yellow(img_url: str) -> bool:
+    """The yellow-and-red card icon — a dismissal for a second booking.
+    e.g. rBUC6GcM2SiAIun8AAADLFMWSvE755.png"""
+    return "iun8" in (img_url or "").lower()
+
+
 def parse_event_type(img_url: str):
     if not img_url:
         return "unknown", "❓"
@@ -43,7 +51,13 @@ def parse_event_type(img_url: str):
     if "ekur" in lurl:
         return "substitution_out", "⬇️"
 
-    # Cards
+    # Cards. A second yellow is a sending-off, so it is a red card to everything
+    # downstream (scorer lines, stale-card checks, staged 🔴 photos); the event
+    # also carries second_yellow=True for anything that wants to say so.
+    # Until this was recognised it fell through to "other" and the dismissal
+    # never reached the card — nine matches in the archive by 2026-11-25.
+    if is_second_yellow(img_url):
+        return "red_card",    "🟨🟥"
     if "l8te" in lurl:
         return "yellow_card", "🟡"
     if "widj" in lurl:
@@ -204,14 +218,17 @@ def _parse_match_page(url: str) -> dict | None:
                         })
 
                     elif player or ev_type not in ("unknown", "other"):
-                        others.append({
+                        entry = {
                             "minute":    minute,
                             "type":      ev_type,
                             "icon":      ev_icon,
                             "player":    player or "N/A",
                             "player_id": pid,
                             "team":      None if ev_type == "half_time" else team_name,
-                        })
+                        }
+                        if is_second_yellow(ev.get("event_pic", "")):
+                            entry["second_yellow"] = True
+                        others.append(entry)
 
                 # ── Goals merged with their assist ────────────────────────────
                 for i, g in enumerate(goals):
@@ -382,6 +399,9 @@ def _parse_match_page(url: str) -> dict | None:
 
 # red card:
 # http://img-sd.allfootballapp.com/fastdfs3/M00/B9/3E/ChOxM1xGg02AWiDjAAAE3Y8ENZg267.png
+
+# second yellow (yellow-and-red icon):
+# https://img-sd.allfootballapp.com/fastdfs7/M00/C1/02/rBUC6GcM2SiAIun8AAADLFMWSvE755.png
 
 # Half time:
 # http://img-static.allfootballapp.com/soccer/data/logo/event/HT.png

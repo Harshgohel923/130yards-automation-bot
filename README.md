@@ -97,8 +97,8 @@ Each worker thread handles one match end-to-end:
   still time to fix it.
 - **Starting XI post** (opt in with `post_lineups`): from the moment the
   worker starts it watches for the published line-ups and posts them as a
-  two-slide carousel, then leaves them alone. It gives up at kickoff + 5 min
-  with a 🙋 alert — see *The starting XI post* below.
+  two-slide carousel once every starter has a grid position, then leaves them
+  alone. It gives up at kickoff + 5 min with a 🙋 alert — see *The starting XI post* below.
 - **Staged photo names get pinned** once both team sheets are published: every
   picture staged under a typed name is matched against the squads and either
   pinned to the feed's player id silently or asked about with buttons — see
@@ -110,6 +110,11 @@ Each worker thread handles one match end-to-end:
   changes before the whistle (stoppage-time goal), it deletes the outdated
   post and puts up a corrected card. If the delete fails you get a 🙋 alert
   with the permalink instead — see *Deleting a superseded post*.
+- **Failed posts retry every poll.** A card is only marked posted once
+  Instagram has accepted it. A failed HT card retries every minute while the
+  scraper reports the interval; if the second half starts first, you get one
+  🙋 alert and it stops. A failed FT card retries every minute until it posts
+  or the worker reaches `MAX_MATCH_DURATION`.
 - Handles extra time and penalty shootouts (shootout goals are backed out of
   the FT score; 120' shootout events are excluded from scorer lines).
 - Worker crashes are caught, alerted, and the worker is respawned on the next
@@ -215,6 +220,18 @@ The worker's nudge (`workflow_dispatch` on `dispatcher.yml`, which is why
 gets the group posted in about a minute instead of up to fifteen. If it fails,
 nothing breaks.
 
+**If the post itself fails**, the worker that handed in the last card doesn't
+exit. Once every card is in, it checks the group every minute and nudges the
+dispatcher again until the `POSTED` marker appears, so a failed Instagram
+publish is retried within a minute or two instead of at the next 15-minute
+tick. The nudges queue on the dispatcher's `concurrency` group — at most one
+run waiting — so there is still only ever one publisher, and extra waiting
+runs show up as *cancelled* in the Actions tab, which is expected. It gives up
+at the worker's own ceiling with a 🙋 alert; the dispatcher's 15-minute retries
+carry on after that. If a member's card is still missing (that match is still
+being played), the watch is left to that match's worker, which takes it over
+when it hands its own card in.
+
 **If a member never arrives**, the group still posts. Four hours after the last
 kickoff in the group (`GROUP_TIMEOUT_HOURS`), the dispatcher posts what it has
 and Telegram-alerts which matches were left out.
@@ -253,7 +270,7 @@ fixture list rather than at full time.
 | `scorecard.py` | Classic template card: stamps crests, score, scorers (+minutes and event symbols), stage text, stadium onto the HT/FT template. Coordinates live at the top of the file as `*_BOX` tuples (picked with `pick_coords.py`). |
 | `overlay_scorebar.py` | Photo card: renders a dark scorebar panel over the bottom of a match photo — crests, big score, team-colored underlines (colors derived from the crest), scorer lines, competition logo on the panel border, penalties strip. |
 | `stats_card.py` | The FT statistics page — slide two of a `post_ft_stats` post. Same template as the scorecard (`scorecard.load_template`, seeded by `match_id`, so both slides share a background) but blurred and veiled, since the page is dense with small marks. Header is the **momentum chart**, not the score: slide one already carries that. Body is a priority-ordered stat list as team-coloured split bars. |
-| `lineup_card.py` | The pre-match starting XI page — one per team, posted as a two-slide carousel before kickoff. Draws the scraper's position grid as a pitch in perspective, each player a shirt in the team's own colours, with the bench, referee and conditions down the left. Falls back to a listed team sheet when the feed publishes names without positions. |
+| `lineup_card.py` | The pre-match starting XI page — one per team, posted as a two-slide carousel before kickoff. Draws the scraper's position grid as a pitch in perspective, each player a shirt in the team's own colours, with the bench, referee and conditions down the left. Draws nothing until every starter has a position — there is no listed fallback. |
 | `carousel.py` | Carousel groups: the Cloudinary manifest store, the dispatcher nudge, and `publish_group`. See *Carousel groups* above. |
 | `caption.py` | Instagram caption via Gemini (2.5-flash → 2.0-flash → plain fallback), fed the score line, events, and the optional hand-written `records` from `matches.json`. The hashtag line comes from `hashtags.py`, not the model. Also writes the caption for a staged event photo, which differs in that the match is still being played and the picture carries no text of its own. |
 | `hashtags.py` | The five hashtags, built in code: competition, home team, away team, then each side's nickname. Names resolve through `logo_fetch`'s canonical slugs, so any spelling yields the same tags. |
@@ -346,12 +363,15 @@ worker starts 30 minutes before, so the card is normally ready on one of its
 first polls. The feed publishes the names first and the grid positions a few
 minutes later, so:
 
-- positions available → the pitch, immediately;
-- names but no positions → **wait**, until 5 minutes before kickoff, then post
-  the XI as a listed **team sheet** in place of the pitch, with the rest of the
-  page unchanged (some competitions never get positions — the feed reports this
-  itself as `formationFlag`);
-- nothing published by kickoff + 5 minutes → give up with a 🙋 alert.
+- every starter on both teams positioned → the pitch, immediately;
+- names but no positions, or only some of them → **keep waiting**. Nothing is
+  posted without the grid: a listed fallback used to go out near kickoff and
+  read as a straight line on the feed, and a half-filled grid would draw the
+  unplaced players as one straight row;
+- still no complete grid by kickoff + 5 minutes → give up with a 🙋 alert that
+  says which it was — no XI at all, or an XI without positions. Some
+  competitions never get positions (the feed reports this itself as
+  `formationFlag`), so those matches get no line-up post.
 
 Nothing here can affect the rest of the match: the HT and FT posts read their
 own state and are never gated on the line-ups. A failed line-up post retries
@@ -498,8 +518,10 @@ python logo_fetch.py --local logo.png --competition "Community Shield"
 
 ### Crest/logo lookup at render time (`config.py`)
 
-- `get_crest_url(name)` — legacy WC table first, then the deterministic
-  paths (HEAD-checked against Cloudinary, hits cached per run). Only
+- `get_crest_url(name)` — the deterministic paths only, for every team club
+  or national (HEAD-checked against Cloudinary, hits cached per run). There
+  are no hand-mapped crest links: every crest comes from football-logos.cc via
+  `logo_fetch.py`. Only
   successful lookups are cached, so a crest uploaded **mid-match** is picked
   up by the next render without a push. Network blips are distinguished from
   real 404s (retry, then optimistic URL) so an outage never false-alarms.
@@ -893,7 +915,7 @@ same question and nothing typed earlier is lost.
 | 3 | **HT or FT** | a button tap | — (typed text re-asks) |
 | 4 | **Score**, home first | `2-1`. Separator may be `-`, `–`, `—`, `:` or `x`; spaces ignored; one or two digits a side | anything else — `3`, `two-one`, `2-1-1` |
 | 5 | **Competition** | A name, 1–60 characters, at least one letter. `Premier League`, `Club Friendly` | as team name, with the longer limit. **Then the competition badge is checked** |
-| 6 | **Date** | `21/08/2026` (day first), `2026-08-21`, `21-08-2026`, `21.08.2026`, `21 Aug 2026`, `21 August 2026`, `21/08/26` | unparseable; before 1900; or more than two days in the future — a result can't be entered for a match that hasn't been played, so that's a transposed year |
+| 6 | **Date** — optional | `21/08/2026` (day first), `2026-08-21`, `21-08-2026`, `21.08.2026`, `21 Aug 2026`, `21 August 2026`, `21/08/26`. Or the **No date on the card** button, or type `skip` / `none` / `-`, to leave the top-right corner empty | unparseable; before 1900; or more than two days in the future — a result can't be entered for a match that hasn't been played, so that's a transposed year |
 | 7 | **Home scorers** | `minute name (type)`, one per line — see below. Or `none`, or the **Nothing to add** button | any line that doesn't fit, quoted back with what was wrong with it. Then the goals are counted against the score |
 | 8 | **Away scorers** | as above | as above |
 | 9 | **Background photo** | a photo, an image document, or the *Use the standard template* button | a non-image document; over 20 MB (refused before the download, since Telegram won't serve it to a bot) |
@@ -1839,8 +1861,10 @@ fixtures post within minutes of the whistle, where a date is noise; a match
 typed in weeks later needs to say when it was played.
 
 That is carried by `matchSample['card_date']`, which only
-`manual_match.build_scraper_data()` sets. Both renderers draw it if and only if
-it is present, which is how scraped fixtures stay free of one. Everything else
+`manual_match.build_scraper_data()` sets — and only when a date was given. The
+date step is optional; skip it and the card comes out exactly like a scraped
+one, with the corner empty. Both renderers draw it if and only if it is
+present, which is how scraped fixtures stay free of one. Everything else
 — crests, competition logo, scorer symbols, caption, hashtags — runs through
 the ordinary pipeline unchanged and unaware. That is deliberate: if a manual
 card looks wrong, the automated one is wrong the same way.
@@ -2046,8 +2070,7 @@ the chat.
 
 ### `config.py`
 
-Cloudinary public ids for templates (`CLOUDINARY_TEMPLATES`), the legacy WC
-crest/tournament tables, the brand logo, local event symbols, stadium name
+Cloudinary public ids for templates (`CLOUDINARY_TEMPLATES`), the brand logo, local event symbols, stadium name
 aliases, and the `get_crest_url` / `get_competition_logo_url` lookups.
 
 ### `matches.json` entry

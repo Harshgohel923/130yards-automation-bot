@@ -243,69 +243,14 @@ def select_template_key(competition=None, match_id=None):
     return random.Random(str(match_id)).choice(pool) if match_id else random.choice(pool)
 
 
-CLOUDINARY_TEAM_CRESTS = {
-    "Panama": "panama_panama-national-team_3000x3000.football-logos.cc_ourbmw",
-    "Ghana": "ghana_ghana-national-team_3000x3000.football-logos.cc_zcm0kp",
-    "Croatia": "croatia_croatia-national-team_3000x3000.football-logos.cc_yl5gep",
-    "England": "england_england-national-team_3000x3000.football-logos.cc_hatcaq",
-    "Colombia": "colombia_colombia-national-team_3000x3000.football-logos.cc_ck4fsc",
-    "Uzbekistan": "uzbekistan_uzbekistan-national-team_3000x3000.football-logos.cc_pcv5du",
-    "DR Congo": "congo-dr_congo-dr-national-team_3000x3000.football-logos.cc_b7hqui",
-    "Jordan": "jordan_jordan-national-team_3000x3000.football-logos.cc_yvpnbs",
-    "Portugal": "portugal_portuguese-football-federation_3000x3000.football-logos.cc_lblejx",
-    "Austria": "austria_austria-national-team_3000x3000.football-logos.cc_b8ayln",
-    "Algeria": "algeria_algeria-national-team_3000x3000.football-logos.cc_hjt92q",
-    "Argentina": "argentina_argentina-national-team_3000x3000.football-logos.cc_ldq7sn",
-    "Norway": "norway_norway-national-team_3000x3000.football-logos.cc_mm8h9x",
-    "Senegal": "senegal_senegal-national-team_3000x3000.football-logos.cc_lqpltg",
-    "Iraq": "iraq_iraq-national-team_3000x3000.football-logos.cc_ex7n4l",
-    "France": "france_france-national-team_3000x3000.football-logos.cc_wm8som",
-    "Uruguay": "uruguay_uruguay-national-team_3000x3000.football-logos.cc_re8tex",
-    "Saudi Arabia": "saudi-arabia_saudi-arabia-national-team_3000x3000.football-logos.cc_hpq5ar",
-    "Cabo Verde": "cabo-verde_cabo-verde-national-team_3000x3000.football-logos.cc_njawpl",
-    "Spain": "assets/national/spain",
-    "Iran": "iran_iran-national-team_3000x3000.football-logos.cc_yz2viv",
-    "New Zealand": "new-zealand_new-zealand-national-team_3000x3000.football-logos.cc_vsz9b1",
-    "Egypt": "egypt_egypt-national-team_3000x3000.football-logos.cc_uyduwu",
-    "Belgium": "belgium_belgium-national-team_3000x3000.football-logos.cc_cqqmjb",
-    "Tunisia": "tunisia_tunisia-national-team_3000x3000.football-logos.cc_rjzpgq",
-    "Sweden": "sweden_sweden-national-team_3000x3000.football-logos.cc_qqylk1",
-    "Netherlands": "netherlands_dutch-national-team_3000x3000.football-logos.cc_ugdo1d",
-    "Japan": "japan_japan-national-team_3000x3000.football-logos.cc_k5uqkg",
-    "Ecuador": "ecuador_ecuador-national-team_3000x3000.football-logos.cc_ntejgz",
-    "Côte d'Ivoire": "cote-d-ivoire_cote-d-ivoire-national-team_3000x3000.football-logos.cc_nwhpeu",
-    "Curaçao": "curacao_curacao-national-team_3000x3000.football-logos.cc_sglxvo",
-    "United States": "usa_usa-national-team_3000x3000.football-logos.cc_oswazx",
-    "Germany": "germany_germany-national-team_3000x3000.football-logos.cc_xenjn3",
-    "Türkiye": "turkey_turkey-national-team_3000x3000.football-logos.cc_si672q",
-    "Australia": "australia_australia-national-team_3000x3000.football-logos.cc_flk7hw",
-    "Paraguay": "paraguay_paraguay-national-team_3000x3000.football-logos.cc_bzkion",
-    "Scotland": "scotland_scotland-national-team_3000x3000.football-logos.cc_vuyixh",
-    "Haiti": "haiti_haiti-national-team_3000x3000.football-logos.cc_rfbfoq",
-    "Morocco": "morocco_morocco-national-team_3000x3000.football-logos.cc_iorleu",
-    "Brazil": "brazil_brazil-national-team_3000x3000.football-logos.cc_bj5oix",
-    "Switzerland": "switzerland_switzerland-national-team_3000x3000.football-logos.cc_b27tsy",
-    "Qatar": "qatar_qatar-national-team_3000x3000.football-logos.cc_ufsigk",
-    "Bosnia and Herzegovina": "bosnia-and-herzegovina_bosnia-and-herzegovina-national-team_3000x3000.football-logos.cc_p9a5aa",
-    "Canada": "canada_canada-national-team_3000x3000.football-logos.cc_mrkpus",
-    "South Africa": "south-africa_south-africa-national-team_3000x3000.football-logos.cc_skcf4r",
-    "South Korea": "south-korea_south-korea-national-team_3000x3000.football-logos.cc_pf5y5m",
-    "Czechia": "czech-republic_czech-republic-national-team_3000x3000.football-logos.cc_sfp6lw",
-    "Mexico": "mexico_mexico-national-team_3000x3000.football-logos.cc_hwm38l",
-}
-
 # Local event symbols (relative to scorecard.py)
 LOCAL_SYMBOLS = {
     "normal_goal":    "assets/symbols/normal_goal.png",
     "red_card":       "assets/symbols/red_card.jpg",
-    "yellow_card":    "assets/symbols/yellow_card.png",
+    "yellow_card":    "assets/symbols/yellow_card.jpg",
     "penalty_goal":   "assets/symbols/penalty_goal.png",
     "own_goal":       "assets/symbols/own_goal.png",
     "penalty_missed": "assets/symbols/penalty_missed.png",
-}
-
-CLOUDINARY_TOURNAMENT_LOGO = {
-    "World Cup": "tournaments_fifa-world-cup-2026--white_3000x3000.football-logos.cc_fgfkp8",
 }
 
 BRAND_LOGO = {
@@ -337,10 +282,6 @@ def get_competition_logo_url(competition, alert=True):
     name = (competition or '').strip()
     if not name:
         return get_brand_logo_url()
-
-    # Legacy hand-mapped tournament logos (the white WC 2026 mark).
-    if name in CLOUDINARY_TOURNAMENT_LOGO:
-        return f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/{CLOUDINARY_TOURNAMENT_LOGO[name]}"
 
     # A competition the bot has no entry for is still worth looking up: an
     # uploaded badge lands at the slugified name, exactly as `--local
@@ -391,10 +332,10 @@ def get_crest_url(team_name, alert=True):
     """
     Cloudinary crest URL for any spelling of a team name.
 
-    Legacy WC crests come from CLOUDINARY_TEAM_CRESTS; everything newer lives
-    at the deterministic paths logo_fetch uploads to (assets/club/<name>,
-    assets/national/<name>), which validate_matches.py guarantees exist
-    before kickoff.
+    Every crest — club and national alike — lives at the deterministic path
+    logo_fetch uploads to from football-logos.cc (assets/club/<name>,
+    assets/national/<name>), which validate_matches.py guarantees exists
+    before kickoff. There are no hand-mapped crest links.
 
     Only hits are cached — a miss is re-checked on every call, so a crest
     uploaded mid-match is picked up by the next render. alert=False lets a
@@ -404,12 +345,7 @@ def get_crest_url(team_name, alert=True):
     from logo_fetch import crest_candidates
     from telegram_notify import send_alert
 
-    # Legacy hand-mapped crests (WC 2026 national teams).
     normalized = TEAM_NAME_ALIASES.get(team_name, team_name)
-    crest_id = CLOUDINARY_TEAM_CRESTS.get(normalized)
-    if crest_id:
-        return f"https://res.cloudinary.com/{CLOUD_NAME}/image/upload/{crest_id}"
-
     if team_name in _CREST_URL_CACHE:
         return _CREST_URL_CACHE[team_name]
 

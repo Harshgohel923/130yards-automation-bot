@@ -14,8 +14,8 @@ a manual card looks wrong, the automated one is wrong the same way.
 The one field a scraped match never carries is `matchSample['card_date']`, the
 pre-formatted date stamped in the card's top-right corner. Live fixtures post
 within minutes of the whistle, so a date there is noise; a match typed in weeks
-later needs it. Both renderers draw it only when it is present, which is exactly
-the matches that came through here.
+later usually wants it. It is optional here too — skip the date in /card and
+the field is left out. Both renderers draw it only when it is present.
 
 Entered through the Telegram bot's /card flow — see telegram_bot.py.
 """
@@ -54,6 +54,8 @@ EVENT_ALIASES = {
     'og': 'own_goal', 'own': 'own_goal', 'own goal': 'own_goal',
     'red': 'red_card', 'r': 'red_card', 'rc': 'red_card',
     'red card': 'red_card', 'sent off': 'red_card',
+    'second yellow': 'red_card', '2y': 'red_card', 'yr': 'red_card',
+    'double yellow': 'red_card', 'two yellows': 'red_card',
     'miss': 'penalty_missed', 'missed': 'penalty_missed',
     'pm': 'penalty_missed', 'penalty missed': 'penalty_missed',
     'missed penalty': 'penalty_missed',
@@ -226,6 +228,15 @@ def parse_score(text: str) -> tuple[str, str]:
     return m.group(1), m.group(2)
 
 
+# Typed at the date step to leave the date off the card, as well as the button.
+NO_DATE_WORDS = {'skip', 'none', 'no', 'no date', 'nodate', '-', 'n/a', 'na'}
+
+
+def wants_no_date(text: str) -> bool:
+    """True when the reply to the date step means 'leave the date off'."""
+    return (text or '').strip().lower().rstrip('.') in NO_DATE_WORDS
+
+
 def parse_date(text: str, now: datetime | None = None) -> datetime:
     """A typed date → a UTC datetime at midnight.
 
@@ -383,7 +394,7 @@ def goal_count(events: list[dict], team: str) -> int:
 
 def build_scraper_data(*, home_team: str, away_team: str,
                        home_score: str, away_score: str,
-                       competition: str, when: datetime, event_type: str,
+                       competition: str, when: datetime | None, event_type: str,
                        home_events: list[dict], away_events: list[dict],
                        venue: str = '', match_id: str | None = None) -> dict:
     """Assemble the `scraper_data` dict the rest of the pipeline expects.
@@ -392,18 +403,23 @@ def build_scraper_data(*, home_team: str, away_team: str,
     at half time only hts_*, at full time fs_* (with hts_* left unknown,
     because a hand-entered match rarely comes with a half-time score and a
     guessed one would be shown as fact).
+
+    `when` is None when the date was skipped: the card then carries no date,
+    and the match id falls back to today's date so it stays unique.
     """
     event_type = event_type.upper()
+    id_date = when or datetime.now(timezone.utc)
     sample = {
-        'match_id':         match_id or new_match_id(when, home_team, away_team),
+        'match_id':         match_id or new_match_id(id_date, home_team, away_team),
         'team_A_name':      home_team,
         'team_B_name':      away_team,
         'competition_name': competition,
-        'date_utc':         when.strftime('%Y-%m-%d'),
         'status':           'Half Time' if event_type == 'HT' else 'Finished',
-        # Only manual matches carry this; it is what puts the date on the card.
-        'card_date':        format_card_date(when),
     }
+    if when is not None:
+        sample['date_utc'] = when.strftime('%Y-%m-%d')
+        # Only manual matches carry this; it is what puts the date on the card.
+        sample['card_date'] = format_card_date(when)
     if event_type == 'HT':
         sample['hts_A'], sample['hts_B'] = home_score, away_score
     else:

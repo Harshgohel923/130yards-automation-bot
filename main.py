@@ -40,7 +40,7 @@ from allfootball_desktop import enrich as enrich_with_desktop
 from caption import (generate_caption, generate_event_caption,
                      generate_lineup_caption)
 from config import get_crest_url
-from carousel import nudge_dispatcher, submit_match
+from carousel import group_status, nudge_dispatcher, submit_match
 from cloudinary_upload import upload_image, upload_match_data, delete_image
 from database import (init_db, is_event_posted, mark_event_posted,
                       unmark_event_posted, upsert_match)
@@ -115,7 +115,6 @@ SCRAPER_STALE_SECS  = 15 * 60
 # The feed publishes the names first and the grid positions a few minutes
 # later; the page can draw either, so the wait for positions is bounded rather
 # than open-ended.
-LINEUP_SHEET_FALLBACK_SECS = 5 * 60    # before kickoff, stop holding out for the grid
 LINEUP_DEADLINE_SECS       = 5 * 60    # after kickoff, a starting XI post is stale
 
 # ── Global state ──────────────────────────────────────────────────────────────
@@ -521,11 +520,73 @@ def _run_group_pipeline(entry: dict, scraper_data: dict) -> bool:
     return True
 
 
-def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
+# How many consecutive "not every card is in" reads end a group watch. One
+# could be a Cloudinary listing hiccup; three in a row is a member still
+# playing, whose own worker takes the watch over when it hands its card in.
+GROUP_WATCH_WAITING_POLLS = 3
+
+
+def _watch_group_publish(entry: dict, until: datetime) -> None:
+    """
+    After handing a card over, make sure the carousel actually goes out.
+
+    Only the dispatcher posts a group, so two matches ending together can't
+    post it twice — but it only runs every 15 minutes, so one failed publish
+    used to leave the whole carousel off the page for another quarter of an
+    hour, and again after each failure. So once every card is in, the worker
+    stays up and nudges the dispatcher every minute until the POSTED marker
+    appears. The nudges queue on the dispatcher's concurrency group (at most
+    one waiting run), so this never runs two publishers side by side.
+    """
+    match_id = entry['match_id']
+    group = _carousel_group_of(entry)
+    waiting_polls = 0
+    nudges = 0
+    while datetime.now(timezone.utc) < until:
+        # The handover has just nudged once, so look before nudging again.
+        time.sleep(POLL_INTERVAL_SECS)
+        status = group_status(group)
+        if status == 'posted':
+            print(f"[{match_id}] Carousel '{group}' is posted — done.")
+            if nudges:
+                matchlog.log(f"carousel '{group}' posted",
+                             f'after {nudges} retr{"y" if nudges == 1 else "ies"}',
+                             force=True)
+            return
+        if status == 'waiting':
+            waiting_polls += 1
+            if waiting_polls >= GROUP_WATCH_WAITING_POLLS:
+                print(f"[{match_id}] Carousel '{group}' is still waiting for "
+                      f"other matches — leaving the watch to them.")
+                return
+            continue
+        waiting_polls = 0
+        nudges += 1
+        print(f"[{match_id}] Carousel '{group}' has every card but hasn't "
+              f"posted — nudging the dispatcher (retry {nudges}).")
+        nudge_dispatcher()
+
+    print(f"[{match_id}] Worker ceiling reached with carousel '{group}' unposted.")
+    matchlog.warn(f"carousel '{group}' still unposted",
+                  'worker ceiling reached — the dispatcher keeps trying every 15 min')
+    send_alert(
+        f"🙋 The '{group}' carousel still hasn't posted, and this match's "
+        f"worker has run out of time to keep pushing it.\n\n"
+        f"Every scorecard is saved. The dispatcher keeps retrying every "
+        f"15 minutes, but repeated failures usually mean something needs "
+        f"looking at — check the earlier ❌ alerts for the reason.",
+        key=f'carousel:{group}:watch-expired', cooldown=3600,
+    )
+
+
+def _run_pipeline(entry: dict, event_type: str, scraper_data: dict) -> bool:
     """
     Shared pipeline for both HT and FT:
       scraper_data → scorecard image → Cloudinary → caption → Instagram → DB
     event_type: 'HT' or 'FT'
+
+    Returns True once the card is on Instagram. On False nothing went out, and
+    the caller must leave the moment open so the next poll tries again.
     """
     match_id = entry['match_id']
     print(f"[{match_id}] Running {event_type} pipeline…")
@@ -536,6 +597,7 @@ def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
         print(f"[{match_id}] ✅ {event_type} posted — IG ID: {ig_id}")
         matchlog.log(f'posted {event_type}', f'IG {ig_id}', force=True)
         send_music_reminder(f"{_label(entry)} — {_moment(event_type)}", ig_id)
+        return True
     except Exception as e:
         print(f"[{match_id}] ❌ Pipeline error ({event_type}): {e}")
         matchlog.error(f'{event_type} post failed', f'{type(e).__name__}: {e}')
@@ -548,6 +610,7 @@ def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
             f"Technical detail: {e}",
             key=f'{match_id}:pipeline:{event_type}', cooldown=600,
         )
+        return False
 
 
 # ── Starting XI pipeline ──────────────────────────────────────────────────────
@@ -581,21 +644,18 @@ def _lineup_ready(entry: dict, scraper_data: dict, now) -> bool:
     """
     Is there enough team news to post?
 
-    Positions are what makes the pitch, so they are worth waiting for — but not
-    past LINEUP_SHEET_FALLBACK_SECS before kickoff, after which the names alone
-    are posted as a team sheet. Waiting longer would trade a good card for no
-    card at all.
+    Only once both XIs are fully placed on the grid. Names without positions
+    used to go out as a listed team sheet near kickoff, which read as a
+    straight line on the feed — so now the worker keeps waiting for the grid,
+    up to the LINEUP_DEADLINE_SECS cut-off after kickoff, and skips the post
+    if it never comes.
     """
-    if not has_lineups(scraper_data):
-        return False
     if has_positions(scraper_data):
         return True
-    kickoff = datetime.fromisoformat(entry['kickoff_utc'].replace('Z', '+00:00'))
-    late = now >= kickoff - timedelta(seconds=LINEUP_SHEET_FALLBACK_SECS)
-    if late:
+    if has_lineups(scraper_data):
         print(f"[{entry['match_id']}] Lineups published without positions — "
-              f"posting them as a team sheet.")
-    return late
+              f"waiting for the grid.")
+    return False
 
 
 def _run_lineup_pipeline(entry: dict, scraper_data: dict) -> bool:
@@ -1714,6 +1774,10 @@ def match_worker(entry: dict):
             'status':                 'scheduled',
             'ht_posted':              False,
             'ft_posted':              False,
+            # The HT fallback failed at least once / its retries ran out when
+            # the second half began — see the HT TRIGGER section.
+            'ht_failed':              False,
+            'ht_given_up':            False,
             'lineups_posted':         False,
             'early_ht_posted':        False,
             'early_ft_posted':        False,
@@ -1881,11 +1945,18 @@ def match_worker(entry: dict):
                 and not is_event_posted(match_id, 'LINEUPS')):
             if now > kickoff_utc + timedelta(seconds=LINEUP_DEADLINE_SECS):
                 print(f"[{match_id}] Starting XI deadline passed — skipping the line-ups.")
-                matchlog.warn('line-ups skipped',
-                              'no XI was published in time — the match is under way')
+                if has_lineups(scraper_data):
+                    why_log = ('the XIs came without positions — the match is '
+                               'under way')
+                    why = ("the line-ups were published, but never with player "
+                           "positions, so the pitch couldn't be drawn")
+                else:
+                    why_log = 'no XI was published in time — the match is under way'
+                    why = "no starting XI was published in time"
+                matchlog.warn('line-ups skipped', why_log)
                 send_alert(
-                    f"🙋 {_label(entry)}: no starting XI was published in time, "
-                    f"so there's no team-news post for this one.\n\n"
+                    f"🙋 {_label(entry)}: {why}, so there's no team-news post "
+                    f"for this one.\n\n"
                     f"Nothing is broken — the half-time and full-time cards are "
                     f"unaffected and will post as normal.",
                     key=f'{match_id}:lineups-missed', cooldown=3600,
@@ -1977,6 +2048,32 @@ def match_worker(entry: dict):
                             s['early_ht_events']        = current_events
                             _save_state()
 
+        # ── HT retries ran out ───────────────────────────────────────────────
+        # A failed HT card retries every poll while the scraper reports the
+        # interval. Once play resumes the card is no longer worth posting, so
+        # say so once instead of going quiet.
+        if (raw_status in ('2H', 'ET', 'AP', 'FT')
+                and not ht_posted
+                and not is_event_posted(match_id, 'HT')):
+            with STATE_LOCK:
+                s = MATCH_STATE[match_id]
+                give_up = s.get('ht_failed') and not s.get('ht_given_up')
+                if give_up:
+                    s['ht_given_up'] = True
+                    _save_state()
+            if give_up:
+                print(f"[{match_id}] Second half under way — HT card never posted, giving up on it.")
+                matchlog.warn('HT skipped', 'every half-time attempt failed — '
+                                            'the second half has started')
+                send_alert(
+                    f"🙋 {_label(entry)}: the half-time scorecard never made it "
+                    f"onto Instagram — every retry during the interval failed, "
+                    f"and the second half has now started, so the bot has "
+                    f"stopped trying.\n\n"
+                    f"The full-time card is unaffected and will post as normal.",
+                    key=f'{match_id}:ht-given-up', cooldown=3600,
+                )
+
         # ══════════════════════════════════════════════════════════════════════
         # HT TRIGGER  (scraper reports the interval)
         # ══════════════════════════════════════════════════════════════════════
@@ -2000,9 +2097,15 @@ def match_worker(entry: dict):
                     print(f"[{match_id}] HT confirmed but scorer list lagging — retrying next poll.")
                 else:
                     _save_match_data(entry, scraper_data)
-                    _run_pipeline(entry, 'HT', scraper_data)
+                    # Only a card that actually went out closes the moment —
+                    # otherwise the next poll (a minute on) tries again, for
+                    # as long as the scraper still reports the interval.
+                    ok = _run_pipeline(entry, 'HT', scraper_data)
                     with STATE_LOCK:
-                        MATCH_STATE[match_id]['ht_posted'] = True
+                        if ok:
+                            MATCH_STATE[match_id]['ht_posted'] = True
+                        else:
+                            MATCH_STATE[match_id]['ht_failed'] = True
                         _save_state()
 
         # ══════════════════════════════════════════════════════════════════════
@@ -2079,6 +2182,7 @@ def match_worker(entry: dict):
                             MATCH_STATE[match_id]['ft_posted'] = True
                             _save_state()
                         _archive_match_data(entry)
+                        _watch_group_publish(entry, deadline_utc)
                         break
             elif _eft_done and active_ft_ig:
                 stale = _early_card_stale(early_ft_score, early_ft_events,
@@ -2098,12 +2202,14 @@ def match_worker(entry: dict):
                     print(f"[{match_id}] FT confirmed but scorer list lagging — retrying next poll.")
                 else:
                     _save_match_data(entry, scraper_data)
-                    _run_pipeline(entry, 'FT', scraper_data)
-                    with STATE_LOCK:
-                        MATCH_STATE[match_id]['ft_posted'] = True
-                        _save_state()
-                    _archive_match_data(entry)
-                    break
+                    # A failed post must not end the worker: stay in the loop
+                    # and try again next poll, until the safety ceiling.
+                    if _run_pipeline(entry, 'FT', scraper_data):
+                        with STATE_LOCK:
+                            MATCH_STATE[match_id]['ft_posted'] = True
+                            _save_state()
+                        _archive_match_data(entry)
+                        break
 
         # ══════════════════════════════════════════════════════════════════════
         # ET / AP HANDLING  (extra time and penalty shootouts)

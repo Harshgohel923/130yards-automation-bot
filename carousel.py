@@ -285,6 +285,25 @@ def mark_group_posted(group: str, ig_id: str, match_ids: list[str],
     })
 
 
+def group_status(group: str, entries: list[dict] | None = None) -> str:
+    """
+    Where a group stands, for a worker deciding whether to keep nudging:
+
+      'posted'   the POSTED marker exists — nothing left to do
+      'ready'    every member's card is in, but it hasn't posted yet — the
+                 dispatcher should be publishing it right now
+      'waiting'  members still to come (or the listing failed) — the last of
+                 them to hand over will take up the watch
+    """
+    entries = entries if entries is not None else _registry_members(group)
+    if posted_marker(group, entries):
+        return 'posted'
+    members = {str(e['match_id']) for e in entries if e.get('match_id')}
+    if members and members <= set(read_manifests(group, entries)):
+        return 'ready'
+    return 'waiting'
+
+
 # ── Publishing ────────────────────────────────────────────────────────────────
 
 def _label(entry: dict) -> str:
