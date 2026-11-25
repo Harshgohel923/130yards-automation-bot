@@ -77,33 +77,20 @@ MINUTE_NAME_GAP_RATIO = 0.45
 
 # ── Basics ────────────────────────────────────────────────────────────────────
 
-# The small gold labels — FULL TIME / HALF TIME, the aggregate, the shootout —
-# are set in Oswald, which has a real bold. Bebas Neue has a single weight,
-# and faking a bold by stroking it fills in the counters of A, G, E and S at
-# label sizes until the line reads as a smudge. (OFL; see OFL-Oswald.txt.)
-LABEL_FONT_PATH = 'assets/fonts/Oswald-Variable.ttf'
+# Bebas Neue ships in a single weight, so "bold" is drawn: the glyphs are
+# stroked in their own colour, thickening every edge evenly. At label sizes it
+# reads as a true bold without changing the face or the letter shapes.
+BOLD_STROKE_RATIO = 0.035     # of the font size, at least 1px
 
 
-def _label_font(size, weight=b'Bold'):
-    """Oswald at a named weight; Bebas if the file or the weight is missing."""
-    try:
-        font = ImageFont.truetype(LABEL_FONT_PATH, int(size))
-        font.set_variation_by_name(weight)
-        return font
-    except Exception:
-        return _font(size)
+def _bold_stroke(font) -> int:
+    return max(1, round(getattr(font, 'size', 0) * BOLD_STROKE_RATIO))
 
 
-def _draw_tracked(draw, center, text, font, fill, tracking):
-    """Text centred on `center` with `tracking` px between letters — real
-    letter-spacing, rather than spaces between the letters, which spread
-    words unevenly and double the gap at every real space."""
-    widths = [font.getlength(ch) for ch in text]
-    total = sum(widths) + tracking * max(0, len(text) - 1)
-    x = center[0] - total / 2
-    for ch, w in zip(text, widths):
-        draw.text((x, center[1]), ch, font=font, fill=fill, anchor='lm')
-        x += w + tracking
+def _draw_bold(draw, xy, text, font, fill, anchor='mm'):
+    """draw.text, thickened — see BOLD_STROKE_RATIO."""
+    draw.text(xy, text, font=font, fill=fill, anchor=anchor,
+              stroke_width=_bold_stroke(font), stroke_fill=fill)
 
 
 def _font(size):
@@ -653,11 +640,11 @@ def add_scorecard_overlay(image_path, output_path, home_team, away_team,
 
     # ── FULL TIME / HALF TIME label ───────────────────────────────────────
     label = 'FULL TIME' if event_type.upper() == 'FT' else 'HALF TIME'
-    label_size = int(h * 0.0145)
+    label_font = _font(int(h * 0.016))
     label_y = py1 + int(h * 0.043)
-    # Tracked out, like the reference's spaced team names.
-    _draw_tracked(draw, (cx, label_y), label, _label_font(label_size),
-                  COLOR_LABEL, tracking=label_size * 0.32)
+    # letter-spaced label, like the reference's tracked-out team names
+    spaced = ' '.join(label)
+    _draw_bold(draw, (cx, label_y), spaced, label_font, COLOR_LABEL)
 
     # ── Score row: crests + big score + divider ───────────────────────────
     score_cy = py1 + int(h * 0.104)
@@ -711,17 +698,14 @@ def add_scorecard_overlay(image_path, output_path, home_team, away_team,
     # penalties drop a row, between the team names — the middle of that row
     # is empty, the names sit over the crests.
     agg_text, pen_text = two_legs.result_lines(aggregate, penalties)
-    under_score_y = py1 + int(h * 0.154)
+    under_score_y = py1 + int(h * 0.155)
     if agg_text:
-        agg_size = int(h * 0.0175)
-        _draw_tracked(draw, (cx, under_score_y), agg_text,
-                      _label_font(agg_size), COLOR_LABEL, tracking=agg_size * 0.12)
+        _draw_bold(draw, (cx, under_score_y), agg_text, _font(int(h * 0.021)),
+                   COLOR_LABEL)
     if pen_text:
-        pen_size = int(h * 0.0135)
-        pen_y = py1 + int(h * 0.178) if agg_text else under_score_y
-        _draw_tracked(draw, (cx, pen_y), pen_text,
-                      _label_font(pen_size, b'SemiBold'), COLOR_LABEL,
-                      tracking=pen_size * 0.12)
+        pen_y = py1 + int(h * 0.177) if agg_text else under_score_y
+        _draw_bold(draw, (cx, pen_y), pen_text, _font(int(h * 0.017)),
+                   COLOR_LABEL)
 
     # ── Scorer lines ──────────────────────────────────────────────────────
     scorers_top = py1 + header_h
