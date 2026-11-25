@@ -2015,24 +2015,32 @@ league news to the group as **post ideas**:
 
 - **Sources**: BBC Sport, The Guardian, Sky Sports and ESPN RSS, plus a Google
   News search per league (Premier League, La Liga, Serie A, Bundesliga,
-  Ligue 1). Google searches go one at a time — a burst gets 429s.
-- **Gemini edits**: merges one story reported by many outlets, drops anything
-  outside the top five, sorts each story into breaking or regular, scores it
-  1–5, flags trending ones, and recognises an update to a story already sent.
-- **🚨 Breaking news** goes out at once — only when Gemini says breaking *and*
-  scores it 4+, at most 3 per run (the rest join the round-up).
-- **📰 Regular news**: once an hour, the top five (trending first, then by
-  importance), 🔥 marking trending ones.
-- **Never twice**: a story is only sent again as **🔄 UPDATE** when there is
-  material new information (what changed is shown).
-- Links show as "Read on <outlet>" — an outlet's own link wherever one of its
-  items is in the story.
-- Memory: `news/state.json` on Cloudinary (seen items, sent stories, the
-  round-up queue), kept 48 hours. The very first run only looks back an hour.
-- `TELEGRAM_NEWS_CHAT_ID` sends news to its own chat/group; otherwise it goes
-  to the alerts chat. `NEWS_ENABLED=0` switches it off. If Gemini is down the
-  items wait for the next run. Try it without sending anything:
-  `python news.py --dry-run`.
+  Ligue 1), one at a time — a burst gets 429s. Every new headline goes into an
+  inbox; nothing else happens until there's a reason to call Gemini.
+- **No results**: the page already posts a scorecard for those. Headlines with
+  a scoreline or result words (beat, draw, highlights, player ratings, match
+  report…) are dropped in code before Gemini sees them — unless they also carry
+  a breaking word ("sacked after 3-0 defeat"), in which case Gemini, told to
+  drop results, decides.
+- **🚨 Breaking (within 15 minutes)**: Gemini is asked only when a new headline
+  carries a breaking word (official, signs, agreed, sacked, appointed, injury,
+  ruled out, ban, "here we go", dies, record…), and only about those. It goes
+  out if Gemini says breaking *and* scores it 4+, at most 3 per run.
+- **📰 Regular (every 3 hours)**: one Gemini call picks the top five from
+  everything collected since the last round-up — trending (🔥) first, then by
+  importance.
+- **Quiet during match hours**: for each day's fixtures in `matches.json`
+  (German date), from the earliest kickoff to the latest expected end (kickoff
+  + 115 min, + 165 for a knockout). Headlines are still collected; nothing is
+  sent and Gemini isn't called. The first run after the window catches up.
+- **Never twice**: a story only comes back as **🔄 UPDATE** with material new
+  information (what changed is shown).
+- Links show as "Read on <outlet>", preferring an outlet's own link.
+- Memory: `news/state.json` on Cloudinary (seen headlines, inbox, sent
+  stories), 48 hours; the very first run looks back only an hour.
+- `TELEGRAM_NEWS_CHAT_ID` sends news to its own chat; otherwise the alerts
+  chat. `NEWS_ENABLED=0` switches it off. If Gemini is down, the headlines wait
+  for the next run. Try it without sending: `python news.py --dry-run`.
 
 ## Telegram alerts
 

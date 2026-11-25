@@ -1,25 +1,30 @@
 """
 Football news for the Telegram group — post ideas, top-5 leagues only.
 
-Every dispatcher tick (15 minutes) this:
-  1. reads the RSS feeds below — four outlets plus a Google News search per
-     league — and keeps only items it hasn't seen;
-  2. hands them to Gemini as an editor, together with the stories already
-     sent in the last two days. Gemini merges the same story from different
-     outlets, drops anything outside the Premier League, La Liga, Serie A,
-     Bundesliga and Ligue 1, sorts each story into BREAKING or REGULAR, scores
-     its importance, flags what's trending, and says when an item is a real
-     update to a story already sent (and what changed);
-  3. sends breaking news at once (🚨, or 🔄 for an update) and collects the
-     rest; once an hour the top five regular stories go out as one message.
+Every dispatcher tick (15 minutes) this reads the RSS feeds below — four
+outlets plus a Google News search per league — and files every headline it
+hasn't seen in an inbox. Then, outside match hours:
+
+  • BREAKING (within 15 minutes): only if a new headline carries a breaking
+    word (official, signs, sacked, injury, "here we go", …) is Gemini asked —
+    about those headlines alone — whether any is truly breaking. Up to three
+    go out at once (🚨, or 🔄 for an update to a story already sent).
+  • REGULAR (every 3 hours): one Gemini call picks the top five stories from
+    everything collected since the last round-up, sent as one message.
+
+Results are never news here: the page already posts a scorecard for those.
+Headlines with a scoreline or result words are dropped in code before Gemini
+sees them, and Gemini is told to drop anything about a match result too.
+
+During match hours — for each day's fixtures in matches.json, from the
+earliest kickoff to the latest expected end — nothing is sent and Gemini
+isn't called; headlines keep being collected and the next run after the
+window catches up.
 
 A story is never sent twice unless something material has changed. Every
-message is headed as a post idea — this is a feed of things worth making a
-post about, not a news service.
+message is headed as a post idea.
 
-Memory lives on Cloudinary (news/state.json): what's been seen, what's been
-sent, what's waiting for the hourly round-up. No repo commits.
-
+Memory lives on Cloudinary (news/state.json). No repo commits.
 Run it by hand without sending anything:  python news.py --dry-run
 """
 
@@ -33,7 +38,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote_plus
 
@@ -58,19 +63,95 @@ FEEDS = [
 ] + [(f'Google News · {league}', _google_news(league)) for league in LEAGUES]
 
 RUN_EVERY_SECS = 14 * 60        # the dispatcher can be woken more often than this
-DIGEST_EVERY_SECS = 60 * 60     # regular news: once an hour
+DIGEST_EVERY_SECS = 3 * 3600    # regular news: every three hours
 DIGEST_SIZE = 5
-ITEM_WINDOW_SECS = 3 * 3600     # ignore anything older — it isn't news any more
+ITEM_WINDOW_SECS = 3 * 3600     # an item older than this when first seen isn't news
 FIRST_RUN_WINDOW_SECS = 3600    # no memory yet: don't flood the group with a backlog
-PENDING_TTL_SECS = 3 * 3600     # a regular story still unsent after this is dropped
-MEMORY_SECS = 48 * 3600         # how long seen items and sent stories are remembered
-MAX_ITEMS_PER_RUN = 80
-BREAKING_MIN_IMPORTANCE = 4     # "breaking" but less than this waits for the round-up
-MAX_BREAKING_PER_RUN = 3        # a mad deadline night can't flood the group
-MAX_KNOWN_STORIES = 60
+INBOX_TTL_SECS = 12 * 3600      # long enough to outlast a full matchday window
+INBOX_MAX = 200
+MEMORY_SECS = 48 * 3600         # seen items and sent stories
+MAX_BREAKING_CHECK = 40         # headlines per breaking check
+MAX_DIGEST_ITEMS = 100          # headlines per round-up
+BREAKING_MIN_IMPORTANCE = 4
+MAX_BREAKING_PER_RUN = 3
 STATE_ID = 'news/state.json'
 
+# Match length used for the quiet window — the worker's own "can't still be
+# playing" figures (main.py's scraper outage fallback).
+MATCH_SECS = 115 * 60
+KNOCKOUT_MATCH_SECS = 165 * 60
+
 HEADERS = {'User-Agent': 'Mozilla/5.0 (compatible; news-digest/1.0)'}
+REGISTRY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'matches.json')
+
+
+# ── Results are not news here ────────────────────────────────────────────────
+# A scoreline (2-1, 3–0) — never a fee or a date. "£51m" or "2026-27" can't match.
+_SCORELINE = re.compile(r'(?<![\d£€$.,/-])\b\d{1,2}\s?[-–]\s?\d{1,2}\b(?![\d/-])')
+_RESULT_WORDS = re.compile(
+    r'\b(beat|beats|beaten|thrash|thrashed|rout|routs|routed|stun|stuns|stunned|'
+    r'draw|draws|drew|win over|victory|defeat|defeated|comeback win|'
+    r'highlights|player ratings|match report|as it happened|recap|reaction:|'
+    r'live:|live updates|full-time|half-time|talking points)\b', re.I)
+
+
+def is_result_story(title: str) -> bool:
+    """A match result, report or live blog — the scorecard post covers it.
+    Never true for a headline with a breaking word: "Chelsea sack manager after
+    3-0 defeat" is breaking news, so Gemini (told to drop results) decides."""
+    if is_breaking_candidate(title):
+        return False
+    return bool(_SCORELINE.search(title or '') or _RESULT_WORDS.search(title or ''))
+
+
+# Headlines worth a breaking check. Everything else waits for the round-up.
+_BREAKING_WORDS = re.compile(
+    r'\b(official|officially|confirm|confirms|confirmed|here we go|signs|signed|'
+    r'signing|completes?|joins|agree|agrees|agreed|agreement|deal done|medical|'
+    r'sacked|sack|fired|'
+    r'dismissed|appointed|appoints|new (head )?coach|new manager|resigns?|'
+    r'steps down|parts ways|injury|injured|ruptured|torn|acl|surgery|fracture|'
+    r'out for (the )?season|ruled out|banned|ban|suspended|suspension|charged|'
+    r'arrested|court|dies|died|death|passed away|retires?|retirement|record)\b',
+    re.I)
+
+
+def is_breaking_candidate(title: str) -> bool:
+    return bool(_BREAKING_WORDS.search(title or ''))
+
+
+# ── Match hours ──────────────────────────────────────────────────────────────
+
+def match_windows(registry: list[dict]) -> list[tuple[float, float]]:
+    """[(start, end)] per matchday: the earliest kickoff to the latest expected
+    end among the fixtures sharing a date in German time (the bot's local
+    time), so an overnight kickoff is its own window."""
+    from config import LOCAL_TZ
+    days: dict = {}
+    for entry in registry or []:
+        try:
+            ko = datetime.fromisoformat(str(entry['kickoff_utc']).replace('Z', '+00:00'))
+        except (KeyError, TypeError, ValueError):
+            continue
+        length = KNOCKOUT_MATCH_SECS if entry.get('knockout_match') else MATCH_SECS
+        start, end = ko.timestamp(), ko.timestamp() + length
+        day = ko.astimezone(LOCAL_TZ).date()
+        lo, hi = days.get(day, (start, end))
+        days[day] = (min(lo, start), max(hi, end))
+    return sorted(days.values())
+
+
+def in_match_window(now: float, registry: list[dict]) -> bool:
+    return any(start <= now <= end for start, end in match_windows(registry))
+
+
+def _load_registry() -> list[dict]:
+    try:
+        with open(REGISTRY_FILE, encoding='utf-8') as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
 
 
 # ── Reading the feeds ────────────────────────────────────────────────────────
@@ -118,8 +199,8 @@ GOOGLE_RETRY_WAIT_SECS = 8
 
 
 def _fetch(name: str, url: str, sleep=time.sleep) -> list[dict]:
-    """One feed. A Google 429 gets one retry after a pause; any other failure
-    just skips the feed for this run."""
+    """One feed. A 429 gets one retry after a pause; any other failure just
+    skips the feed for this run."""
     for attempt in (1, 2):
         try:
             r = requests.get(url, headers=HEADERS, timeout=15)
@@ -155,36 +236,42 @@ def fetch_all(sleep=time.sleep) -> list[dict]:
 
 # ── Gemini, the editor ───────────────────────────────────────────────────────
 
-EDITOR_BRIEF = f"""\
-You are the news editor for an Instagram football page. You receive new news
-items from several outlets and the stories already sent to the team in the
-last two days. Group the new items into STORIES (one story = one event,
-however many outlets report it) and judge each one.
+_COMMON = f"""\
+You are the news editor for an Instagram football page. Group the news items
+into STORIES (one story = one event, however many outlets report it).
 
 Keep only stories about the top five leagues — {', '.join(LEAGUES)}: their
-clubs, players, managers and the leagues themselves (a top-five club's
-European tie counts). Set league to "other" for anything else.
+clubs, players, managers and the leagues themselves. Set league to "other"
+for anything else.
 
-category:
-  "breaking" — confirmed transfers / "here we go" / official signings,
-     managers sacked, appointed or resigning, serious injuries to key
-     players, major bans or legal news, records broken, shock results,
-     deaths or major off-field events.
-  "regular"  — everything else: rumours, quotes, previews, reports, minor
-     injuries, opinion.
-importance: 1 (minor) to 5 (huge).
-trending: true if several outlets cover it or it is clearly a big talking
-     point right now.
+NEVER include match results, scorelines, wins, losses, draws, comebacks,
+match reports, player ratings or highlights — the page already posts a
+scorecard for every result. Set league to "other" for those too.
 
-If a story matches one already sent, give its story_id. Set is_update true
-ONLY if the new items add material facts (a rumour became agreed or official,
-a fee or contract length confirmed, an injury's length revealed, a new
-development) and say what in what_changed. A re-report with nothing new is
-is_update false.
+If a story matches one already sent, give its story_id, and set is_update
+true ONLY if the items add material facts (a rumour became agreed or
+official, a fee or contract length confirmed, an injury's length revealed);
+say what in what_changed. A re-report with nothing new: is_update false.
 
-headline: neutral, at most 90 characters, no clickbait. summary: one or two
-sentences, at most 220 characters. Use only facts in the items — never
-invent or assume anything."""
+importance: 1 (minor) to 5 (huge). trending: true if several outlets cover it
+or it is clearly a big talking point. headline: neutral, at most 90
+characters, no clickbait. summary: one or two sentences, at most 220
+characters. Use only facts in the items — never invent or assume anything."""
+
+BREAKING_BRIEF = _COMMON + """
+
+You are checking headlines for BREAKING news only. category "breaking" means:
+confirmed transfers / "here we go" / official signings, managers sacked,
+appointed or resigning, serious injuries to key players, major bans or legal
+news, records broken, deaths or major off-field events. Everything else is
+"regular" — it will wait for the round-up."""
+
+DIGEST_BRIEF = _COMMON + """
+
+You are picking stories for a round-up of the last few hours: transfer
+rumours and developments, injuries, quotes and press conferences, managerial
+news, off-field stories. Return the stories worth a post, with category
+"regular"."""
 
 SCHEMA = {
     'type': 'object',
@@ -213,20 +300,21 @@ def _hhmm(ts: float) -> str:
     return datetime.fromtimestamp(ts, timezone.utc).strftime('%H:%M UTC') if ts else '?'
 
 
-def build_prompt(items: list[dict], known: dict) -> str:
+def build_prompt(brief: str, items: list[dict], known: dict) -> str:
     new = [{'id': i['id'], 'source': i['source'], 'title': i['title'],
-            'snippet': i['snippet'], 'published': _hhmm(i['published'])} for i in items]
+            'snippet': i.get('snippet', ''), 'published': _hhmm(i['published'])}
+           for i in items]
     sent = [{'story_id': sid, 'headline': s['headline'], 'summary': s['summary'],
              'last_sent': _hhmm(s.get('sent_ts', 0))} for sid, s in known.items()]
-    return (EDITOR_BRIEF + '\n\nSTORIES ALREADY SENT:\n' + json.dumps(sent, ensure_ascii=False)
-            + '\n\nNEW ITEMS:\n' + json.dumps(new, ensure_ascii=False))
+    return (brief + '\n\nSTORIES ALREADY SENT:\n' + json.dumps(sent, ensure_ascii=False)
+            + '\n\nNEWS ITEMS:\n' + json.dumps(new, ensure_ascii=False))
 
 
-def ask_editor(items: list[dict], known: dict) -> list[dict]:
+def ask_editor(brief: str, items: list[dict], known: dict) -> list[dict]:
     """Gemini's stories. Raises if no model answers sensibly."""
     from google.genai import types
     from caption import GEMINI_MODELS, client
-    prompt = build_prompt(items, known)
+    prompt = build_prompt(brief, items, known)
     last = None
     for model in GEMINI_MODELS:
         try:
@@ -278,16 +366,16 @@ def breaking_message(story: dict, update: bool) -> str:
 
 def digest_message(stories: list[dict]) -> str:
     """HTML (Telegram parse_mode=HTML)."""
-    lines = ['📰 <b>REGULAR NEWS — post ideas from the last hour</b>', '']
+    lines = ['📰 <b>REGULAR NEWS — post ideas from the last 3 hours</b>', '']
     for n, s in enumerate(stories, 1):
         flame = '🔥 ' if s.get('trending') else ''
-        update = '🔄 ' if s.get('pending_update') else ''
+        update = '🔄 ' if s.get('is_update') else ''
         lines.append(f"{n}. {flame}{update}<b>{_e(s['headline'])}</b>")
-        lines.append(_e(s.get('what_changed') if s.get('pending_update') and s.get('what_changed')
+        lines.append(_e(s.get('what_changed') if s.get('is_update') and s.get('what_changed')
                         else s['summary']))
         lines.append(f"🏆 {_e(s['league'])} · {_read_link(s)}")
         lines.append('')
-    if any(s.get('trending') or s.get('pending_update') for s in stories):
+    if any(s.get('trending') or s.get('is_update') for s in stories):
         lines.append('🔥 trending   🔄 update to an earlier story')
     return '\n'.join(lines).strip()
 
@@ -331,12 +419,14 @@ def _prune(state: dict, now: float) -> None:
     state['seen'] = {k: v for k, v in state.get('seen', {}).items() if v >= cutoff}
     state['stories'] = {k: v for k, v in state.get('stories', {}).items()
                         if v.get('last_ts', 0) >= cutoff}
-    state['pending'] = [sid for sid in state.get('pending', [])
-                        if sid in state['stories']
-                        and state['stories'][sid].get('queued_ts', 0) >= now - PENDING_TTL_SECS]
+    inbox = {k: v for k, v in state.get('inbox', {}).items()
+             if v.get('added', 0) >= now - INBOX_TTL_SECS}
+    newest = sorted(inbox.items(), key=lambda kv: kv[1].get('published', 0),
+                    reverse=True)[:INBOX_MAX]
+    state['inbox'] = dict(newest)
 
 
-# ── One run ──────────────────────────────────────────────────────────────────
+# ── Folding Gemini's stories into state ──────────────────────────────────────
 
 def _story_link(items: list[dict]) -> tuple[str, str]:
     """(link, outlet) — an outlet's own link beats a Google News redirect."""
@@ -346,13 +436,16 @@ def _story_link(items: list[dict]) -> tuple[str, str]:
 
 
 def apply_stories(state: dict, stories: list[dict], items: list[dict],
-                  now: float) -> list[tuple[dict, bool]]:
-    """Fold the editor's verdict into state. Returns breaking stories to send
-    now, as (story, is_update); regular ones are queued for the round-up."""
+                  now: float, mode: str) -> list[tuple[dict, bool]]:
+    """
+    Record the editor's stories. Returns the ones to send as (story, update):
+      mode 'breaking' — breaking, importance 4+, at most three
+      mode 'digest'   — the best five (trending, then importance)
+    A story already sent comes back only as a real update.
+    """
     by_item = {i['id']: i for i in items}
     known = state.setdefault('stories', {})
-    pending = state.setdefault('pending', [])
-    to_send = []
+    picked = []
     for s in stories:
         if s.get('league') not in LEAGUES:
             continue
@@ -366,43 +459,45 @@ def apply_stories(state: dict, stories: list[dict], items: list[dict],
             existing['sources'] = list(dict.fromkeys(existing['sources'] + [i['source'] for i in its]))
             existing['last_ts'] = now
             continue
+        if mode == 'breaking' and not (s.get('category') == 'breaking'
+                                       and int(s.get('importance') or 0) >= BREAKING_MIN_IMPORTANCE):
+            continue        # not breaking: it stays in the inbox for the round-up
         # A new story's id comes from its own items, so two stories in one run
         # can never collide, whatever their headlines say.
         sid = sid or 's' + hashlib.sha1(
             ','.join(sorted(i['id'] for i in its)).encode()).hexdigest()[:10]
         story = dict(existing or {}, **{
             'headline': s['headline'].strip(), 'summary': s['summary'].strip(),
-            'league': s['league'], 'category': s['category'],
-            'importance': int(s.get('importance') or 1), 'trending': bool(s.get('trending')),
+            'league': s['league'], 'importance': int(s.get('importance') or 1),
+            'trending': bool(s.get('trending')), 'is_update': update,
             'what_changed': (s.get('what_changed') or '').strip() if update else '',
             'sources': list(dict.fromkeys((existing or {}).get('sources', [])
                                           + [i['source'] for i in its])),
-            'last_ts': now,
+            'item_ids': [i['id'] for i in its], 'last_ts': now,
         })
         story['link'], story['link_source'] = _story_link(its)
+        picked.append((sid, story, update))
+
+    if mode == 'breaking':
+        picked = picked[:MAX_BREAKING_PER_RUN]
+    else:
+        picked.sort(key=lambda p: (p[1]['trending'], p[1]['importance']), reverse=True)
+        picked = picked[:DIGEST_SIZE]
+    for sid, story, _u in picked:
+        story['sent_ts'] = now
         known[sid] = story
-        if (s['category'] == 'breaking'
-                and story['importance'] >= BREAKING_MIN_IMPORTANCE
-                and len(to_send) < MAX_BREAKING_PER_RUN):
-            story['sent_ts'] = now
-            to_send.append((story, update))
-        else:
-            story.update(queued_ts=now, pending_update=update)
-            if sid not in pending:
-                pending.append(sid)
-    return to_send
+    return [(story, update) for _sid, story, update in picked]
 
 
-def pick_digest(state: dict, now: float) -> list[tuple[str, dict]]:
-    stories = state.get('stories', {})
-    fresh = [(sid, stories[sid]) for sid in state.get('pending', []) if sid in stories]
-    fresh.sort(key=lambda p: (p[1].get('trending', False), p[1].get('importance', 0),
-                              p[1].get('queued_ts', 0)), reverse=True)
-    return fresh[:DIGEST_SIZE]
+# ── One run ──────────────────────────────────────────────────────────────────
+
+def _recent_stories(state: dict) -> dict:
+    return dict(sorted(state.get('stories', {}).items(),
+                       key=lambda kv: kv[1].get('last_ts', 0), reverse=True)[:60])
 
 
 def run(now: float | None = None, dry_run: bool = False, force: bool = False,
-        send=None) -> list[str]:
+        send=None, registry: list[dict] | None = None) -> list[str]:
     """One tick. Returns the messages sent (or that would be, on a dry run)."""
     now = now or time.time()
     if send is None:
@@ -416,41 +511,55 @@ def run(now: float | None = None, dry_run: bool = False, force: bool = False,
         return []
     state['last_run'] = now
     seen = state.setdefault('seen', {})
+    inbox = state.setdefault('inbox', {})
     messages = []
 
+    # Collect — always, even during match hours: the next run after the window
+    # catches up from here.
     window = FIRST_RUN_WINDOW_SECS if first_run else ITEM_WINDOW_SECS
-    new = sorted((i for i in fetch_all() if i['id'] not in seen
-                  and i['published'] >= now - window),
-                 key=lambda i: i['published'], reverse=True)[:MAX_ITEMS_PER_RUN]
-    print(f'[news] {len(new)} new item(s).')
+    fresh = [i for i in fetch_all() if i['id'] not in seen
+             and i['published'] >= now - window]
+    for i in fresh:
+        seen[i['id']] = now
+        if is_result_story(i['title']):
+            continue
+        inbox[i['id']] = dict(i, added=now, checked=not is_breaking_candidate(i['title']))
+    print(f'[news] {len(fresh)} new headline(s), inbox {len(inbox)}.')
 
-    if new:
-        recent = dict(sorted(((k, v) for k, v in state.get('stories', {}).items()
-                              if v.get('sent_ts') or v.get('queued_ts')),
-                             key=lambda kv: kv[1].get('last_ts', 0),
-                             reverse=True)[:MAX_KNOWN_STORIES])
-        try:
-            stories = ask_editor(new, recent)
-        except Exception as e:
-            # Leave the items unseen: the next run tries them again.
-            print(f'[news] Editor unavailable ({e}) — trying again next run.')
-            stories = None
-        if stories is not None:
-            for story, update in apply_stories(state, stories, new, now):
-                messages.append((breaking_message(story, update), True))
-            for i in new:
-                seen[i['id']] = now
+    if in_match_window(now, _load_registry() if registry is None else registry):
+        print('[news] Match hours — collecting only, nothing sent.')
+    else:
+        # Breaking: only the new headlines with a breaking word, only if any.
+        candidates = sorted((i for i in inbox.values() if not i.get('checked')),
+                            key=lambda i: i['published'], reverse=True)[:MAX_BREAKING_CHECK]
+        if candidates:
+            try:
+                stories = ask_editor(BREAKING_BRIEF, candidates, _recent_stories(state))
+            except Exception as e:
+                print(f'[news] Breaking check unavailable ({e}) — next run.')
+            else:
+                for story, update in apply_stories(state, stories, candidates, now, 'breaking'):
+                    messages.append((breaking_message(story, update), True))
+                    for iid in story['item_ids']:
+                        inbox.pop(iid, None)        # told already — not round-up material
+                for i in candidates:
+                    if i['id'] in inbox:
+                        inbox[i['id']]['checked'] = True
 
-    if now - state.get('last_digest', 0) >= DIGEST_EVERY_SECS:
-        picks = pick_digest(state, now)
-        if picks:
-            messages.append((digest_message([s for _sid, s in picks]), False))
-            sent = {sid for sid, _s in picks}
-            state['pending'] = [sid for sid in state['pending'] if sid not in sent]
-            for sid, story in picks:
-                story['sent_ts'] = now
-                story['pending_update'] = False
-            state['last_digest'] = now
+        # Regular: one round-up every three hours.
+        if inbox and now - state.get('last_digest', 0) >= DIGEST_EVERY_SECS:
+            pool = sorted(inbox.values(), key=lambda i: i['published'],
+                          reverse=True)[:MAX_DIGEST_ITEMS]
+            try:
+                stories = ask_editor(DIGEST_BRIEF, pool, _recent_stories(state))
+            except Exception as e:
+                print(f'[news] Round-up unavailable ({e}) — next run.')
+            else:
+                picks = apply_stories(state, stories, pool, now, 'digest')
+                if picks:
+                    messages.append((digest_message([s for s, _u in picks]), False))
+                state['inbox'] = {}
+                state['last_digest'] = now
 
     _prune(state, now)
     for text, preview in messages:
