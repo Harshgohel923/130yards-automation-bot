@@ -72,8 +72,10 @@ def options(match_id: str) -> list[tuple[str, str]]:
             ('No thanks', callback(match_id, 'skip'))]
 
 
-def question_text(label: str, score: str) -> str:
+def question_text(label: str, score: str, reason: str | None = None) -> str:
+    why = f"Worth a look: {reason}\n\n" if reason else ''
     return (f"🙋 {label} — half time, {score}.\n\n"
+            f"{why}"
             f"This match isn't set to post a half-time card. Want one anyway?\n\n"
             f"Tap Post and I'll ask for a background photo — or you can use "
             f"the standard template. The question closes when the second half "

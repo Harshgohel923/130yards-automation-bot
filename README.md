@@ -110,10 +110,17 @@ Each worker thread handles one match end-to-end:
   changes before the whistle (stoppage-time goal), it deletes the outdated
   post and puts up a corrected card. If the delete fails you get a 🙋 alert
   with the permalink instead — see *Deleting a superseded post*.
-- **HT card on request**: a fixture with `"post_ht": false` (and no
-  `carousel_group` — grouped matches are never asked) still gets a 🙋
-  Telegram question at the half-time whistle — *Post the HT card* / *No
-  thanks* — because sometimes the first half is the story. Post leads on to
+- **HT card on request — only when the half deserves it**: a fixture with
+  `"post_ht": false` (and no `carousel_group` — grouped matches are never
+  asked) is judged at the whistle first (`ht_judge.py`). Worth it means: 3+
+  goals, a brace or hat-trick, a red card, a big upset given the table or
+  form, a comeback, or a record from the fixture's `records`. 4+ goals or a
+  hat-trick say yes outright; otherwise Gemini decides with a one-line reason;
+  if Gemini is down, the countable part (goals, braces, red cards) decides.
+  A no is only logged (`HT worth a card?` in the match log, with the reason).
+  A yes gets a 🙋
+  Telegram question, headed with the reason ("Worth a look: Kane hat-trick
+  inside 35 minutes") — *Post the HT card* / *No thanks*. Post leads on to
   the background: send a photo (saved as the match's HT photo, as /start
   would) or tap *Use the standard template* — which wins even over a photo
   uploaded earlier. Only then is the go-ahead recorded on Cloudinary

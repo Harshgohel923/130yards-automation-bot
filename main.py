@@ -58,6 +58,7 @@ from telegram_notify import (
     send_music_reminder,
 )
 import ht_optin
+import ht_judge
 from overlay_scorebar import generate_overlay_scorecard
 from scorecard import generate_scorecard
 from stats_card import generate_stats_card
@@ -591,11 +592,16 @@ def _watch_group_publish(entry: dict, until: datetime) -> None:
     )
 
 
-def _ht_wanted_on_request(entry: dict, current_score) -> bool:
+def _ht_wanted_on_request(entry: dict, current_score, scraper_data: dict) -> bool:
     """
-    For a fixture with post_ht off: ask at the whistle whether to post an HT
-    card anyway, and report whether the answer so far is yes. Never called for
-    a carousel-group match — the caller leaves those out.
+    For a fixture with post_ht off: if the first half is worth it, ask at the
+    whistle whether to post an HT card anyway, and report whether the answer so
+    far is yes. Never called for a carousel-group match — the caller leaves
+    those out.
+
+    "Worth it" is decided once, before anyone is asked (ht_judge.py): most of
+    these halves are routine, and a question at every one of them buries the
+    one that matters. A no is logged with its reason and nothing is sent.
 
     Asks once. Each later poll during the interval reads the answer the bot
     recorded (see ht_optin.py) until there is one. Only ever called while the
@@ -605,12 +611,27 @@ def _ht_wanted_on_request(entry: dict, current_score) -> bool:
     with STATE_LOCK:
         s = MATCH_STATE[match_id]
         answer, asked = s.get('ht_optin_answer'), s.get('ht_optin_asked')
+        verdict = s.get('ht_judge')
     if answer:
         return answer == 'post'
 
+    if verdict is None:
+        verdict = ht_judge.judge(scraper_data, entry)
+        with STATE_LOCK:
+            MATCH_STATE[match_id]['ht_judge'] = verdict
+            _save_state()
+        print(f"[{match_id}] HT worth a card? {verdict['worth']} "
+              f"({verdict['source']}): {verdict['reason']}")
+        matchlog.log('HT worth a card?' ,
+                     f"{'yes' if verdict['worth'] else 'no'} — {verdict['reason']} "
+                     f"[{verdict['source']}]", force=True)
+    if not verdict.get('worth'):
+        return False
+
     if not asked:
         score = f"{current_score[0]}-{current_score[1]}"
-        msg_id = send_choice(ht_optin.question_text(_label(entry), score),
+        msg_id = send_choice(ht_optin.question_text(_label(entry), score,
+                                                    verdict.get('reason')),
                              ht_optin.options(match_id))
         with STATE_LOCK:
             s = MATCH_STATE[match_id]
@@ -2172,7 +2193,8 @@ def match_worker(entry: dict):
             # A carousel-group match isn't asked: its posts belong to the group.
             elif (entry.get('post_ht', True)
                     or (group is None
-                        and _ht_wanted_on_request(entry, current_score))):
+                        and _ht_wanted_on_request(entry, current_score,
+                                                  scraper_data))):
                 print(f"[{match_id}] HT confirmed — running fallback HT pipeline…")
                 if _wait_for_scorers(match_id, lagging):
                     print(f"[{match_id}] HT confirmed but scorer list lagging — retrying next poll.")

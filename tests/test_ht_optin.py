@@ -34,7 +34,8 @@ class FeedExhausted(Exception):
 
 @pytest.fixture
 def run(monkeypatch):
-    def go(scrapes, post_ht=False, answers=None, group=None):
+    def go(scrapes, post_ht=False, answers=None, group=None,
+           verdict=None):
         """answers: poll number (1-based reads) → what the bot has recorded."""
         rec = {'asked': [], 'edits': [], 'posts': [], 'reads': 0, 'posted': set()}
         answers = answers or {}
@@ -61,6 +62,14 @@ def run(monkeypatch):
             '_post_slides': lambda e, et, d: rec['posts'].append(et) or (['c'], 'ig'),
         }.items():
             monkeypatch.setattr(main, name, fn)
+
+        judged = []
+
+        def fake_judge(data, entry):
+            judged.append(entry['match_id'])
+            return verdict or {'worth': True, 'reason': 'Scorer brace', 'source': 'gemini'}
+        monkeypatch.setattr(main.ht_judge, 'judge', fake_judge)
+        rec['judged'] = judged
 
         def read_answer(match_id):
             rec['reads'] += 1
@@ -128,6 +137,21 @@ def test_an_answered_question_is_left_alone_after_ht(run):
 def test_a_post_ht_fixture_is_never_asked(run):
     rec = run([_ht()] * 2, post_ht=True)
     assert rec['asked'] == [] and rec['posts'] == ['HT']
+
+
+def test_a_routine_half_is_judged_once_and_never_asked(run):
+    rec = run([_ht()] * 4 + [_2h()],
+              verdict={'worth': False, 'reason': 'a routine half', 'source': 'gemini'})
+    assert rec['judged'] == [MATCH_ID]            # once, not every poll
+    assert rec['asked'] == [] and rec['posts'] == [] and rec['edits'] == []
+    assert rec['reads'] == 0
+
+
+def test_a_worthy_half_is_asked_with_the_reason(run):
+    rec = run([_ht()] * 2)
+    text, _options = rec['asked'][0]
+    assert 'Worth a look: Scorer brace' in text
+    assert text.startswith('🙋 Home vs Away — half time, 1-0.')
 
 
 def test_a_carousel_group_match_is_never_asked(run):
