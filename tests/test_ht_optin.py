@@ -232,6 +232,10 @@ def bot(monkeypatch):
     import types
     import telegram_bot as tb
     written = []
+
+    async def empty(public_id):
+        return None
+    monkeypatch.setattr(tb, '_existing_photo', empty)
     monkeypatch.setattr(tb, '_allowed', lambda u: True)
     monkeypatch.setattr(tb, '_touch_session', lambda: None)
     monkeypatch.setattr(ht_optin, 'write_answer',

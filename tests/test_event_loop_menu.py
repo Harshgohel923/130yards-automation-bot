@@ -23,6 +23,15 @@ import pytest
 import telegram_bot as tb
 
 
+
+@pytest.fixture(autouse=True)
+def _no_existing_photos(monkeypatch):
+    """Every photo slot starts empty — the overwrite warning has its own tests."""
+    async def empty(public_id):
+        return None
+    monkeypatch.setattr(tb, '_existing_photo', empty)
+
+
 MATCH = {'match_id': '54465223',
          'home_team': 'Borussia Dortmund', 'away_team': 'Bayern Munich'}
 
@@ -362,42 +371,16 @@ class TestStaleMenus:
 # ── One picture per player per moment ────────────────────────────────────────
 
 class TestReplacingAPicture:
-    @pytest.fixture
-    def upload(self, monkeypatch):
+    """The upload itself no longer comments on a replacement: _player_settled
+    shows the picture already staged and asks first (tests/test_overwrite_warning.py)."""
+
+    def test_the_upload_says_nothing_about_replacing(self, monkeypatch):
         async def fake(msg, context, match, event_key, ref, **kw):
             return True
         monkeypatch.setattr(tb, '_upload_photo', fake)
-
-        def run(context):
-            sent = []
-            ok = asyncio.run(tb._upload_event_photo(Msg(sent), context, ('f', None)))
-            return ok, sent
-        return run
-
-    def test_the_first_one_says_nothing_extra(self, upload):
-        ok, sent = upload(staged_state())
+        sent = []
+        ok = asyncio.run(tb._upload_event_photo(Msg(sent), staged_state(), ('f', None)))
         assert ok is True
-        assert not any('replaced' in m['text'] for m in sent)
-
-    def test_the_same_player_and_moment_twice_is_called_out(self, upload):
-        ctx = staged_state()
-        upload(ctx)
-        ok, sent = upload(ctx)
-        assert ok is True
-        assert any('replaced' in m['text'] for m in sent)
-
-    def test_a_different_player_is_not_a_replacement(self, upload):
-        ctx = staged_state()
-        upload(ctx)
-        ctx.user_data['player'] = 'Harry Kane'
-        _, sent = upload(ctx)
-        assert not any('replaced' in m['text'] for m in sent)
-
-    def test_the_same_player_at_a_different_moment_is_not_a_replacement(self, upload):
-        ctx = staged_state()
-        upload(ctx)
-        ctx.user_data['event_key'] = 'YELLOW'
-        _, sent = upload(ctx)
         assert not any('replaced' in m['text'] for m in sent)
 
 

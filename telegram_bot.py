@@ -97,6 +97,7 @@ import traceback
 from datetime import datetime
 
 import cloudinary
+import cloudinary.api
 import cloudinary.uploader
 from dotenv import load_dotenv
 from PIL import Image
@@ -366,6 +367,12 @@ async def keep_alive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     """
     if _allowed(update):
         _touch_session()
+        # Who last spoke in this chat — recorded on an upload as uploaded_by,
+        # so a later "a photo is already there" warning can say whose it is.
+        # Kept in chat_data because the flows clear user_data freely.
+        user = update.effective_user
+        if user is not None and context.chat_data is not None:
+            context.chat_data['last_user'] = user.first_name or user.username or ''
 
 
 def _allowed(update: Update) -> bool:
@@ -509,6 +516,9 @@ async def _upload_photo(msg, context, match: dict, event_type: str,
         return False
 
     public_id = public_id or photo_public_id(match['match_id'], event_type)
+    uploader = _context_safe((context.chat_data or {}).get('last_user', ''))
+    if uploader:
+        meta = dict(meta or {}, uploaded_by=uploader)
     await msg.reply_text("Uploading to Cloudinary…")
 
     tmp_path, crop_note = None, None
@@ -546,6 +556,143 @@ async def _upload_photo(msg, context, match: dict, event_type: str,
         + "The automation will pick it up from here. /start for another photo."
     )
     return True
+
+
+# ── "There's already a photo there" ─────────────────────────────────────────
+# Every photo slot — a match's HT or FT background, a staged event picture —
+# holds one image, and uploading again silently replaces it. With more than
+# one person sending photos that is how a good picture disappears. So once the
+# slot is known, and before a new photo is asked for or uploaded, the bot
+# checks it and, if something is there, shows it and asks.
+
+OW_CONFIRM = 50   # numbered clear of every other conversation's states
+
+
+def _context_safe(text) -> str:
+    """A value Cloudinary's context metadata will store as-is."""
+    return str(text or '').replace('|', ' ').replace('=', ' ').strip()[:60]
+
+
+def _ago(created_at: str | None) -> str:
+    """'2026-11-25T20:41:12Z' → '12 minutes ago'. Empty if unreadable."""
+    try:
+        when = datetime.fromisoformat(str(created_at).replace('Z', '+00:00'))
+    except (TypeError, ValueError):
+        return ''
+    secs = max(0, int((datetime.now(when.tzinfo) - when).total_seconds()))
+    if secs < 90:
+        return 'just now'
+    if secs < 90 * 60:
+        return f'{secs // 60} minutes ago'
+    if secs < 36 * 3600:
+        return f'{round(secs / 3600)} hours ago'
+    return f'{round(secs / 86400)} days ago'
+
+
+async def _existing_photo(public_id: str) -> dict | None:
+    """What's already in a slot: {'url', 'by', 'ago'}, or None if it's empty.
+
+    Asked of the Admin API rather than the CDN, which can keep serving a
+    picture for a while after it was deleted. Any error reads as "empty": a
+    warning that can't be checked must not stop the upload.
+    """
+    def lookup():
+        try:
+            return cloudinary.api.resource(public_id, context=True)
+        except Exception as e:
+            if 'not found' not in str(e).lower():
+                log.warning("Could not check %s for an existing photo: %s", public_id, e)
+            return None
+    found = await asyncio.to_thread(lookup)
+    if not found or not found.get('secure_url'):
+        return None
+    custom = (found.get('context') or {}).get('custom') or {}
+    return {'url': found['secure_url'], 'by': custom.get('uploaded_by', ''),
+            'ago': _ago(found.get('created_at'))}
+
+
+async def _warn_existing(msg, context: ContextTypes.DEFAULT_TYPE, existing: dict,
+                         what: str, resume: dict,
+                         buttons: list[tuple[str, str]] | None = None) -> int:
+    """Show the photo already in the slot and ask whether to replace it."""
+    from telegram_notify import _preview_url
+    context.user_data['overwrite'] = resume
+    who = ' and '.join(x for x in (f"by {existing['by']}" if existing.get('by') else '',
+                                   existing.get('ago') or '') if x)
+    caption = (f"⚠️ A photo is already uploaded for {what}"
+               f"{f' ({who})' if who else ''} — this one.\n\n"
+               f"Replace it with a new one?")
+    buttons = buttons or [("🔁 Replace it", "ow:replace"), ("✋ Keep it", "ow:keep")]
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=data)]
+                                     for label, data in buttons])
+    try:
+        await context.bot.send_photo(chat_id=msg.chat_id,
+                                     photo=_preview_url(existing['url']),
+                                     caption=caption, reply_markup=keyboard)
+    except Exception as e:
+        # The question matters more than the preview: ask with a link instead.
+        log.warning("Could not show the existing photo: %s", e)
+        await msg.reply_text(f"{caption}\n\n{existing['url']}", reply_markup=keyboard)
+    return OW_CONFIRM
+
+
+async def _close_overwrite_prompt(query, text: str) -> None:
+    """Replace the warning's caption (or text) and take its buttons off."""
+    try:
+        await query.edit_message_caption(caption=text, reply_markup=None)
+    except Exception:
+        try:
+            await query.edit_message_text(text, reply_markup=None)
+        except Exception as e:
+            log.info("Overwrite prompt not edited: %s", e)
+
+
+async def overwrite_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Replace it / Keep it — and carry on with the flow that asked."""
+    import ht_optin
+    query = update.callback_query
+    await query.answer()
+    resume = context.user_data.pop('overwrite', None)
+    if not resume:
+        await _close_overwrite_prompt(query, "That question has expired — start again.")
+        return ConversationHandler.END
+    kind = resume.get('kind')
+    keep = query.data == 'ow:keep'
+
+    if kind == 'ht':
+        pending = context.user_data.get('ht_bg') or {}
+        if not _ht_window_open(pending):
+            context.user_data.pop('ht_bg', None)
+            await _close_overwrite_prompt(query, "Half time is over, so there's no "
+                                                 "half-time card for this one any more.")
+            return ConversationHandler.END
+        if keep:
+            if not await _ht_record_post(query.message, pending, 'photo'):
+                context.user_data['overwrite'] = resume
+                return OW_CONFIRM
+            context.user_data.pop('ht_bg', None)
+            await _close_overwrite_prompt(query, ht_optin.answered_text('post', 'photo'))
+            return ConversationHandler.END
+        await _close_overwrite_prompt(query, "OK — send the new one.")
+        await query.message.reply_text(
+            ht_optin.background_prompt(),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
+                "🖼 Use the standard template",
+                callback_data=ht_optin.template_callback(pending['match_id']))]]))
+        return HT_BG
+
+    if keep:
+        held = context.user_data.pop('pending', None)
+        note = (" The photo you just sent wasn't used." if held else '')
+        await _close_overwrite_prompt(query, f"✋ Kept the existing photo.{note}")
+        if kind == 'event':
+            return await _staged_menu(query.message, context)
+        return ConversationHandler.END
+
+    await _close_overwrite_prompt(query, "🔁 Replacing it.")
+    if kind == 'event':
+        return await _continue_event(query.message, context)
+    return await _continue_scorecard(query.message, context)
 
 
 # ── Conversation handlers ─────────────────────────────────────────────────────
@@ -853,13 +1000,26 @@ async def event_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         f"{match['home_team']} vs {match['away_team']} — {event_type}"
     )
 
+    existing = await _existing_photo(photo_public_id(match['match_id'], event_type))
+    if existing:
+        return await _warn_existing(
+            query.message, context, existing,
+            f"{match['home_team']} vs {match['away_team']} — {event_type}",
+            {'kind': 'scorecard'})
+    return await _continue_scorecard(query.message, context)
+
+
+async def _continue_scorecard(msg, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """The slot is settled: upload the photo already held, or ask for it."""
+    match = context.user_data['match']
+    event_type = context.user_data['event_type']
     # Photo-first: it's already in hand, so upload rather than ask for it again.
     pending = context.user_data.get('pending')
     if pending:
-        ok = await _upload_photo(query.message, context, match, event_type, pending)
+        ok = await _upload_photo(msg, context, match, event_type, pending)
         return ConversationHandler.END if ok else WAIT_PHOTO
 
-    await query.message.reply_text(
+    await msg.reply_text(
         "Now send the photo.\n"
         "Tip: send it as a *file/document* to keep full quality "
         "(Telegram compresses regular photo messages), but keep it under 20 MB "
@@ -1278,6 +1438,22 @@ async def _player_settled(msg, context: ContextTypes.DEFAULT_TYPE,
     context.user_data['player_id'] = _player_id_for(context, player)
     context.user_data.pop('awaiting_player', None)
 
+    existing = await _existing_photo(
+        event_photos.public_id(match['match_id'], event_key, player))
+    if existing:
+        return await _warn_existing(
+            msg, context, existing,
+            f"{player} — {event_photos.EVENT_LABELS[event_key]} "
+            f"({match['home_team']} vs {match['away_team']})",
+            {'kind': 'event'})
+    return await _continue_event(msg, context)
+
+
+async def _continue_event(msg, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """The slot is settled: upload the photo already held, or ask for it."""
+    match = context.user_data['match']
+    event_key = context.user_data['event_key']
+    player = context.user_data['player']
     # Popped, not read: a held photo belongs to the name being settled right
     # now and to no other. Left in place it is uploaded again for whoever is
     # chosen next, which the staged menu makes an ordinary thing to do.
@@ -1355,12 +1531,10 @@ async def _upload_event_photo(msg, context: ContextTypes.DEFAULT_TYPE,
     player = context.user_data['player']
     player_id = context.user_data.get('player_id') or ''
     label = event_photos.EVENT_LABELS[event_key]
+    # The id is (match, event, player), so the same pair twice overwrites
+    # rather than adds — _player_settled has already shown what was there and
+    # asked before this runs.
     public_id = event_photos.public_id(match['match_id'], event_key, player)
-    # The id is (match, event, player), so the same pair twice overwrites rather
-    # than adds — and the menu offering the same list again makes that an easy
-    # mis-tap. Silence would leave you believing two pictures are armed.
-    seen = context.user_data.setdefault('staged_this_run', set())
-    replaced = public_id in seen
 
     ok = await _upload_photo(
         msg, context, match, event_key, ref,
@@ -1374,17 +1548,7 @@ async def _upload_event_photo(msg, context: ContextTypes.DEFAULT_TYPE,
         # shape has to be one Instagram will take.
         fit_aspect=True,
     )
-    if not ok:
-        return False
-    seen.add(public_id)
-    if replaced:
-        # Deliberately not Markdown: the name is whatever was typed.
-        await msg.reply_text(
-            f"⚠️ That replaced the picture already staged for {player} — "
-            f"{label}. One picture per player per moment, so the earlier one "
-            f"is gone."
-        )
-    return True
+    return ok
 
 
 # ── After one photo: the next one, without starting over ─────────────────────
@@ -1744,6 +1908,21 @@ async def ht_post_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     context.user_data['ht_bg'] = {'match_id': parsed[0], 'since': time.time(),
                                   'question': question}
     _touch_session()
+
+    existing = await _existing_photo(photo_public_id(parsed[0], 'HT'))
+    if existing:
+        await query.edit_message_text(
+            f"{question}\n\nThere's already a half-time photo for this match — "
+            f"it's below." if question else "There's already a half-time photo — "
+                                            "it's below.")
+        return await _warn_existing(
+            query.message, context, existing, "this match's half-time card",
+            {'kind': 'ht'},
+            buttons=[("✅ Use this photo", "ow:keep"),
+                     ("🔁 Replace it", "ow:replace"),
+                     ("🖼 Use the standard template",
+                      ht_optin.template_callback(parsed[0]))])
+
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(
         "🖼 Use the standard template",
         callback_data=ht_optin.template_callback(parsed[0]))]])
@@ -3286,6 +3465,7 @@ def main() -> None:
             E_TYPE_PLAYER: [MessageHandler(MANUAL_TEXT_FILTER, event_player_typed),
                             MessageHandler(PHOTO_ENTRY_FILTER, event_photo_early)],
             E_PHOTO:  [MessageHandler(PHOTO_ENTRY_FILTER, event_photo_received)],
+            OW_CONFIRM: [CallbackQueryHandler(overwrite_choice, pattern=r'^ow:(replace|keep)$')],
             # A photo sent at the menu is held, not dropped — the next player
             # picked settles it, exactly as it does at the player steps.
             E_MORE:   [CallbackQueryHandler(event_more_chosen,
@@ -3313,6 +3493,7 @@ def main() -> None:
             SELECT_EVENT: [CallbackQueryHandler(event_chosen,
                                                 pattern=r'^(event:|cancel$)')],
             WAIT_PHOTO: [MessageHandler(filters.PHOTO | filters.Document.ALL, photo_received)],
+            OW_CONFIRM: [CallbackQueryHandler(overwrite_choice, pattern=r'^ow:(replace|keep)$')],
         },
         # Fallbacks apply in every state, so the commands keep working
         # mid-flow: /start restarts from the match list, and the shared ones
@@ -3329,6 +3510,10 @@ def main() -> None:
         states={
             HT_BG: [
                 MessageHandler(PHOTO_ENTRY_FILTER, ht_bg_photo),
+                CallbackQueryHandler(ht_bg_template, pattern=r'^htbg:'),
+            ],
+            OW_CONFIRM: [
+                CallbackQueryHandler(overwrite_choice, pattern=r'^ow:(replace|keep)$'),
                 CallbackQueryHandler(ht_bg_template, pattern=r'^htbg:'),
             ],
         },

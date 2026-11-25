@@ -819,6 +819,22 @@ invalid one is rejected with a reason, and anything else re-asks the step.
 | `/cancel` | Abandon whatever is in progress |
 | `/help` | What this bot accepts |
 
+### "There's already a photo there"
+
+Every photo slot holds one picture — a match's HT or FT background, a staged
+event picture — and uploading again replaces it. So as soon as the slot is
+known (match + HT/FT in `/start`, the player in `/event`, Post on the HT
+pop-up) and before a new photo is asked for or uploaded, the bot checks it.
+If something is there it sends that photo, captioned with who sent it and
+when — "⚠️ A photo is already uploaded for Arsenal vs Chelsea — HT (by Harsh
+and 12 minutes ago) — this one. Replace it with a new one?" — with **Replace
+it** / **Keep it**. On the HT pop-up the choices are **Use this photo** /
+**Replace it** / **Use the standard template**. Keep leaves everything as it
+was (a photo you'd already sent is dropped, and says so). The check asks
+Cloudinary's Admin API, not the CDN, so a deleted picture never shows up as
+"already there"; if the check itself fails, the upload goes ahead as before.
+Uploads record `uploaded_by` (the sender's first name) on the asset for this.
+
 ### Which photo is which
 
 Two of the flows take a photo, so this is the only thing to decide before
