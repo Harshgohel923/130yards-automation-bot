@@ -114,8 +114,15 @@ def test_a_filled_slot_shows_the_photo_and_asks(world):
     assert '/image/upload/w_1080,q_auto,f_jpg/' in shown['photo']       # phone-sized
     assert 'already uploaded for Arsenal vs Chelsea — HT' in shown['caption']
     assert 'by Harsh and 12 minutes ago' in shown['caption']
-    assert shown['buttons'] == ['ow:replace', 'ow:keep', 'ow:extras']
+    assert shown['buttons'] == ['ow:replace', 'ow:keep']   # HT: no extras
     assert world.uploads == []
+
+
+def test_an_ft_slot_also_offers_keep_and_add_extras(world):
+    world.existing = EXISTING
+    state, q = _choose_event(world, 'FT')
+    assert state == tb.OW_CONFIRM
+    assert world.bot.photos[0]['buttons'] == ['ow:replace', 'ow:keep', 'ow:extras']
 
 
 def test_replace_uploads_the_photo_already_held(world):
@@ -124,7 +131,7 @@ def test_replace_uploads_the_photo_already_held(world):
     _choose_event(world)
     q = Query('ow:replace')
     state = run(tb.overwrite_choice(types.SimpleNamespace(callback_query=q), world.ctx))
-    assert state == tb.EXTRA_MENU             # then offered extra carousel photos
+    assert state == tb.ConversationHandler.END   # HT: no extras step
     assert world.uploads == [('42', 'HT', ('file-id', 100), None)]
     assert q.edits == ['🔁 Replacing it.']
 

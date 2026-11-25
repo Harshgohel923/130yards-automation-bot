@@ -459,10 +459,13 @@ def _generate_slides(entry: dict, event_type: str, scraper_data: dict) -> list[s
 
 def _extra_slide_urls(entry: dict, event_type: str, room: int) -> list[str]:
     """
-    URLs of the extra photos sent for this HT/FT post, in the order they were
-    added, at most `room` of them. Never raises: an extra is a bonus, and
-    failing to fetch them must not cost the post itself.
+    URLs of the extra photos sent for this FT post, in the order they were
+    added, at most `room` of them. Half-time posts stay a single card, so HT
+    gets none. Never raises: an extra is a bonus, and failing to fetch them
+    must not cost the post itself.
     """
+    if event_type != 'FT':
+        return []
     match_id = entry['match_id']
     try:
         extras = list_extra_photos(match_id, event_type)

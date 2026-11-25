@@ -41,9 +41,9 @@ def photo_public_id(match_id: str, event_type: str) -> str:
 
 
 # ── Extra carousel photos ────────────────────────────────────────────────────
-# Besides the background, an HT or FT post can carry extra photos as carousel
-# slides — after the scorecard, before the stats page. Sent through /start,
-# stored beside the background in the order they arrive.
+# Besides the background, an FT post can carry extra photos as carousel slides
+# — after the scorecard, before the stats page. Sent through /start, stored
+# beside the background in the order they arrive. HT posts stay one card.
 
 # Instagram takes 10 slides; the scorecard is one and the stats page may be
 # another, so eight extras always fit.

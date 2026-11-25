@@ -112,9 +112,9 @@ def test_extras_are_never_in_what_a_correction_deletes(post):
     assert rec['cids'] == ['gen/card.png', 'gen/stats.png']
 
 
-def test_ht_with_extras_becomes_a_carousel(post):
-    rec = post(extras=1, event_type='HT')
-    assert rec['carousel'][0] == 'https://cdn/card.png' and len(rec['carousel']) == 2
+def test_ht_stays_a_single_card_even_if_extras_exist(post):
+    rec = post(extras=2, event_type='HT')
+    assert rec['single'] == 'https://cdn/card.png' and rec['carousel'] is None
 
 
 def test_no_extras_is_unchanged(post):
@@ -182,7 +182,7 @@ def bot(monkeypatch):
         return True
     monkeypatch.setattr(tb, '_upload_photo', upload)
     monkeypatch.setattr(tb, '_photo_ref', lambda m: ('file', 1))
-    w.ctx = types.SimpleNamespace(user_data={'match': dict(MATCH), 'event_type': 'HT'},
+    w.ctx = types.SimpleNamespace(user_data={'match': dict(MATCH), 'event_type': 'FT'},
                                   chat_data={}, bot=None)
     return w
 
@@ -202,6 +202,13 @@ def test_the_menu_says_stats_go_last_for_an_ft_stats_post(bot):
     assert 'before the stats page' in msg.replies[-1][0]
 
 
+def test_half_time_gets_no_extras(bot):
+    bot.ctx.user_data['event_type'] = 'HT'
+    msg = Msg()
+    assert run(tb._extra_menu(msg, bot.ctx)) == tb.ConversationHandler.END
+    assert msg.replies == []
+
+
 def test_a_grouped_matchs_ft_gets_no_extras(bot):
     bot.ctx.user_data.update(event_type='FT', match=dict(MATCH, carousel_group='sat'))
     msg = Msg()
@@ -215,11 +222,11 @@ def test_adding_photos_numbers_them_in_order(bot):
     for _ in range(2):
         state = run(tb.extra_photo_received(types.SimpleNamespace(message=Msg()), bot.ctx))
         assert state == tb.EXTRA_MENU
-    assert bot.uploads == ['match_photos/42_HT_extra_01', 'match_photos/42_HT_extra_02']
+    assert bot.uploads == ['match_photos/42_FT_extra_01', 'match_photos/42_FT_extra_02']
 
 
 def test_the_limit_is_enforced(bot):
-    bot.extras = [{'public_id': f'match_photos/42_HT_extra_{i:02d}', 'url': 'u'}
+    bot.extras = [{'public_id': f'match_photos/42_FT_extra_{i:02d}', 'url': 'u'}
                   for i in range(1, tb.EXTRA_PHOTO_LIMIT + 1)]
     msg = Msg()
     run(tb.extra_photo_received(types.SimpleNamespace(message=msg), bot.ctx))
@@ -229,10 +236,10 @@ def test_the_limit_is_enforced(bot):
 
 
 def test_remove_clears_them_and_shows_the_menu_again(bot):
-    bot.extras = [{'public_id': 'match_photos/42_HT_extra_01', 'url': 'u'}]
+    bot.extras = [{'public_id': 'match_photos/42_FT_extra_01', 'url': 'u'}]
     q = Query('xp:clear')
     assert run(tb.extra_choice(types.SimpleNamespace(callback_query=q), bot.ctx)) == tb.EXTRA_MENU
-    assert bot.deleted == [('42', 'HT')]
+    assert bot.deleted == [('42', 'FT')]
     assert 'Removed 1 extra photo' in q.edits[0]
 
 

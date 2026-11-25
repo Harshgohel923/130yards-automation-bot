@@ -819,11 +819,12 @@ invalid one is rejected with a reason, and anything else re-asks the step.
 | `/cancel` | Abandon whatever is in progress |
 | `/help` | What this bot accepts |
 
-### Extra carousel photos in an HT/FT post
+### Extra carousel photos in an FT post
 
-After the background in `/start`, the bot offers **➕ Add a photo to the
+After the FT background in `/start` (half-time posts stay a single card), the
+bot offers **➕ Add a photo to the
 carousel** / **✅ Done** (and **🗑 Remove** once some are in). Extras are
-stored beside the background as `match_photos/<id>_<HT|FT>_extra_01, _02 …`
+stored beside the background as `match_photos/<id>_FT_extra_01, _02 …`
 in the order sent, up to 8. When the worker posts, the slides are: the
 scorecard, the extras in that order, **the stats page last**. Each extra is
 cropped to the card's 3:4 at delivery (Cloudinary's subject-aware `g_auto`

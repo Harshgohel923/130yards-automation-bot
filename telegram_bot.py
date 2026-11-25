@@ -560,9 +560,10 @@ async def _upload_photo(msg, context, match: dict, event_type: str,
     return True
 
 
-# ── Extra carousel photos for an HT/FT post ──────────────────────────────────
-# After the background, more photos can go in the same post as carousel
+# ── Extra carousel photos for an FT post ─────────────────────────────────────
+# After the FT background, more photos can go in the same post as carousel
 # slides: scorecard first, these next in the order sent, the stats page last.
+# Half-time posts stay a single card.
 # Stored beside the background (cloudinary_utils.extra_photo_public_id) and
 # picked up by the worker when it posts.
 
@@ -570,9 +571,10 @@ EXTRA_MENU, EXTRA_WAIT = 51, 52   # numbered clear of every other state
 
 
 def _offers_extras(match: dict, event_type: str) -> bool:
-    """Not for a grouped match's FT: that card is one slide in the group's
-    carousel, so there is no post of its own to add photos to."""
-    return not (event_type == 'FT' and match.get('carousel_group'))
+    """FT posts only — a half-time post stays a single card. And not for a
+    grouped match: its FT card is one slide in the group's carousel, so there
+    is no post of its own to add photos to."""
+    return event_type == 'FT' and not match.get('carousel_group')
 
 
 async def _extra_menu(msg, context: ContextTypes.DEFAULT_TYPE) -> int:
