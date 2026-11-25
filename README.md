@@ -819,6 +819,22 @@ invalid one is rejected with a reason, and anything else re-asks the step.
 | `/cancel` | Abandon whatever is in progress |
 | `/help` | What this bot accepts |
 
+### Extra carousel photos in an HT/FT post
+
+After the background in `/start`, the bot offers **➕ Add a photo to the
+carousel** / **✅ Done** (and **🗑 Remove** once some are in). Extras are
+stored beside the background as `match_photos/<id>_<HT|FT>_extra_01, _02 …`
+in the order sent, up to 8. When the worker posts, the slides are: the
+scorecard, the extras in that order, **the stats page last**. Each extra is
+cropped to the card's 3:4 at delivery (Cloudinary's subject-aware `g_auto`
+crop) and served as a 1440×1920 JPEG, because Instagram shows every slide at
+the first one's shape. If there are more than fit in ten slides, the first
+ones go and you get a ⚠️; if they can't be listed, the post goes without them.
+A correction reposts them too, and never deletes them — only generated slides
+are cleaned up. The overwrite warning offers **Keep it and add carousel
+photos**, to add extras without touching the background. Not offered for a
+grouped match's FT, whose card is one slide of the group's carousel.
+
 ### "There's already a photo there"
 
 Every photo slot holds one picture — a match's HT or FT background, a staged

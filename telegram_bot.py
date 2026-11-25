@@ -124,7 +124,9 @@ from telegram.ext import (
 import event_photos
 import manual_match
 from config import IST_TZ, LOCAL_TZ
-from cloudinary_utils import photo_public_id
+from cloudinary_utils import (EXTRA_PHOTO_LIMIT, delete_extra_photos,
+                              extra_photo_public_id, list_extra_photos,
+                              next_extra_photo_number, photo_public_id)
 from football_scraper_dom import get_match_data
 
 load_dotenv()
@@ -558,6 +560,122 @@ async def _upload_photo(msg, context, match: dict, event_type: str,
     return True
 
 
+# ── Extra carousel photos for an HT/FT post ──────────────────────────────────
+# After the background, more photos can go in the same post as carousel
+# slides: scorecard first, these next in the order sent, the stats page last.
+# Stored beside the background (cloudinary_utils.extra_photo_public_id) and
+# picked up by the worker when it posts.
+
+EXTRA_MENU, EXTRA_WAIT = 51, 52   # numbered clear of every other state
+
+
+def _offers_extras(match: dict, event_type: str) -> bool:
+    """Not for a grouped match's FT: that card is one slide in the group's
+    carousel, so there is no post of its own to add photos to."""
+    return not (event_type == 'FT' and match.get('carousel_group'))
+
+
+async def _extra_menu(msg, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Offer to add (or clear) extra photos for the post just set up."""
+    match = context.user_data.get('match')
+    event_type = context.user_data.get('event_type')
+    if not match or not event_type or not _offers_extras(match, event_type):
+        return ConversationHandler.END
+    try:
+        existing = await asyncio.to_thread(list_extra_photos, match['match_id'], event_type)
+    except Exception as e:
+        log.warning("Could not list extra photos: %s", e)
+        existing = []
+    n = len(existing)
+    where = ("after the scorecard and before the stats page"
+             if event_type == 'FT' and match.get('post_ft_stats')
+             else "after the scorecard")
+    text = (f"Add more photos to the {match['home_team']} vs {match['away_team']} "
+            f"{event_type} post? They go {where}, as a carousel — cropped to the "
+            f"card's 3:4 shape.\n\n"
+            f"{n} extra photo{'s' if n != 1 else ''} so far "
+            f"(up to {EXTRA_PHOTO_LIMIT}).")
+    rows = []
+    if n < EXTRA_PHOTO_LIMIT:
+        rows.append([InlineKeyboardButton("➕ Add a photo to the carousel",
+                                          callback_data="xp:add")])
+    if n:
+        rows.append([InlineKeyboardButton(
+            f"🗑 Remove the {n} extra photo{'s' if n != 1 else ''}",
+            callback_data="xp:clear")])
+    rows.append([InlineKeyboardButton("✅ Done", callback_data="xp:done")])
+    await msg.reply_text(text, reply_markup=InlineKeyboardMarkup(rows))
+    return EXTRA_MENU
+
+
+async def extra_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    match = context.user_data.get('match')
+    event_type = context.user_data.get('event_type')
+    if not match or not event_type:
+        await query.edit_message_text("That has expired — /start to begin again.")
+        return ConversationHandler.END
+    action = query.data.split(':', 1)[1]
+
+    if action == 'add':
+        await query.edit_message_text(
+            "Send the extra photo — as a photo, or as a file for full quality. "
+            "It goes in the carousel in the order you send them.")
+        return EXTRA_WAIT
+
+    if action == 'clear':
+        try:
+            gone = await asyncio.to_thread(delete_extra_photos, match['match_id'],
+                                           event_type)
+        except Exception as e:
+            await query.edit_message_text(f"Couldn't remove them: {e}")
+            return EXTRA_MENU
+        await query.edit_message_text(
+            f"🗑 Removed {gone} extra photo{'s' if gone != 1 else ''}.")
+        return await _extra_menu(query.message, context)
+
+    try:
+        n = len(await asyncio.to_thread(list_extra_photos, match['match_id'], event_type))
+    except Exception:
+        n = None
+    tail = (f" — {n} extra photo{'s' if n != 1 else ''} will go up with it."
+            if n else '.')
+    await query.edit_message_text(f"Done ✅ The {event_type} post is set{tail}")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def extra_photo_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    msg = update.message
+    match = context.user_data.get('match')
+    event_type = context.user_data.get('event_type')
+    if not match or not event_type:
+        await msg.reply_text("I've lost track of which post that's for — /start again.")
+        return ConversationHandler.END
+    ref = _photo_ref(msg)
+    if ref is None:
+        await msg.reply_text("That file isn't an image — send a JPG or PNG.")
+        return EXTRA_WAIT
+    try:
+        existing = await asyncio.to_thread(list_extra_photos, match['match_id'], event_type)
+    except Exception as e:
+        await msg.reply_text(f"I couldn't check the carousel: {e}\n\nSend it again in a moment.")
+        return EXTRA_WAIT
+    if len(existing) >= EXTRA_PHOTO_LIMIT:
+        await msg.reply_text(f"That's the most one post can hold "
+                             f"({EXTRA_PHOTO_LIMIT} extras) — this one wasn't added.")
+        return await _extra_menu(msg, context)
+    number = next_extra_photo_number(existing)
+    ok = await _upload_photo(
+        msg, context, match, event_type, ref,
+        public_id=extra_photo_public_id(match['match_id'], event_type, number),
+        descriptor=f"{event_type} carousel photo {len(existing) + 1}")
+    if not ok:
+        return EXTRA_WAIT
+    return await _extra_menu(msg, context)
+
+
 # ── "There's already a photo there" ─────────────────────────────────────────
 # Every photo slot — a match's HT or FT background, a staged event picture —
 # holds one image, and uploading again silently replaces it. With more than
@@ -658,6 +776,13 @@ async def overwrite_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return ConversationHandler.END
     kind = resume.get('kind')
     keep = query.data == 'ow:keep'
+
+    if query.data == 'ow:extras' and kind == 'scorecard':
+        held = context.user_data.pop('pending', None)
+        note = (" The photo you just sent wasn't used as the background."
+                if held else '')
+        await _close_overwrite_prompt(query, f"✋ Kept the background.{note}")
+        return await _extra_menu(query.message, context)
 
     if kind == 'ht':
         pending = context.user_data.get('ht_bg') or {}
@@ -1002,10 +1127,13 @@ async def event_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     existing = await _existing_photo(photo_public_id(match['match_id'], event_type))
     if existing:
+        buttons = [("🔁 Replace it", "ow:replace"), ("✋ Keep it", "ow:keep")]
+        if _offers_extras(match, event_type):
+            buttons.append(("➕ Keep it and add carousel photos", "ow:extras"))
         return await _warn_existing(
             query.message, context, existing,
             f"{match['home_team']} vs {match['away_team']} — {event_type}",
-            {'kind': 'scorecard'})
+            {'kind': 'scorecard'}, buttons=buttons)
     return await _continue_scorecard(query.message, context)
 
 
@@ -1017,7 +1145,7 @@ async def _continue_scorecard(msg, context: ContextTypes.DEFAULT_TYPE) -> int:
     pending = context.user_data.get('pending')
     if pending:
         ok = await _upload_photo(msg, context, match, event_type, pending)
-        return ConversationHandler.END if ok else WAIT_PHOTO
+        return await _extra_menu(msg, context) if ok else WAIT_PHOTO
 
     await msg.reply_text(
         "Now send the photo.\n"
@@ -1695,7 +1823,7 @@ async def photo_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return SELECT_MATCH
 
     ok = await _upload_photo(msg, context, match, event_type, ref)
-    return ConversationHandler.END if ok else WAIT_PHOTO
+    return await _extra_menu(msg, context) if ok else WAIT_PHOTO
 
 
 # ── /staged — what is armed, and the only safe way to take it back ───────────
@@ -3465,7 +3593,7 @@ def main() -> None:
             E_TYPE_PLAYER: [MessageHandler(MANUAL_TEXT_FILTER, event_player_typed),
                             MessageHandler(PHOTO_ENTRY_FILTER, event_photo_early)],
             E_PHOTO:  [MessageHandler(PHOTO_ENTRY_FILTER, event_photo_received)],
-            OW_CONFIRM: [CallbackQueryHandler(overwrite_choice, pattern=r'^ow:(replace|keep)$')],
+            OW_CONFIRM: [CallbackQueryHandler(overwrite_choice, pattern=r'^ow:(replace|keep|extras)$')],
             # A photo sent at the menu is held, not dropped — the next player
             # picked settles it, exactly as it does at the player steps.
             E_MORE:   [CallbackQueryHandler(event_more_chosen,
@@ -3493,7 +3621,12 @@ def main() -> None:
             SELECT_EVENT: [CallbackQueryHandler(event_chosen,
                                                 pattern=r'^(event:|cancel$)')],
             WAIT_PHOTO: [MessageHandler(filters.PHOTO | filters.Document.ALL, photo_received)],
-            OW_CONFIRM: [CallbackQueryHandler(overwrite_choice, pattern=r'^ow:(replace|keep)$')],
+            OW_CONFIRM: [CallbackQueryHandler(overwrite_choice, pattern=r'^ow:(replace|keep|extras)$')],
+            EXTRA_MENU: [CallbackQueryHandler(extra_choice, pattern=r'^xp:(add|clear|done)$')],
+            EXTRA_WAIT: [
+                MessageHandler(PHOTO_ENTRY_FILTER, extra_photo_received),
+                CallbackQueryHandler(extra_choice, pattern=r'^xp:(add|clear|done)$'),
+            ],
         },
         # Fallbacks apply in every state, so the commands keep working
         # mid-flow: /start restarts from the match list, and the shared ones
@@ -3513,7 +3646,7 @@ def main() -> None:
                 CallbackQueryHandler(ht_bg_template, pattern=r'^htbg:'),
             ],
             OW_CONFIRM: [
-                CallbackQueryHandler(overwrite_choice, pattern=r'^ow:(replace|keep)$'),
+                CallbackQueryHandler(overwrite_choice, pattern=r'^ow:(replace|keep|extras)$'),
                 CallbackQueryHandler(ht_bg_template, pattern=r'^htbg:'),
             ],
         },

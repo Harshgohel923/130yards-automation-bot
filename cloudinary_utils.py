@@ -15,6 +15,7 @@ so subsequent calls within the same run are instant.
 import os
 
 import cloudinary
+import cloudinary.api
 import cloudinary.uploader
 import requests
 from dotenv import load_dotenv
@@ -37,6 +38,66 @@ def photo_public_id(match_id: str, event_type: str) -> str:
     """Deterministic Cloudinary public_id for a match photo uploaded via the
     Telegram bot: match_photos/<match_id>_<HT|FT>."""
     return f"{MATCH_PHOTO_FOLDER}/{match_id}_{event_type.upper()}"
+
+
+# ── Extra carousel photos ────────────────────────────────────────────────────
+# Besides the background, an HT or FT post can carry extra photos as carousel
+# slides — after the scorecard, before the stats page. Sent through /start,
+# stored beside the background in the order they arrive.
+
+# Instagram takes 10 slides; the scorecard is one and the stats page may be
+# another, so eight extras always fit.
+EXTRA_PHOTO_LIMIT = 8
+
+# Every slide is shown at the first one's shape, and the scorecard is 3:4, so
+# an extra is cropped to 3:4 at delivery — Cloudinary's subject-aware crop —
+# and served as a phone-friendly JPEG.
+EXTRA_SLIDE_TRANSFORM = 'c_fill,ar_3:4,g_auto,w_1440,q_auto,f_jpg'
+
+
+def extra_photo_prefix(match_id: str, event_type: str) -> str:
+    return f"{photo_public_id(match_id, event_type)}_extra_"
+
+
+def extra_photo_public_id(match_id: str, event_type: str, n: int) -> str:
+    """match_photos/<id>_<HT|FT>_extra_01 — zero-padded so names sort in order."""
+    return f"{extra_photo_prefix(match_id, event_type)}{n:02d}"
+
+
+def list_extra_photos(match_id: str, event_type: str) -> list[dict]:
+    """The extras for a post, in the order they were added: [{public_id, url}].
+    Raises if Cloudinary can't be asked — callers decide what that costs."""
+    prefix = extra_photo_prefix(match_id, event_type)
+    found = cloudinary.api.resources(type='upload', prefix=prefix, max_results=50)
+    items = [{'public_id': r['public_id'], 'url': r['secure_url']}
+             for r in found.get('resources', [])
+             if r.get('public_id', '').startswith(prefix)]
+    return sorted(items, key=lambda r: r['public_id'])
+
+
+def next_extra_photo_number(existing: list[dict]) -> int:
+    """One past the highest number used, so a removed middle photo never
+    makes a new one overwrite the last."""
+    numbers = []
+    for item in existing:
+        tail = item['public_id'].rsplit('_', 1)[-1]
+        if tail.isdigit():
+            numbers.append(int(tail))
+    return max(numbers, default=0) + 1
+
+
+def delete_extra_photos(match_id: str, event_type: str) -> int:
+    """Remove every extra for a post. Returns how many went."""
+    items = list_extra_photos(match_id, event_type)
+    if items:
+        cloudinary.api.delete_resources([i['public_id'] for i in items], invalidate=True)
+    return len(items)
+
+
+def extra_slide_url(url: str) -> str:
+    """The URL Instagram is given for an extra: cropped to 3:4, as JPEG."""
+    marker = '/image/upload/'
+    return url.replace(marker, f'{marker}{EXTRA_SLIDE_TRANSFORM}/', 1) if marker in url else url
 
 
 def match_photo_exists(match_id: str, event_type: str) -> bool:

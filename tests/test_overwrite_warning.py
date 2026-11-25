@@ -83,6 +83,7 @@ def world(monkeypatch):
     monkeypatch.setattr(tb, '_existing_photo', existing)
     monkeypatch.setattr(tb, '_upload_photo', upload)
     monkeypatch.setattr(tb, '_staged_menu', staged_menu)
+    monkeypatch.setattr(tb, 'list_extra_photos', lambda mid, ev: [])
     monkeypatch.setattr(tb, '_allowed', lambda u: True)
     monkeypatch.setattr(tb, '_touch_session', lambda: None)
     w.bot = Bot()
@@ -113,7 +114,7 @@ def test_a_filled_slot_shows_the_photo_and_asks(world):
     assert '/image/upload/w_1080,q_auto,f_jpg/' in shown['photo']       # phone-sized
     assert 'already uploaded for Arsenal vs Chelsea — HT' in shown['caption']
     assert 'by Harsh and 12 minutes ago' in shown['caption']
-    assert shown['buttons'] == ['ow:replace', 'ow:keep']
+    assert shown['buttons'] == ['ow:replace', 'ow:keep', 'ow:extras']
     assert world.uploads == []
 
 
@@ -123,7 +124,7 @@ def test_replace_uploads_the_photo_already_held(world):
     _choose_event(world)
     q = Query('ow:replace')
     state = run(tb.overwrite_choice(types.SimpleNamespace(callback_query=q), world.ctx))
-    assert state == tb.ConversationHandler.END
+    assert state == tb.EXTRA_MENU             # then offered extra carousel photos
     assert world.uploads == [('42', 'HT', ('file-id', 100), None)]
     assert q.edits == ['🔁 Replacing it.']
 
@@ -294,4 +295,4 @@ def test_ago(minutes, expected):
 def test_every_photo_flow_handles_the_question():
     src = open(tb.__file__, encoding='utf-8').read()
     assert src.count("OW_CONFIRM: [CallbackQueryHandler(overwrite_choice") == 2   # /start, /event
-    assert "CallbackQueryHandler(overwrite_choice, pattern=r'^ow:(replace|keep)$')," in src  # HT
+    assert "CallbackQueryHandler(overwrite_choice, pattern=r'^ow:(replace|keep|extras)$')," in src  # HT

@@ -45,7 +45,8 @@ from cloudinary_upload import upload_image, upload_match_data, delete_image
 from database import (init_db, is_event_posted, mark_event_posted,
                       unmark_event_posted, upsert_match)
 from football_scraper_dom import get_match_data
-from cloudinary_utils import fetch_match_photo, match_photo_exists
+from cloudinary_utils import (fetch_match_photo, match_photo_exists,
+                              list_extra_photos, extra_slide_url)
 from lineup_card import generate_lineup_card, has_lineups, has_positions
 import event_photos
 from instagram import (post_to_instagram, post_carousel_to_instagram,
@@ -456,6 +457,35 @@ def _generate_slides(entry: dict, event_type: str, scraper_data: dict) -> list[s
     return paths
 
 
+def _extra_slide_urls(entry: dict, event_type: str, room: int) -> list[str]:
+    """
+    URLs of the extra photos sent for this HT/FT post, in the order they were
+    added, at most `room` of them. Never raises: an extra is a bonus, and
+    failing to fetch them must not cost the post itself.
+    """
+    match_id = entry['match_id']
+    try:
+        extras = list_extra_photos(match_id, event_type)
+    except Exception as e:
+        print(f"[{match_id}] Could not list extra photos ({e}) — posting without them.")
+        matchlog.warn('extra photos skipped', f'could not list them: {e}')
+        return []
+    if not extras:
+        return []
+    if len(extras) > room:
+        send_alert(
+            f"⚠️ {_label(entry)}: {len(extras)} extra photos were sent for the "
+            f"{_moment(event_type)} post, but only {room} fit in one Instagram "
+            f"carousel alongside the scorecard"
+            f"{' and stats page' if room < 9 else ''}. The first {room} are "
+            f"going up.",
+            key=f'{match_id}:extras-trimmed:{event_type}', cooldown=3600,
+        )
+        extras = extras[:room]
+    matchlog.log('extra photos', f'{len(extras)} added after the scorecard')
+    return [extra_slide_url(x['url']) for x in extras]
+
+
 def _post_slides(entry: dict, event_type: str, scraper_data: dict) -> tuple[list[str], str]:
     """
     Render → upload → caption → post, for one or several slides.
@@ -472,6 +502,12 @@ def _post_slides(entry: dict, event_type: str, scraper_data: dict) -> tuple[list
         os.remove(path)
         public_urls.append(url)
         public_ids.append(public_id)
+
+    # Extra photos sent for this post go between the scorecard and the stats
+    # page. They are given to Instagram by URL and left out of public_ids:
+    # those are what a correction deletes, and these are the sender's photos.
+    extras = _extra_slide_urls(entry, event_type, room=10 - len(public_urls))
+    public_urls = public_urls[:1] + extras + public_urls[1:]
 
     caption = generate_caption(scraper_data, event_type=event_type,
                                records=entry.get('records'),
