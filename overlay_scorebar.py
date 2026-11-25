@@ -77,22 +77,6 @@ MINUTE_NAME_GAP_RATIO = 0.45
 
 # ── Basics ────────────────────────────────────────────────────────────────────
 
-# Bebas Neue ships in a single weight, so "bold" is drawn: the glyphs are
-# stroked in their own colour, thickening every edge evenly. At label sizes it
-# reads as a true bold without changing the face or the letter shapes.
-BOLD_STROKE_RATIO = 0.035     # of the font size, at least 1px
-
-
-def _bold_stroke(font) -> int:
-    return max(1, round(getattr(font, 'size', 0) * BOLD_STROKE_RATIO))
-
-
-def _draw_bold(draw, xy, text, font, fill, anchor='mm'):
-    """draw.text, thickened — see BOLD_STROKE_RATIO."""
-    draw.text(xy, text, font=font, fill=fill, anchor=anchor,
-              stroke_width=_bold_stroke(font), stroke_fill=fill)
-
-
 def _font(size):
     try:
         return ImageFont.truetype(FONT_PATH, int(size))
@@ -644,7 +628,7 @@ def add_scorecard_overlay(image_path, output_path, home_team, away_team,
     label_y = py1 + int(h * 0.043)
     # letter-spaced label, like the reference's tracked-out team names
     spaced = ' '.join(label)
-    _draw_bold(draw, (cx, label_y), spaced, label_font, COLOR_LABEL)
+    draw.text((cx, label_y), spaced, font=label_font, fill=COLOR_LABEL, anchor='mm')
 
     # ── Score row: crests + big score + divider ───────────────────────────
     score_cy = py1 + int(h * 0.104)
@@ -700,12 +684,12 @@ def add_scorecard_overlay(image_path, output_path, home_team, away_team,
     agg_text, pen_text = two_legs.result_lines(aggregate, penalties)
     under_score_y = py1 + int(h * 0.155)
     if agg_text:
-        _draw_bold(draw, (cx, under_score_y), agg_text, _font(int(h * 0.021)),
-                   COLOR_LABEL)
+        draw.text((cx, under_score_y), agg_text, font=_font(int(h * 0.021)),
+                  fill=COLOR_LABEL, anchor='mm')
     if pen_text:
         pen_y = py1 + int(h * 0.177) if agg_text else under_score_y
-        _draw_bold(draw, (cx, pen_y), pen_text, _font(int(h * 0.017)),
-                   COLOR_LABEL)
+        draw.text((cx, pen_y), pen_text, font=_font(int(h * 0.017)),
+                  fill=COLOR_LABEL, anchor='mm')
 
     # ── Scorer lines ──────────────────────────────────────────────────────
     scorers_top = py1 + header_h

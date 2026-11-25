@@ -767,11 +767,8 @@ def generate_scorecard(scraper_data: dict, event_type: str = 'FT', match_id_over
     for text, box in slots:
         if box != (0, 0, 0, 0):
             # Gold text, no backing plate — the card-wide shadow carries it.
-            # Not thickened like the photo card's: under this card's shadow a
-            # stroked Bebas 'G' closes up and AGG reads as 'A99'.
             _draw_centered_text(draw, text, box,
-                                FONT_BOLD, PENALTY_FONT_MAX, PENALTY_FONT_MIN,
-                                COLOR_PENALTY)
+                                FONT_BOLD, PENALTY_FONT_MAX, PENALTY_FONT_MIN, COLOR_PENALTY)
 
     # ── Stadium — center aligned ──────────────────────────────────────────────
     raw_stadium = (scraper_data.get('matchFormation') or {}).get('venue_name') or ''
