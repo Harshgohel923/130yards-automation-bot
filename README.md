@@ -234,7 +234,10 @@ when it hands its own card in.
 
 **Choosing the slide order.** Before a group posts, the dispatcher sends you
 the matches in their default order (kickoff time) with a button each
-(`carousel_order.py`). Tap the match you want as slide 1, then slide 2, and so
+(`carousel_order.py`). The scorecards themselves arrive first, as a
+numbered photo album (Telegram can't put buttons on an album, so the question
+follows as its own message), and each button carries the score —
+`1. Arsenal 2–1 Chelsea` — so it reads like its card. Tap the match you want as slide 1, then slide 2, and so
 on — or **Post in this order** to keep it. The order is complete when one
 match is left, or when you tap **Rest as listed**; it posts straight away.
 If nobody taps for **a minute** (`IDLE_SECS`), it posts with whatever was

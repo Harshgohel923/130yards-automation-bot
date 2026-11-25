@@ -50,7 +50,7 @@ from instagram import (CAROUSEL_MAX_ITEMS, CAROUSEL_MIN_ITEMS,
                        post_carousel_to_instagram, post_to_instagram)
 import carousel_order
 from telegram_notify import (edit_message, send_alert, send_choice,
-                             send_music_reminder)
+                             send_music_reminder, send_photos)
 
 load_dotenv()
 
@@ -431,6 +431,18 @@ def publish_group(group: str, entries: list[dict], now: datetime | None = None) 
     return ig_id
 
 
+def _score_label(manifest: dict) -> str:
+    """'Arsenal 2–1 Chelsea' (pens in brackets) — what the scorecard shows, so
+    a button reads the same as the card it stands for."""
+    home = manifest.get('home_team', '?')
+    away = manifest.get('away_team', '?')
+    hs, as_ = manifest.get('home_score'), manifest.get('away_score')
+    if hs in (None, '') or as_ in (None, ''):
+        return f"{home} vs {away}"
+    pens = f" ({manifest['penalties']} pens)" if manifest.get('penalties') else ''
+    return f"{home} {hs}–{as_} {away}{pens}"
+
+
 def _ask_for_order(group: str, entries: list[dict],
                    ordered: list[dict]) -> list[dict]:
     """
@@ -441,13 +453,14 @@ def _ask_for_order(group: str, entries: list[dict],
     order: choosing an order is a nicety, and it must never cost the post.
     """
     ids = [str(m['match_id']) for m in ordered]
-    labels = [f"{m.get('home_team', '?')} vs {m.get('away_team', '?')}"
-              for m in ordered]
+    labels = [_score_label(m) for m in ordered]
     try:
         order = carousel_order.choose_order(
             group, _group_root(group, entries), ids, labels,
             send_choice=send_choice, edit_message=edit_message,
-            sleep=time.sleep)
+            sleep=time.sleep,
+            images=[m.get('image_url') for m in ordered],
+            send_photos=send_photos)
     except Exception as e:
         print(f'[carousel] {group}: could not ask for the order ({e}) — '
               f'keeping it as listed.')

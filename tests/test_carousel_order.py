@@ -254,3 +254,68 @@ def test_the_bot_handler_edits_the_message_with_the_next_buttons(monkeypatch):
 def test_the_bot_registers_the_order_buttons():
     src = open(__import__('telegram_bot').__file__, encoding='utf-8').read()
     assert "CallbackQueryHandler(carousel_order_tap, pattern=r'^co:')" in src
+
+
+# ── The scorecards, sent with the question ───────────────────────────────────
+
+def test_the_scorecards_go_first_numbered_like_the_buttons(monkeypatch):
+    w = World(monkeypatch)
+    calls = []
+    original_send = w.send_choice
+
+    def send_choice(text, options):
+        calls.append('question')
+        return original_send(text, options)
+
+    def send_photos(items):
+        calls.append(('album', items))
+
+    co.choose_order('sat', 'carousel/2026-11-25/sat', IDS, LABELS,
+                    send_choice=send_choice, edit_message=w.edit_message,
+                    sleep=w.sleep, images=['u1', 'u2', 'u3'],
+                    send_photos=send_photos)
+    assert calls[0] == ('album', [('u1', '1. A vs B'), ('u2', '2. C vs D'),
+                                  ('u3', '3. E vs F')])
+    assert calls[1] == 'question'
+
+
+def test_a_retry_does_not_resend_the_scorecards(monkeypatch):
+    w = World(monkeypatch)
+    w.store[w.qid] = {'group': 'sat', 'match_ids': IDS, 'labels': LABELS,
+                      'final': True, 'order': IDS, 'source': 'you'}
+    albums = []
+    co.choose_order('sat', 'carousel/2026-11-25/sat', IDS, LABELS,
+                    send_choice=w.send_choice, edit_message=w.edit_message,
+                    sleep=w.sleep, images=['u1', 'u2', 'u3'],
+                    send_photos=albums.append)
+    assert not albums
+
+
+def test_buttons_carry_the_score_like_the_card():
+    assert carousel._score_label({'home_team': 'Arsenal', 'away_team': 'Chelsea',
+                                  'home_score': '2', 'away_score': '1'}) \
+        == 'Arsenal 2–1 Chelsea'
+    assert carousel._score_label({'home_team': 'A', 'away_team': 'B',
+                                  'home_score': '1', 'away_score': '1',
+                                  'penalties': '4-3'}) == 'A 1–1 B (4-3 pens)'
+    assert carousel._score_label({'home_team': 'A', 'away_team': 'B'}) == 'A vs B'
+
+
+def test_telegram_gets_a_phone_sized_jpeg_album(monkeypatch):
+    import json
+    import telegram_notify as tn
+    sent = {}
+    monkeypatch.setenv('TELEGRAM_BOT_TOKEN', 't')
+    monkeypatch.setenv('TELEGRAM_ALERT_CHAT_ID', '1')
+
+    def post(url, data=None, timeout=None):
+        sent['url'], sent['data'] = url, data
+        return type('R', (), {'ok': True, 'status_code': 200, 'text': ''})()
+
+    monkeypatch.setattr(tn.requests, 'post', post)
+    url = 'https://res.cloudinary.com/demo/image/upload/v1/scorecards/abc.png'
+    assert tn.send_photos([(url, '1. A'), (url, '2. B')])
+    assert sent['url'].endswith('/sendMediaGroup')
+    media = json.loads(sent['data']['media'])
+    assert [m['caption'] for m in media] == ['1. A', '2. B']
+    assert '/image/upload/w_1080,q_auto,f_jpg/v1/' in media[0]['media']

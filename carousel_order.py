@@ -110,7 +110,8 @@ def question_text(group: str, labels: list[str], picks: list[int]) -> str:
     if not picks:
         return (f"🎠 The '{group}' carousel is ready — {len(labels)} matches. "
                 f"Which order should the slides go in?\n\n"
-                f"As it stands:\n{numbered(labels)}\n\n"
+                f"As it stands (the scorecards are just above, numbered the "
+                f"same way):\n{numbered(labels)}\n\n"
                 f"Tap the match you want as slide 1, then slide 2, and so on — "
                 f"or keep this order. No tap for a minute and it posts as "
                 f"listed.")
@@ -225,7 +226,8 @@ def _parse(when: str | None) -> datetime | None:
 
 def choose_order(group: str, group_root: str, match_ids: list[str],
                  labels: list[str], *, send_choice, edit_message,
-                 sleep, now=None) -> list[str]:
+                 sleep, now=None, images: list[str] | None = None,
+                 send_photos=None) -> list[str]:
     """
     Ask for the slide order and return it, blocking until it is decided.
 
@@ -233,6 +235,10 @@ def choose_order(group: str, group_root: str, match_ids: list[str],
     reused as it is, and a question still open from an interrupted run is
     waited on rather than sent again. Telegram and the clock are passed in so
     this can be driven without either.
+
+    images, aligned with match_ids, are the scorecards: sent first as a
+    numbered album so each button can be matched to its card. An album can't
+    carry buttons, which is why the question follows it as its own message.
     """
     now = now or _now
     if len(match_ids) < 2:
@@ -249,6 +255,10 @@ def choose_order(group: str, group_root: str, match_ids: list[str],
         state = {'group': group, 'match_ids': match_ids, 'labels': labels,
                  'picks': [], 'final': False, 'asked_at': _iso(now())}
         write_state(qid, state)
+        if send_photos and images:
+            send_photos([(url, f"{i}. {label}")
+                         for i, (url, label) in enumerate(zip(images, labels), 1)
+                         if url])
         state['message_id'] = send_choice(
             question_text(group, labels, []), keyboard(qid, labels, []))
         write_state(qid, state)

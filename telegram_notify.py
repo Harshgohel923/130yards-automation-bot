@@ -61,6 +61,51 @@ def send_choice(text: str, options: list[tuple[str, str]],
                  reply_markup=json.dumps(keyboard))
 
 
+def _preview_url(url: str) -> str:
+    """A phone-sized JPEG of a Cloudinary image. Telegram fetches photos by URL
+    only up to 5 MB, and a full-size PNG scorecard can be close to that."""
+    marker = '/image/upload/'
+    if marker in url and '/w_' not in url:
+        return url.replace(marker, f'{marker}w_1080,q_auto,f_jpg/', 1)
+    return url
+
+
+def send_photos(items: list[tuple[str, str]]) -> bool:
+    """
+    Send images by URL, each with a short caption: [(url, caption), ...].
+
+    Two or more go as one album (Telegram allows up to 10, the same cap a
+    carousel has); one goes as a plain photo. Albums can't carry buttons, so a
+    question about them follows as its own message. Never raises.
+    """
+    token   = os.getenv('TELEGRAM_BOT_TOKEN')
+    chat_id = _chat_id()
+    if not token or not chat_id or not items:
+        return False
+    try:
+        if len(items) == 1:
+            url, caption = items[0]
+            res = requests.post(
+                f'https://api.telegram.org/bot{token}/sendPhoto',
+                data={'chat_id': chat_id, 'photo': _preview_url(url),
+                      'caption': caption},
+                timeout=30)
+        else:
+            media = [{'type': 'photo', 'media': _preview_url(url),
+                      'caption': caption} for url, caption in items[:10]]
+            res = requests.post(
+                f'https://api.telegram.org/bot{token}/sendMediaGroup',
+                data={'chat_id': chat_id, 'media': json.dumps(media)},
+                timeout=60)
+        if not res.ok:
+            print(f'[telegram_notify] sending photos failed '
+                  f'(HTTP {res.status_code}): {res.text[:200]}')
+        return res.ok
+    except Exception as e:
+        print(f'[telegram_notify] sending photos error: {e}')
+        return False
+
+
 def edit_message(message_id: int, text: str) -> bool:
     """
     Replace the text of a message this bot sent, removing its buttons.
