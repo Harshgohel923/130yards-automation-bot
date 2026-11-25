@@ -39,6 +39,11 @@ AWAY_SCORE_BOX   = (572, 629, 724, 802)     # center-aligned text
 HOME_NAME_BOX    = (56, 825, 331, 860)      # center-aligned text
 AWAY_NAME_BOX    = (755, 825, 1030, 860)    # center-aligned text
 PENALTY_SCORE_BOX = (392, 822, 695, 859)    # center-aligned, sits between the names
+# A second leg that also went to penalties stacks two lines in that space:
+# the aggregate on top, larger, the shootout under it — ending above the
+# scorer columns (HOME/AWAY_SCORERS_BOX start at 889).
+AGGREGATE_STACK_BOX = (392, 810, 695, 852)
+PENALTY_STACK_BOX   = (392, 856, 695, 884)
 HOME_SCORERS_BOX = (54, 889, 514, 1372)     # left-aligned scorer lines
 AWAY_SCORERS_BOX = (572, 889, 1032, 1372)   # right-aligned scorer lines
 STADIUM_BOX      = (362, 1401, 724, 1431)   # center-aligned text
@@ -745,17 +750,25 @@ def generate_scorecard(scraper_data: dict, event_type: str = 'FT', match_id_over
             _draw_text_at_size(draw, score_val, box, FONT_BOLD, score_size, COLOR_SCORE)
     _draw_score_dash(draw, home_score_box, away_score_box)
 
-    # ── Result line: shootout and/or aggregate, between the team names ─────────
-    # A second leg's aggregate shares the penalties slot (two_legs.result_line):
-    # the box holds one line, and both are short.
+    # ── Aggregate and/or shootout, between the team names ──────────────────────
+    # One of them takes the slot between the names. A second leg that went to
+    # penalties stacks both, aggregate on top in the taller box — it is the
+    # result of the tie; the shootout only settled a level one.
     ps_home = ps_home_raw if event_type != 'HT' else ''
     ps_away = ps_away_raw if event_type != 'HT' else ''
-    result_text = two_legs.result_line(two_legs.aggregate_of(match_sample),
-                                       (ps_home, ps_away) if ps_home and ps_away else None)
-    if result_text and penalty_box != (0, 0, 0, 0):
-        # Gold text, no backing plate — the card-wide shadow carries it.
-        _draw_centered_text(draw, result_text, penalty_box,
-                            FONT_BOLD, PENALTY_FONT_MAX, PENALTY_FONT_MIN, COLOR_PENALTY)
+    agg_text, pen_text = two_legs.result_lines(
+        two_legs.aggregate_of(match_sample),
+        (ps_home, ps_away) if ps_home and ps_away else None)
+    if agg_text and pen_text:
+        slots = [(agg_text, _shift(AGGREGATE_STACK_BOX, -lift)),
+                 (pen_text, _shift(PENALTY_STACK_BOX, -lift))]
+    else:
+        slots = [(agg_text or pen_text, penalty_box)] if (agg_text or pen_text) else []
+    for text, box in slots:
+        if box != (0, 0, 0, 0):
+            # Gold text, no backing plate — the card-wide shadow carries it.
+            _draw_centered_text(draw, text, box,
+                                FONT_BOLD, PENALTY_FONT_MAX, PENALTY_FONT_MIN, COLOR_PENALTY)
 
     # ── Stadium — center aligned ──────────────────────────────────────────────
     raw_stadium = (scraper_data.get('matchFormation') or {}).get('venue_name') or ''

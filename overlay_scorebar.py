@@ -552,8 +552,9 @@ def add_scorecard_overlay(image_path, output_path, home_team, away_team,
     penalties: optional (home_pen, away_pen) strings shown as
                'PENALTIES: h - a' below the final score.
     aggregate: optional (home, away) for the second leg of a two-legged tie,
-               shown as 'AGG h - a' in that same line — sharing it with the
-               shootout when there is one. See two_legs.result_line.
+               shown as 'AGG h - a' under the score, larger than the
+               penalties line, which then drops below it. See
+               two_legs.result_lines.
     match_date: optional '21 AUG 2026', stamped in the top-right corner
                opposite the brand mark. Only hand-entered matches pass one —
                see manual_match.py.
@@ -675,13 +676,19 @@ def add_scorecard_overlay(image_path, output_path, home_team, away_team,
             draw.line((sx + i * seg_w, partition_y, sx + (i + 1) * seg_w, partition_y),
                       fill=(*col, 255), width=3)
 
-    # ── Result line: aggregate and/or shootout, under the score ───────────
-    # One line between the score and the team names: that gap holds one, and
-    # aggregate + penalties are short enough to share it.
-    result_text = two_legs.result_line(aggregate, penalties)
-    if result_text:
-        pen_font = _font(int(h * 0.017))
-        draw.text((cx, py1 + int(h * 0.155)), result_text, font=pen_font,
+    # ── Aggregate and penalties, under the score ──────────────────────────
+    # The slot right under the score takes the bigger news: the aggregate on a
+    # second leg, otherwise the penalties line it always held. With both, the
+    # penalties drop a row, between the team names — the middle of that row
+    # is empty, the names sit over the crests.
+    agg_text, pen_text = two_legs.result_lines(aggregate, penalties)
+    under_score_y = py1 + int(h * 0.155)
+    if agg_text:
+        draw.text((cx, under_score_y), agg_text, font=_font(int(h * 0.021)),
+                  fill=COLOR_LABEL, anchor='mm')
+    if pen_text:
+        pen_y = py1 + int(h * 0.177) if agg_text else under_score_y
+        draw.text((cx, pen_y), pen_text, font=_font(int(h * 0.017)),
                   fill=COLOR_LABEL, anchor='mm')
 
     # ── Scorer lines ──────────────────────────────────────────────────────

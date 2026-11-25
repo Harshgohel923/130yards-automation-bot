@@ -65,11 +65,11 @@ def test_annotate_clears_a_stale_value():
 
 # ── The line on the card ─────────────────────────────────────────────────────
 
-def test_the_result_line():
-    assert tl.result_line(('3', '2'), None) == 'AGG 3 - 2'
-    assert tl.result_line(('2', '2'), ('4', '2')) == 'AGG 2 - 2  •  PENS 4 - 2'
-    assert tl.result_line(None, ('4', '2')) == 'PENALTIES: 4 - 2'   # as before
-    assert tl.result_line(None, None) is None
+def test_the_result_lines():
+    assert tl.result_lines(('3', '2'), None) == ('AGG 3 - 2', None)
+    assert tl.result_lines(('2', '2'), ('4', '2')) == ('AGG 2 - 2', 'PENALTIES: 4 - 2')
+    assert tl.result_lines(None, ('4', '2')) == (None, 'PENALTIES: 4 - 2')  # as before
+    assert tl.result_lines(None, None) == (None, None)
 
 
 def test_both_cards_draw_the_line(monkeypatch):
@@ -78,7 +78,7 @@ def test_both_cards_draw_the_line(monkeypatch):
     seen = {}
 
     def fake_overlay(*a, **k):
-        seen['overlay'] = tl.result_line(k.get('aggregate'), k.get('penalties'))
+        seen['overlay'] = tl.result_lines(k.get('aggregate'), k.get('penalties'))
 
     monkeypatch.setattr(ob, 'add_scorecard_overlay', fake_overlay)
     data = {'matchSample': {'team_A_name': 'Club Brugge', 'team_B_name': 'Liverpool',
@@ -86,10 +86,10 @@ def test_both_cards_draw_the_line(monkeypatch):
             'events': []}
     tl.annotate(data, ENTRY, 'FT')
     ob._render_from_scraper_data(data, 'photo.png', 'out.png', 'FT')
-    assert seen['overlay'] == 'AGG 2 - 2  •  PENS 4 - 2'
+    assert seen['overlay'] == ('AGG 2 - 2', 'PENALTIES: 4 - 2')
 
     src = open(sc.__file__, encoding='utf-8').read()
-    assert 'two_legs.result_line(two_legs.aggregate_of(match_sample)' in src
+    assert 'two_legs.aggregate_of(match_sample)' in src
 
 
 # ── The caption ──────────────────────────────────────────────────────────────

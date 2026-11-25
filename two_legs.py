@@ -94,22 +94,18 @@ def aggregate_of(match_sample: dict) -> tuple[str, str] | None:
     return (a, b) if a and b else None
 
 
-def result_line(aggregate, penalties) -> str | None:
+def result_lines(aggregate, penalties) -> tuple[str | None, str | None]:
     """
-    The one line under the score.
+    (aggregate line, penalties line) for under the score — either may be None.
 
-    Aggregate and shootout share it rather than stacking: there is room for a
-    single line between the score and the team names, and both are short.
-    Without an aggregate it is the penalties line the cards always had.
+    The renderers stack them, aggregate on top and drawn larger: it is the
+    result of the tie, the shootout only how a level one was settled. Without
+    an aggregate the penalties line is the one the cards always had, in its
+    old place.
     """
-    if aggregate and penalties:
-        return (f"AGG {aggregate[0]} - {aggregate[1]}  •  "
-                f"PENS {penalties[0]} - {penalties[1]}")
-    if aggregate:
-        return f"AGG {aggregate[0]} - {aggregate[1]}"
-    if penalties:
-        return f"PENALTIES: {penalties[0]} - {penalties[1]}"
-    return None
+    agg = f"AGG {aggregate[0]} - {aggregate[1]}" if aggregate else None
+    pens = f"PENALTIES: {penalties[0]} - {penalties[1]}" if penalties else None
+    return agg, pens
 
 
 def tie_summary(home: str, away: str, aggregate, penalties,
