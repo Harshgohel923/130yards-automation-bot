@@ -632,6 +632,33 @@ def _scrape_hash(country: str, slug: str, size: int = 3000,
     return match.group(1)
 
 
+# The image host rate-limits a burst of downloads with a 404 whose body says
+# "Please try again after a moment" — indistinguishable from a missing file by
+# status alone. Seen 2026-11-25 after ~16 crests in a row.
+RATE_LIMIT_WAITS = (30, 60, 120)    # seconds before each retry
+
+
+def _rate_limited(response) -> bool:
+    # A plain 429 is a rate limit whatever it says; a 404 only when its body
+    # says so, since a genuinely missing file is also a 404.
+    if response.status_code == 429:
+        return True
+    return (response.status_code == 404
+            and 'try again' in (response.text or '').lower())
+
+
+def _get_image(url: str):
+    """GET an image, backing off while the host says to try again later."""
+    for wait in (*RATE_LIMIT_WAITS, None):
+        response = requests.get(url, headers=HEADERS, timeout=30)
+        if not _rate_limited(response) or wait is None:
+            break
+        print(f'[logos] Rate-limited by the image host — retrying in {wait}s…')
+        time.sleep(wait)
+    response.raise_for_status()
+    return response
+
+
 def download_logo(country: str, slug: str, size: int = 3000,
                   dest_dir: str = LOCAL_CACHE_DIR, variant: str | None = None) -> str:
     """Download a logo PNG to dest_dir and return the local path."""
@@ -647,8 +674,7 @@ def download_logo(country: str, slug: str, size: int = 3000,
     logo_hash = _scrape_hash(country, slug, size, variant)
     url = f'{IMAGE_HOST}/{country}/{size}/{slug}{suffix}.{logo_hash}.png'
 
-    response = requests.get(url, headers=HEADERS, timeout=30)
-    response.raise_for_status()
+    response = _get_image(url)
 
     content_type = response.headers.get('content-type', '')
     if not content_type.startswith('image/'):

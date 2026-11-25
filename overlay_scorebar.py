@@ -119,9 +119,10 @@ def _load_competition_logo(height, competition=None):
     except Exception as e:
         print(f"[overlay] Could not fetch competition logo: {e}")
         return None
-    if 'fifa-world-cup-2026--white' in url:
-        # Legacy WC mark: drop the black 'FIFA' wordmark row (illegible on
-        # the dark panel).
+    if 'fifa-world-cup-2026--white' in url or '/competition/fifa-world-cup.' in url:
+        # The white WC 2026 mark (football-logos.cc's 'white' variant, as
+        # logo_fetch stores it — or the old one-off upload): drop the black
+        # 'FIFA' wordmark row, illegible on the dark panel.
         w, h = logo.size
         logo = logo.crop((0, 0, w, int(h * 0.81)))
     bbox = logo.getbbox()

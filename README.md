@@ -518,8 +518,10 @@ python logo_fetch.py --local logo.png --competition "Community Shield"
 
 ### Crest/logo lookup at render time (`config.py`)
 
-- `get_crest_url(name)` — legacy WC table first, then the deterministic
-  paths (HEAD-checked against Cloudinary, hits cached per run). Only
+- `get_crest_url(name)` — the deterministic paths only, for every team club
+  or national (HEAD-checked against Cloudinary, hits cached per run). There
+  are no hand-mapped crest links: every crest comes from football-logos.cc via
+  `logo_fetch.py`. Only
   successful lookups are cached, so a crest uploaded **mid-match** is picked
   up by the next render without a push. Network blips are distinguished from
   real 404s (retry, then optimistic URL) so an outage never false-alarms.
@@ -2068,8 +2070,7 @@ the chat.
 
 ### `config.py`
 
-Cloudinary public ids for templates (`CLOUDINARY_TEMPLATES`), the legacy WC
-crest/tournament tables, the brand logo, local event symbols, stadium name
+Cloudinary public ids for templates (`CLOUDINARY_TEMPLATES`), the brand logo, local event symbols, stadium name
 aliases, and the `get_crest_url` / `get_competition_logo_url` lookups.
 
 ### `matches.json` entry
