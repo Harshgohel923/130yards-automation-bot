@@ -107,12 +107,15 @@ def save(stats: dict) -> None:
 
 # ── Counting ─────────────────────────────────────────────────────────────────
 
-def add(stats: dict, user_id, name: str, kind: str, reupload: bool, ts: float) -> dict:
+def add(stats: dict, user_id, name: str, kind: str, reupload: bool, ts: float,
+        username: str = '') -> dict:
     """Count one upload into stats (pure — no I/O)."""
     week = stats.setdefault('weeks', {}).setdefault(week_key(ts), {})
     person = week.setdefault(str(user_id), {'name': name or 'someone'})
     if name:
         person['name'] = name               # the latest name they go by
+    if username:
+        person['username'] = username
     person[kind] = person.get(kind, 0) + 1
     person['total'] = person.get('total', 0) + 1
     if reupload:
@@ -124,7 +127,7 @@ def add(stats: dict, user_id, name: str, kind: str, reupload: bool, ts: float) -
 
 
 def record_upload(user_id, name: str, public_id: str, reupload: bool,
-                  ts: float | None = None) -> bool:
+                  ts: float | None = None, username: str = '') -> bool:
     """Count an upload. Returns False (and counts nothing) for ids that aren't
     match photos, or when the stats can't be read — a count must never be
     written over stats it couldn't load."""
@@ -135,32 +138,66 @@ def record_upload(user_id, name: str, public_id: str, reupload: bool,
     if stats is None:
         print('[leaderboard] Could not read the stats — upload not counted.')
         return False
-    save(add(stats, user_id, name, kind, reupload, ts or time.time()))
+    save(add(stats, user_id, name, kind, reupload, ts or time.time(), username))
     return True
 
 
 # ── The Monday recap ─────────────────────────────────────────────────────────
 
-def recap_text(week: dict, key: str) -> str:
-    """HTML for Telegram."""
+def who(person: dict) -> str:
+    """'<b>Harsh Gohel</b> (@Gohellllll)' — the @username makes Telegram notify
+    them. Just the bold name when there is no username."""
     import html
+    name = f"<b>{html.escape(person.get('name') or 'someone')}</b>"
+    return f"{name} (@{person['username']})" if person.get('username') else name
+
+
+def _count(n: int, word: str) -> str:
+    return f"{n:,} {word}{'s' if n != 1 else ''}"
+
+
+def credit_lines(credit: dict) -> list[str]:
+    """The "how did the posts do" section, from post_credit.weekly_credit."""
+    people = sorted(credit.values(),
+                    key=lambda p: (p.get('reach', 0), p.get('likes', 0), p['posts']),
+                    reverse=True)
+    if not people:
+        return []
+    lines = ['', '📈 <b>Posts your photos went into</b>', '']
+    for n, p in enumerate(people):
+        medal = MEDALS[n] if n < len(MEDALS) else f'{n + 1}.'
+        bits = [_count(p['posts'], 'post'), _count(p.get('likes', 0), 'like'),
+                _count(p.get('comments', 0), 'comment')]
+        if 'reach' in p:
+            bits.append(f"{p['reach']:,} reach")
+        if p.get('saved'):
+            bits.append(_count(p['saved'], 'save'))
+        lines.append(f"{medal} {who(p)} — {' · '.join(bits)}")
+    return lines
+
+
+def recap_text(week: dict, key: str, credit: dict | None = None) -> str:
+    """HTML for Telegram."""
     title = f"🏆 <b>Weekly Recap</b> — {week_range(key)}"
     people = sorted(week.values(), key=lambda p: (p.get('total', 0), p.get('reuploads', 0)),
                     reverse=True)
+    extra = credit_lines(credit or {})
     if not people:
-        return f"{title}\n\nNo photos were sent through the bot last week."
-    lines = [title, '', 'Photos sent through the bot:', '']
+        return '\n'.join([title, '', 'No photos were sent through the bot last week.'] + extra)
+    lines = [title, '', '📸 <b>Photos sent through the bot</b>', '']
     for n, p in enumerate(people):
         medal = MEDALS[n] if n < len(MEDALS) else f'{n + 1}.'
         parts = ' · '.join(f"{KIND_LABEL[k]} {p[k]}" for k in KINDS if p.get(k))
         redo = (f" — incl. {p['reuploads']} re-upload{'s' if p['reuploads'] != 1 else ''}"
                 if p.get('reuploads') else '')
         total = p.get('total', 0)
-        lines.append(f"{medal} <b>{html.escape(p.get('name', 'someone'))}</b> — "
+        lines.append(f"{medal} {who(p)} — "
                      f"{total} photo{'s' if total != 1 else ''} ({parts}){redo}")
     grand = sum(p.get('total', 0) for p in people)
     lines += ['', f"Total: {grand} photo{'s' if grand != 1 else ''} from "
-                  f"{len(people)} {'people' if len(people) != 1 else 'person'}. Thanks all 👏"]
+                  f"{len(people)} {'people' if len(people) != 1 else 'person'}."]
+    lines += extra
+    lines += ['', 'Thanks all 👏']
     return '\n'.join(lines)
 
 
@@ -188,7 +225,13 @@ def maybe_send_weekly_recap(now: float | None = None, send=None) -> bool:
         return False
     if send is None:
         from telegram_notify import send_html as send
-    if not send(recap_text(stats.get('weeks', {}).get(week, {}), week)):
+    try:
+        import post_credit
+        credit = post_credit.weekly_credit(week)
+    except Exception as e:
+        print(f'[leaderboard] Post credit unavailable ({e}) — recap without it.')
+        credit = {}
+    if not send(recap_text(stats.get('weeks', {}).get(week, {}), week, credit)):
         return False                     # try again on the next tick
     stats['last_recap'] = week
     save(stats)

@@ -50,3 +50,16 @@ def _in_memory_leaderboard(monkeypatch):
     monkeypatch.setattr(leaderboard, 'load', lambda: json.loads(json.dumps(store['stats'])))
     monkeypatch.setattr(leaderboard, 'save', lambda s: store.__setitem__('stats', s))
     return store
+
+
+@pytest.fixture(autouse=True)
+def _offline_post_credit(monkeypatch):
+    """Posting records credit for the weekly recap (post_credit.py) on
+    Cloudinary. In tests Cloudinary is "unreachable" — which post_credit
+    already handles by quietly crediting nobody. tests/test_post_credit.py
+    swaps in a fake."""
+    import post_credit
+
+    def offline():
+        raise RuntimeError('no Cloudinary in tests')
+    monkeypatch.setattr(post_credit, '_cloudinary', offline)

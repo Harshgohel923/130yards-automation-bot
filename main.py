@@ -61,6 +61,7 @@ from telegram_notify import (
 import ht_optin
 import ht_judge
 import story_photo
+import post_credit
 from overlay_scorebar import generate_overlay_scorecard
 from scorecard import generate_scorecard
 from stats_card import generate_stats_card
@@ -523,6 +524,13 @@ def _post_slides(entry: dict, event_type: str, scraper_data: dict) -> tuple[list
         ig_id = post_carousel_to_instagram(public_urls, caption)
     else:
         ig_id = post_to_instagram(public_urls[0], caption)
+    # Credit for the weekly recap: whoever sent the photos in this post.
+    try:
+        post_credit.record_post(
+            ig_id, f'{event_type} card', _label(entry),
+            post_credit.contributors_for_card(entry['match_id'], event_type))
+    except Exception as e:
+        print(f"[{entry['match_id']}] Could not record post credit: {e}")
     return public_ids, ig_id
 
 
@@ -1526,6 +1534,11 @@ def _post_event_photo(entry: dict, moment: dict, scraper_data: dict) -> None:
 
     _note_post_spent()
     mark_event_posted(match_id, moment['posted_key'])
+    try:
+        post_credit.record_post(ig_id, 'event photo', f"{_label(entry)} — {label}",
+                                [post_credit.uploader_of(moment['public_id'])])
+    except Exception as e:
+        print(f"[{match_id}] Could not record post credit: {e}")
     records = _posted_event_photos(match_id)
     records[moment['posted_key']] = {
         # The media id is the only way the post can ever be taken down again.

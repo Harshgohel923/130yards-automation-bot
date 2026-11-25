@@ -79,16 +79,32 @@ def test_unreadable_stats_are_never_overwritten(monkeypatch):
 # ── The recap ────────────────────────────────────────────────────────────────
 
 def test_recap_ranks_people_with_medals_and_breakdowns():
-    week = {'1': {'name': 'Harsh', 'FT': 3, 'event': 2, 'total': 5, 'reuploads': 1},
+    week = {'1': {'name': 'Harsh', 'username': 'Gohellllll', 'FT': 3, 'event': 2,
+                  'total': 5, 'reuploads': 1},
             '2': {'name': 'Sam', 'HT': 1, 'total': 1},
             '3': {'name': 'Ana <3', 'extra': 2, 'FT': 1, 'total': 3}}
     text = lb.recap_text(week, '2026-W48')
     assert text.startswith('🏆 <b>Weekly Recap</b> — 23–29 Nov')
     lines = text.splitlines()
-    assert '🥇 <b>Harsh</b> — 5 photos (FT 3 · events 2) — incl. 1 re-upload' in lines
+    assert ('🥇 <b>Harsh</b> (@Gohellllll) — 5 photos (FT 3 · events 2) '
+            '— incl. 1 re-upload') in lines
     assert '🥈 <b>Ana &lt;3</b> — 3 photos (FT 1 · carousel 2)' in lines
-    assert '🥉 <b>Sam</b> — 1 photo (HT 1)' in lines
-    assert 'Total: 9 photos from 3 people. Thanks all 👏' in lines
+    assert '🥉 <b>Sam</b> — 1 photo (HT 1)' in lines            # no username: name only
+    assert 'Total: 9 photos from 3 people.' in lines
+    assert lines[-1] == 'Thanks all 👏'
+
+
+def test_recap_adds_how_the_posts_did():
+    credit = {'1': {'name': 'Harsh', 'username': 'Gohellllll', 'posts': 6,
+                    'likes': 210, 'comments': 9},
+              '2': {'name': 'Yash', 'username': 'Yashulllaaa', 'posts': 2,
+                    'likes': 1500, 'comments': 1, 'reach': 12000, 'saved': 40}}
+    text = lb.recap_text({}, '2026-W48', credit)
+    assert '📈 <b>Posts your photos went into</b>' in text
+    lines = text.splitlines()
+    assert ('🥇 <b>Yash</b> (@Yashulllaaa) — 2 posts · 1,500 likes · 1 comment '
+            '· 12,000 reach · 40 saves') in lines
+    assert '🥈 <b>Harsh</b> (@Gohellllll) — 6 posts · 210 likes · 9 comments' in lines
 
 
 def test_a_quiet_week_still_says_so():
@@ -142,11 +158,13 @@ def test_the_bot_counts_an_upload_for_whoever_sent_it(_in_memory_leaderboard, mo
         'public_id': kw['public_id'], 'secure_url': 'u', 'overwritten': True})
     monkeypatch.setattr(tb, '_shrink_for_upload', lambda p: False)
     ctx = types.SimpleNamespace(user_data={}, bot=Bot(),
-                                chat_data={'last_user': 'Harsh', 'last_user_id': 7})
+                                chat_data={'last_user': 'Harsh', 'last_user_id': 7,
+                                           'last_username': 'gohel'})
     match = {'match_id': '42', 'home_team': 'A', 'away_team': 'B'}
     assert asyncio.run(tb._upload_photo(Msg(), ctx, match, 'FT', ('f', 1)))
     week = next(iter(_in_memory_leaderboard['stats']['weeks'].values()))
-    assert week['7'] == {'name': 'Harsh', 'FT': 1, 'total': 1, 'reuploads': 1}
+    assert week['7'] == {'name': 'Harsh', 'username': 'gohel', 'FT': 1, 'total': 1,
+                         'reuploads': 1}
 
 
 def test_the_dispatcher_sends_the_recap(monkeypatch):

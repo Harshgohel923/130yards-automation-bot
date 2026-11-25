@@ -376,6 +376,7 @@ async def keep_alive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         if user is not None and context.chat_data is not None:
             context.chat_data['last_user'] = user.first_name or user.username or ''
             context.chat_data['last_user_id'] = user.id
+            context.chat_data['last_username'] = user.username or ''
 
 
 def _allowed(update: Update) -> bool:
@@ -519,9 +520,16 @@ async def _upload_photo(msg, context, match: dict, event_type: str,
         return False
 
     public_id = public_id or photo_public_id(match['match_id'], event_type)
-    uploader = _context_safe((context.chat_data or {}).get('last_user', ''))
+    chat = context.chat_data or {}
+    uploader = _context_safe(chat.get('last_user', ''))
     if uploader:
+        # Who sent it, on the picture itself: the "already there" warning names
+        # them, and post_credit.py credits them for the posts it goes into.
         meta = dict(meta or {}, uploaded_by=uploader)
+        if chat.get('last_user_id'):
+            meta['uploaded_by_id'] = str(chat['last_user_id'])
+        if chat.get('last_username'):
+            meta['uploaded_by_username'] = _context_safe(chat['last_username'])
     await msg.reply_text("Uploading to Cloudinary…")
 
     tmp_path, crop_note = None, None
@@ -691,7 +699,7 @@ async def _count_upload(context: ContextTypes.DEFAULT_TYPE, result: dict) -> Non
         await asyncio.to_thread(
             leaderboard.record_upload, chat.get('last_user_id'),
             chat.get('last_user', ''), result.get('public_id', ''),
-            bool(result.get('overwritten')))
+            bool(result.get('overwritten')), None, chat.get('last_username', ''))
     except Exception as e:
         log.warning("Could not count an upload for the weekly recap: %s", e)
 
@@ -3300,6 +3308,15 @@ async def _publish(msg, context: ContextTypes.DEFAULT_TYPE,
         return
 
     await asyncio.to_thread(_card_batch().clear, owner)
+    # Credit for the weekly recap: a hand-built post belongs to whoever posted it.
+    chat = context.chat_data or {}
+    if chat.get('last_user_id'):
+        import post_credit
+        await asyncio.to_thread(
+            post_credit.record_post, media_id, 'manual card',
+            f"{len(cards)} card{'s' if len(cards) != 1 else ''}",
+            [{'id': str(chat['last_user_id']), 'name': chat.get('last_user', ''),
+              'username': chat.get('last_username', '')}])
     await msg.reply_text(
         f"Posted ✅\n{permalink or f'media id {media_id}'}\n\n"
         f"/card to start another post."

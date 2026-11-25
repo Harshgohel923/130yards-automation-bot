@@ -2057,10 +2057,35 @@ to the group, once:
 
 ```
 🏆 Weekly Recap — 23–29 Nov
-🥇 Harsh — 14 photos (HT 4 · FT 6 · events 3 · carousel 1) — incl. 2 re-uploads
-🥈 Sam — 6 photos (FT 4 · events 2)
-Total: 20 photos from 2 people. Thanks all 👏
+
+📸 Photos sent through the bot
+🥇 Harsh Gohel (@Gohellllll) — 14 photos (HT 4 · FT 6 · events 3 · carousel 1) — incl. 2 re-uploads
+🥈 Yash (@Yashulllaaa) — 6 photos (FT 4 · events 2)
+Total: 20 photos from 2 people.
+
+📈 Posts your photos went into
+🥇 Yash (@Yashulllaaa) — 4 posts · 1,520 likes · 31 comments
+🥈 Harsh Gohel (@Gohellllll) — 9 posts · 1,210 likes · 18 comments
+
+Thanks all 👏
 ```
+
+People appear as **Name (@username)** — the @username makes Telegram notify
+them.
+
+**Credit for bot posts** (`post_credit.py`): when the bot publishes, it files
+who contributed — one JSON per post at `stats/posts/<week>/<media id>.json`:
+the background and FT-extra senders for an HT/FT card, the stager of an event
+photo, everyone whose photos are in a carousel group, the poster of a `/card`.
+Senders are read off the photos: uploads store `uploaded_by`,
+`uploaded_by_id` and `uploaded_by_username` on the asset (older photos only
+have a name, and are credited by name). On Monday the recap asks Instagram
+how each of last week's posts did. **Likes and comments** work with the
+posting token. **Reach, saves and shares** need the
+`instagram_manage_insights` permission — without it Instagram answers "does
+not have permission", the recap asks once and leaves them out; regenerate the
+Page token with that permission and they appear automatically. Deleted posts
+(corrected early cards) are skipped.
 
 ## Telegram alerts
 

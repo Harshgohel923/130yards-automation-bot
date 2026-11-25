@@ -424,6 +424,14 @@ def publish_group(group: str, entries: list[dict], now: datetime | None = None) 
 
     posted_ids = [str(m['match_id']) for m in ordered]
     mark_group_posted(group, ig_id, posted_ids, missing, entries)
+    try:
+        import post_credit
+        people = []
+        for match_id in posted_ids:
+            people += post_credit.contributors_for_card(match_id, 'FT')
+        post_credit.record_post(ig_id, 'carousel', f"'{group}' carousel", people)
+    except Exception as e:
+        print(f'[carousel] {group}: could not record post credit: {e}')
     print(f'[carousel] {group}: ✅ posted {len(urls)} slides — IG ID: {ig_id}')
     send_music_reminder(
         f"The '{group}' carousel — {len(urls)} "
