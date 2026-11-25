@@ -36,8 +36,11 @@ Design notes
     side — the reference's own back four sits at 0.11/0.35/0.63/0.87 of the
     row, an even spread nudged outward.
   * `generate_lineup_card` returns None when that side has no XI published
-    yet. Lineups appear roughly an hour before kickoff, so a worker that
-    starts early simply asks again on its next poll.
+    yet, or has one without a position for every starter. Lineups appear
+    roughly an hour before kickoff and the positions a few minutes after the
+    names, so a worker that starts early simply asks again on its next poll.
+    There is deliberately no listed fallback: a lineup without positions read
+    as a straight line in the feed, which is worse than no post.
 """
 
 import os
@@ -86,7 +89,6 @@ FOOTER_LOGO_H   = 52
 FOOTER_GAP      = 20                       # between the wordmark and the logo
 
 # ── COLOURS ──────────────────────────────────────────────────────────────────
-COLOR_NAME       = (240, 244, 250, 255)
 COLOR_LINES      = (255, 255, 255, 235)    # pitch markings
 COLOR_BENCH      = (245, 247, 250, 255)    # bench names — white, as the reference
 COLOR_DISC       = (255, 255, 255, 255)    # the player disc
@@ -148,10 +150,6 @@ LABEL_GUTTER      = 12     # kept clear between one player's plate and the next
 DISC_FILL         = 0.72   # of its column, so discs in a row never touch
 PALE_ACCENT_LUM   = 195    # above this a colour cannot carry a white disc
 DARK_INK_LUM      = 150    # above this a plate needs dark text on it, not white
-
-SHEET_DISC_MAX_D = 72      # the no-positions fallback's smaller disc
-SHEET_FONT_MAX   = 40
-SHEET_NAME_GAP   = 28
 
 
 # ── Small helpers ────────────────────────────────────────────────────────────
@@ -281,19 +279,21 @@ def has_lineups(scraper_data: dict, side: str | None = None) -> bool:
 
 def has_positions(scraper_data: dict, side: str | None = None) -> bool:
     """
-    Are the published XIs placed on the grid, or only listed?
+    Is every published starter placed on the grid?
 
-    The feed announces the names first and fills `position_x` / `position_y` in
-    later — sometimes not at all for smaller competitions, which is what its
-    own `formationFlag` reports. Positions are what the pitch needs; without
-    them the page falls back to a team sheet, so this is the signal for *how
-    good a card we can draw right now*, not for whether we can draw one.
+    The feed announces the names first and fills `position_x` in later —
+    sometimes not at all for smaller competitions, which is what its own
+    `formationFlag` reports. Positions are what the pitch needs, and a card is
+    only drawn once they are here.
+
+    Every starter, not just one: build_rows() puts anyone unplaced into a row
+    of their own, so a half-filled grid would draw them as one straight line.
     """
     if not has_lineups(scraper_data, side):
         return False
     formation = scraper_data['matchFormation']
     keys = [_side_key(side)] if side else ['team_A', 'team_B']
-    return all(any(p.get('position_x') for p in formation[k]['lineups'])
+    return all(all(p.get('position_x') for p in formation[k]['lineups'])
                for k in keys)
 
 
@@ -524,35 +524,6 @@ def draw_players(img, draw, rows, accent):
                         plate_w, accent, plate_ink)
 
 
-def draw_team_sheet(img, draw, players: list, box, accent):
-    """
-    The XI as a list, for a feed that published names without positions.
-
-    One row per player: their disc, then their name. The rest of the page —
-    header, bench, coach, footer — is unchanged, so a competition whose feed
-    never fills the grid still gets a lineup post rather than nothing.
-    """
-    x0, y0, x1, y1 = box
-    rows = len(players) or 1
-    line_h = (y1 - y0) / rows
-    disc_d = int(min(SHEET_DISC_MAX_D, line_h * 0.82))
-
-    # The block is centred as a whole, so discs and names share one left edge
-    # however long the longest name turns out to be.
-    font = _font(FONT_BOLD, min(SHEET_FONT_MAX, int(line_h * 0.62)))
-    names = [str(p.get('person') or '').strip().upper() for p in players]
-    widest = max([draw.textlength(n, font=font) for n in names] or [0])
-    left = (x0 + x1) / 2 - (disc_d + SHEET_NAME_GAP + widest) / 2
-
-    for i, player in enumerate(players):
-        cy = y0 + line_h * (i + 0.5)
-        disc = disc_glyph(disc_d, accent,
-                          str(player.get('shirtnumber') or '').strip())
-        img.alpha_composite(disc, (int(left), int(cy - disc.height / 2)))
-        draw.text((left + disc_d + SHEET_NAME_GAP, cy), names[i],
-                  font=font, fill=COLOR_NAME, anchor='lm')
-
-
 # ── The left column: bench, then the referee ─────────────────────────────────
 
 def _column_plate(draw, text: str, y: float, height: int, accent, ink):
@@ -691,9 +662,12 @@ def generate_lineup_card(scraper_data: dict, side: str = 'home',
     if not players:
         print(f"[lineup] {match_id}: no {side} XI published yet.")
         return None
-    # Positions are what makes a pitch; without them the page lists the XI.
-    placed = any(p.get('position_x') for p in players)
-    rows = build_rows(players) if placed else []
+    if not has_positions(scraper_data, side):
+        # No listed fallback: without positions the XI read as a straight
+        # line on the feed. The caller waits for the grid instead.
+        print(f"[lineup] {match_id}: {side} XI has no positions yet — not drawing it.")
+        return None
+    rows = build_rows(players)
 
     competition = competition or match_sample.get('competition_name')
     img = _card_background(competition, match_id)
@@ -703,8 +677,7 @@ def generate_lineup_card(scraper_data: dict, side: str = 'home',
 
     # Pitch and discs are composited straight onto the background; text and
     # name plates go on this layer, shadowed and composited in one pass.
-    if placed:
-        draw_pitch(img)
+    draw_pitch(img)
     ink = Image.new('RGBA', img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(ink)
 
@@ -719,14 +692,7 @@ def generate_lineup_card(scraper_data: dict, side: str = 'home',
                         TITLE_FONT_MAX, TITLE_FONT_MIN, COLOR_TITLE)
 
     # ── The XI, and the column beside it ─────────────────────────────────────
-    if placed:
-        draw_players(img, draw, rows, accent)
-    else:
-        print(f"[lineup] {match_id}: {side} XI has no positions — listing it instead.")
-        draw_team_sheet(img, draw, players,
-                        (PITCH_CX - PITCH_BOTTOM_HALF_W, PITCH_TOP,
-                         PITCH_CX + PITCH_BOTTOM_HALF_W, PITCH_BOTTOM),
-                        accent)
+    draw_players(img, draw, rows, accent)
 
     plate_ink = _ink_on(accent)
     bench_end = draw_bench(draw, team_block.get('sub'), accent, plate_ink)

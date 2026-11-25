@@ -97,8 +97,8 @@ Each worker thread handles one match end-to-end:
   still time to fix it.
 - **Starting XI post** (opt in with `post_lineups`): from the moment the
   worker starts it watches for the published line-ups and posts them as a
-  two-slide carousel, then leaves them alone. It gives up at kickoff + 5 min
-  with a 🙋 alert — see *The starting XI post* below.
+  two-slide carousel once every starter has a grid position, then leaves them
+  alone. It gives up at kickoff + 5 min with a 🙋 alert — see *The starting XI post* below.
 - **Staged photo names get pinned** once both team sheets are published: every
   picture staged under a typed name is matched against the squads and either
   pinned to the feed's player id silently or asked about with buttons — see
@@ -258,7 +258,7 @@ fixture list rather than at full time.
 | `scorecard.py` | Classic template card: stamps crests, score, scorers (+minutes and event symbols), stage text, stadium onto the HT/FT template. Coordinates live at the top of the file as `*_BOX` tuples (picked with `pick_coords.py`). |
 | `overlay_scorebar.py` | Photo card: renders a dark scorebar panel over the bottom of a match photo — crests, big score, team-colored underlines (colors derived from the crest), scorer lines, competition logo on the panel border, penalties strip. |
 | `stats_card.py` | The FT statistics page — slide two of a `post_ft_stats` post. Same template as the scorecard (`scorecard.load_template`, seeded by `match_id`, so both slides share a background) but blurred and veiled, since the page is dense with small marks. Header is the **momentum chart**, not the score: slide one already carries that. Body is a priority-ordered stat list as team-coloured split bars. |
-| `lineup_card.py` | The pre-match starting XI page — one per team, posted as a two-slide carousel before kickoff. Draws the scraper's position grid as a pitch in perspective, each player a shirt in the team's own colours, with the bench, referee and conditions down the left. Falls back to a listed team sheet when the feed publishes names without positions. |
+| `lineup_card.py` | The pre-match starting XI page — one per team, posted as a two-slide carousel before kickoff. Draws the scraper's position grid as a pitch in perspective, each player a shirt in the team's own colours, with the bench, referee and conditions down the left. Draws nothing until every starter has a position — there is no listed fallback. |
 | `carousel.py` | Carousel groups: the Cloudinary manifest store, the dispatcher nudge, and `publish_group`. See *Carousel groups* above. |
 | `caption.py` | Instagram caption via Gemini (2.5-flash → 2.0-flash → plain fallback), fed the score line, events, and the optional hand-written `records` from `matches.json`. The hashtag line comes from `hashtags.py`, not the model. Also writes the caption for a staged event photo, which differs in that the match is still being played and the picture carries no text of its own. |
 | `hashtags.py` | The five hashtags, built in code: competition, home team, away team, then each side's nickname. Names resolve through `logo_fetch`'s canonical slugs, so any spelling yields the same tags. |
@@ -351,12 +351,15 @@ worker starts 30 minutes before, so the card is normally ready on one of its
 first polls. The feed publishes the names first and the grid positions a few
 minutes later, so:
 
-- positions available → the pitch, immediately;
-- names but no positions → **wait**, until 5 minutes before kickoff, then post
-  the XI as a listed **team sheet** in place of the pitch, with the rest of the
-  page unchanged (some competitions never get positions — the feed reports this
-  itself as `formationFlag`);
-- nothing published by kickoff + 5 minutes → give up with a 🙋 alert.
+- every starter on both teams positioned → the pitch, immediately;
+- names but no positions, or only some of them → **keep waiting**. Nothing is
+  posted without the grid: a listed fallback used to go out near kickoff and
+  read as a straight line on the feed, and a half-filled grid would draw the
+  unplaced players as one straight row;
+- still no complete grid by kickoff + 5 minutes → give up with a 🙋 alert that
+  says which it was — no XI at all, or an XI without positions. Some
+  competitions never get positions (the feed reports this itself as
+  `formationFlag`), so those matches get no line-up post.
 
 Nothing here can affect the rest of the match: the HT and FT posts read their
 own state and are never gated on the line-ups. A failed line-up post retries

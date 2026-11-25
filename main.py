@@ -115,7 +115,6 @@ SCRAPER_STALE_SECS  = 15 * 60
 # The feed publishes the names first and the grid positions a few minutes
 # later; the page can draw either, so the wait for positions is bounded rather
 # than open-ended.
-LINEUP_SHEET_FALLBACK_SECS = 5 * 60    # before kickoff, stop holding out for the grid
 LINEUP_DEADLINE_SECS       = 5 * 60    # after kickoff, a starting XI post is stale
 
 # ── Global state ──────────────────────────────────────────────────────────────
@@ -586,21 +585,18 @@ def _lineup_ready(entry: dict, scraper_data: dict, now) -> bool:
     """
     Is there enough team news to post?
 
-    Positions are what makes the pitch, so they are worth waiting for — but not
-    past LINEUP_SHEET_FALLBACK_SECS before kickoff, after which the names alone
-    are posted as a team sheet. Waiting longer would trade a good card for no
-    card at all.
+    Only once both XIs are fully placed on the grid. Names without positions
+    used to go out as a listed team sheet near kickoff, which read as a
+    straight line on the feed — so now the worker keeps waiting for the grid,
+    up to the LINEUP_DEADLINE_SECS cut-off after kickoff, and skips the post
+    if it never comes.
     """
-    if not has_lineups(scraper_data):
-        return False
     if has_positions(scraper_data):
         return True
-    kickoff = datetime.fromisoformat(entry['kickoff_utc'].replace('Z', '+00:00'))
-    late = now >= kickoff - timedelta(seconds=LINEUP_SHEET_FALLBACK_SECS)
-    if late:
+    if has_lineups(scraper_data):
         print(f"[{entry['match_id']}] Lineups published without positions — "
-              f"posting them as a team sheet.")
-    return late
+              f"waiting for the grid.")
+    return False
 
 
 def _run_lineup_pipeline(entry: dict, scraper_data: dict) -> bool:
@@ -1890,11 +1886,18 @@ def match_worker(entry: dict):
                 and not is_event_posted(match_id, 'LINEUPS')):
             if now > kickoff_utc + timedelta(seconds=LINEUP_DEADLINE_SECS):
                 print(f"[{match_id}] Starting XI deadline passed — skipping the line-ups.")
-                matchlog.warn('line-ups skipped',
-                              'no XI was published in time — the match is under way')
+                if has_lineups(scraper_data):
+                    why_log = ('the XIs came without positions — the match is '
+                               'under way')
+                    why = ("the line-ups were published, but never with player "
+                           "positions, so the pitch couldn't be drawn")
+                else:
+                    why_log = 'no XI was published in time — the match is under way'
+                    why = "no starting XI was published in time"
+                matchlog.warn('line-ups skipped', why_log)
                 send_alert(
-                    f"🙋 {_label(entry)}: no starting XI was published in time, "
-                    f"so there's no team-news post for this one.\n\n"
+                    f"🙋 {_label(entry)}: {why}, so there's no team-news post "
+                    f"for this one.\n\n"
                     f"Nothing is broken — the half-time and full-time cards are "
                     f"unaffected and will post as normal.",
                     key=f'{match_id}:lineups-missed', cooldown=3600,
