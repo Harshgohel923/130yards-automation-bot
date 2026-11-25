@@ -521,11 +521,14 @@ def _run_group_pipeline(entry: dict, scraper_data: dict) -> bool:
     return True
 
 
-def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
+def _run_pipeline(entry: dict, event_type: str, scraper_data: dict) -> bool:
     """
     Shared pipeline for both HT and FT:
       scraper_data → scorecard image → Cloudinary → caption → Instagram → DB
     event_type: 'HT' or 'FT'
+
+    Returns True once the card is on Instagram. On False nothing went out, and
+    the caller must leave the moment open so the next poll tries again.
     """
     match_id = entry['match_id']
     print(f"[{match_id}] Running {event_type} pipeline…")
@@ -536,6 +539,7 @@ def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
         print(f"[{match_id}] ✅ {event_type} posted — IG ID: {ig_id}")
         matchlog.log(f'posted {event_type}', f'IG {ig_id}', force=True)
         send_music_reminder(f"{_label(entry)} — {_moment(event_type)}", ig_id)
+        return True
     except Exception as e:
         print(f"[{match_id}] ❌ Pipeline error ({event_type}): {e}")
         matchlog.error(f'{event_type} post failed', f'{type(e).__name__}: {e}')
@@ -548,6 +552,7 @@ def _run_pipeline(entry: dict, event_type: str, scraper_data: dict):
             f"Technical detail: {e}",
             key=f'{match_id}:pipeline:{event_type}', cooldown=600,
         )
+        return False
 
 
 # ── Starting XI pipeline ──────────────────────────────────────────────────────
@@ -1714,6 +1719,10 @@ def match_worker(entry: dict):
             'status':                 'scheduled',
             'ht_posted':              False,
             'ft_posted':              False,
+            # The HT fallback failed at least once / its retries ran out when
+            # the second half began — see the HT TRIGGER section.
+            'ht_failed':              False,
+            'ht_given_up':            False,
             'lineups_posted':         False,
             'early_ht_posted':        False,
             'early_ft_posted':        False,
@@ -1977,6 +1986,32 @@ def match_worker(entry: dict):
                             s['early_ht_events']        = current_events
                             _save_state()
 
+        # ── HT retries ran out ───────────────────────────────────────────────
+        # A failed HT card retries every poll while the scraper reports the
+        # interval. Once play resumes the card is no longer worth posting, so
+        # say so once instead of going quiet.
+        if (raw_status in ('2H', 'ET', 'AP', 'FT')
+                and not ht_posted
+                and not is_event_posted(match_id, 'HT')):
+            with STATE_LOCK:
+                s = MATCH_STATE[match_id]
+                give_up = s.get('ht_failed') and not s.get('ht_given_up')
+                if give_up:
+                    s['ht_given_up'] = True
+                    _save_state()
+            if give_up:
+                print(f"[{match_id}] Second half under way — HT card never posted, giving up on it.")
+                matchlog.warn('HT skipped', 'every half-time attempt failed — '
+                                            'the second half has started')
+                send_alert(
+                    f"🙋 {_label(entry)}: the half-time scorecard never made it "
+                    f"onto Instagram — every retry during the interval failed, "
+                    f"and the second half has now started, so the bot has "
+                    f"stopped trying.\n\n"
+                    f"The full-time card is unaffected and will post as normal.",
+                    key=f'{match_id}:ht-given-up', cooldown=3600,
+                )
+
         # ══════════════════════════════════════════════════════════════════════
         # HT TRIGGER  (scraper reports the interval)
         # ══════════════════════════════════════════════════════════════════════
@@ -2000,9 +2035,15 @@ def match_worker(entry: dict):
                     print(f"[{match_id}] HT confirmed but scorer list lagging — retrying next poll.")
                 else:
                     _save_match_data(entry, scraper_data)
-                    _run_pipeline(entry, 'HT', scraper_data)
+                    # Only a card that actually went out closes the moment —
+                    # otherwise the next poll (a minute on) tries again, for
+                    # as long as the scraper still reports the interval.
+                    ok = _run_pipeline(entry, 'HT', scraper_data)
                     with STATE_LOCK:
-                        MATCH_STATE[match_id]['ht_posted'] = True
+                        if ok:
+                            MATCH_STATE[match_id]['ht_posted'] = True
+                        else:
+                            MATCH_STATE[match_id]['ht_failed'] = True
                         _save_state()
 
         # ══════════════════════════════════════════════════════════════════════
@@ -2098,12 +2139,14 @@ def match_worker(entry: dict):
                     print(f"[{match_id}] FT confirmed but scorer list lagging — retrying next poll.")
                 else:
                     _save_match_data(entry, scraper_data)
-                    _run_pipeline(entry, 'FT', scraper_data)
-                    with STATE_LOCK:
-                        MATCH_STATE[match_id]['ft_posted'] = True
-                        _save_state()
-                    _archive_match_data(entry)
-                    break
+                    # A failed post must not end the worker: stay in the loop
+                    # and try again next poll, until the safety ceiling.
+                    if _run_pipeline(entry, 'FT', scraper_data):
+                        with STATE_LOCK:
+                            MATCH_STATE[match_id]['ft_posted'] = True
+                            _save_state()
+                        _archive_match_data(entry)
+                        break
 
         # ══════════════════════════════════════════════════════════════════════
         # ET / AP HANDLING  (extra time and penalty shootouts)

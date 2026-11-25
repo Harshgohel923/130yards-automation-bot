@@ -110,6 +110,11 @@ Each worker thread handles one match end-to-end:
   changes before the whistle (stoppage-time goal), it deletes the outdated
   post and puts up a corrected card. If the delete fails you get a 🙋 alert
   with the permalink instead — see *Deleting a superseded post*.
+- **Failed posts retry every poll.** A card is only marked posted once
+  Instagram has accepted it. A failed HT card retries every minute while the
+  scraper reports the interval; if the second half starts first, you get one
+  🙋 alert and it stops. A failed FT card retries every minute until it posts
+  or the worker reaches `MAX_MATCH_DURATION`.
 - Handles extra time and penalty shootouts (shootout goals are backed out of
   the FT score; 120' shootout events are excluded from scorer lines).
 - Worker crashes are caught, alerted, and the worker is respawned on the next
