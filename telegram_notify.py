@@ -114,10 +114,19 @@ def send_news(text: str, preview: bool = False) -> bool:
     Link previews are off unless asked for: a digest of five links would
     otherwise be five preview cards. Never raises.
     """
+    return _send_html(text, os.getenv('TELEGRAM_NEWS_CHAT_ID', '').strip() or _chat_id(),
+                      preview)
+
+
+def send_html(text: str, preview: bool = False) -> bool:
+    """An HTML message to the alerts chat — the Weekly Recap. Never raises."""
+    return _send_html(text, _chat_id(), preview)
+
+
+def _send_html(text: str, chat_id: str | None, preview: bool) -> bool:
     token = os.getenv('TELEGRAM_BOT_TOKEN')
-    chat_id = os.getenv('TELEGRAM_NEWS_CHAT_ID', '').strip() or _chat_id()
     if not token or not chat_id:
-        print(f'[telegram_notify] Not configured — news dropped:\n{text}')
+        print(f'[telegram_notify] Not configured — message dropped:\n{text}')
         return False
     try:
         res = requests.post(
@@ -126,11 +135,11 @@ def send_news(text: str, preview: bool = False) -> bool:
                   'disable_web_page_preview': 'false' if preview else 'true'},
             timeout=10)
         if not res.ok:
-            print(f'[telegram_notify] news send failed (HTTP {res.status_code}): '
+            print(f'[telegram_notify] HTML send failed (HTTP {res.status_code}): '
                   f'{res.text[:200]}')
         return res.ok
     except Exception as e:
-        print(f'[telegram_notify] news send error: {e}')
+        print(f'[telegram_notify] HTML send error: {e}')
         return False
 
 

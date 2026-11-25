@@ -2042,6 +2042,26 @@ league news to the group as **post ideas**:
   chat. `NEWS_ENABLED=0` switches it off. If Gemini is down, the headlines wait
   for the next run. Try it without sending: `python news.py --dry-run`.
 
+## Weekly Recap — who sent the photos
+
+Every photo uploaded through the bot is credited to the person who sent it
+(`leaderboard.py`): HT and FT backgrounds, staged event photos, FT carousel
+extras, and new photos after the scoreline changed. **Re-uploads count too**
+(Cloudinary reports when an upload replaced an existing picture) and are
+shown separately. Counts are kept per ISO week, German time, by Telegram user
+id (a renamed account keeps its total), in `stats/uploads.json` on
+Cloudinary, for 8 weeks.
+
+Every **Monday from 09:00 German time** the dispatcher posts last week's table
+to the group, once:
+
+```
+🏆 Weekly Recap — 23–29 Nov
+🥇 Harsh — 14 photos (HT 4 · FT 6 · events 3 · carousel 1) — incl. 2 re-uploads
+🥈 Sam — 6 photos (FT 4 · events 2)
+Total: 20 photos from 2 people. Thanks all 👏
+```
+
 ## Telegram alerts
 
 Every failure point alerts you with a plain-language description and its

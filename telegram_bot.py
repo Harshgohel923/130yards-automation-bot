@@ -375,6 +375,7 @@ async def keep_alive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         user = update.effective_user
         if user is not None and context.chat_data is not None:
             context.chat_data['last_user'] = user.first_name or user.username or ''
+            context.chat_data['last_user_id'] = user.id
 
 
 def _allowed(update: Update) -> bool:
@@ -539,6 +540,7 @@ async def _upload_photo(msg, context, match: dict, event_type: str,
             invalidate=True,   # purge CDN cache when replacing a photo
             **({'context': meta} if meta else {}),
         )
+        await _count_upload(context, result)
     except Exception as e:
         log.exception("Photo upload failed for %s", public_id)
         await msg.reply_text(
@@ -676,6 +678,22 @@ async def extra_photo_received(update: Update, context: ContextTypes.DEFAULT_TYP
     if not ok:
         return EXTRA_WAIT
     return await _extra_menu(msg, context)
+
+
+async def _count_upload(context: ContextTypes.DEFAULT_TYPE, result: dict) -> None:
+    """Credit an upload to whoever sent it, for the Monday Weekly Recap
+    (leaderboard.py). Cloudinary says when it replaced an existing picture —
+    that's a re-upload, counted too. Never lets a counting problem touch the
+    upload itself."""
+    import leaderboard
+    chat = context.chat_data or {}
+    try:
+        await asyncio.to_thread(
+            leaderboard.record_upload, chat.get('last_user_id'),
+            chat.get('last_user', ''), result.get('public_id', ''),
+            bool(result.get('overwritten')))
+    except Exception as e:
+        log.warning("Could not count an upload for the weekly recap: %s", e)
 
 
 # ── "There's already a photo there" ─────────────────────────────────────────

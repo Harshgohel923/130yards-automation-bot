@@ -11,6 +11,7 @@ The values below are placeholders and nothing in the suite reaches the network.
 setdefault, not assignment, so a real environment is left alone.
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -38,3 +39,14 @@ def _no_photo_lookups_from_the_worker(monkeypatch):
     unless a test sets it — tests/test_story_photo.py does."""
     import main
     monkeypatch.setattr(main, 'match_photo_exists', lambda *a, **k: False)
+
+
+@pytest.fixture(autouse=True)
+def _in_memory_leaderboard(monkeypatch):
+    """Uploads are counted for the weekly recap (leaderboard.py), which keeps
+    its numbers on Cloudinary. Tests get an in-memory store instead."""
+    import leaderboard
+    store = {'stats': {}}
+    monkeypatch.setattr(leaderboard, 'load', lambda: json.loads(json.dumps(store['stats'])))
+    monkeypatch.setattr(leaderboard, 'save', lambda s: store.__setitem__('stats', s))
+    return store

@@ -341,6 +341,17 @@ def publish_carousel_groups(registry: list):
                 pass
 
 
+def publish_weekly_recap() -> None:
+    """Last week's photo leaderboard, Monday from 09:00 German time, once.
+    Never raises, so it can't stop match dispatching."""
+    try:
+        import leaderboard
+        if leaderboard.maybe_send_weekly_recap():
+            note('- 🏆 weekly recap sent')
+    except Exception as e:
+        print(f'[dispatcher] WARNING: weekly recap failed: {e}')
+
+
 def publish_news() -> None:
     """Breaking news now, regular news hourly — see news.py. Never raises:
     imported lazily and wrapped, so news can never stop match dispatching.
@@ -647,6 +658,9 @@ def main():
     # slow feed or a Gemini hiccup never delays anything above; it limits itself
     # to one run per 15 minutes however often the dispatcher is woken.
     publish_news()
+
+    # Monday's Weekly Recap of who sent the photos (leaderboard.py) — once a week.
+    publish_weekly_recap()
 
     # Then tidy the registry. After publishing, so a group that just went out
     # stops holding its fixtures back.
