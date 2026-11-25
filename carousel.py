@@ -33,6 +33,7 @@ in a Telegram alert which matches were left out.
 import io
 import json
 import os
+import time
 from datetime import datetime, timedelta, timezone
 
 import cloudinary
@@ -47,7 +48,9 @@ from caption import generate_group_caption
 from caption import _summarise_events
 from instagram import (CAROUSEL_MAX_ITEMS, CAROUSEL_MIN_ITEMS,
                        post_carousel_to_instagram, post_to_instagram)
-from telegram_notify import send_alert, send_music_reminder
+import carousel_order
+from telegram_notify import (edit_message, send_alert, send_choice,
+                             send_music_reminder)
 
 load_dotenv()
 
@@ -405,6 +408,8 @@ def publish_group(group: str, entries: list[dict], now: datetime | None = None) 
             key=f'carousel:{group}:oversized', cooldown=86400,
         )
 
+    ordered = _ask_for_order(group, entries, ordered)
+
     urls = [m['image_url'] for m in ordered if m.get('image_url')]
     caption = generate_group_caption(ordered)
 
@@ -424,6 +429,31 @@ def publish_group(group: str, entries: list[dict], now: datetime | None = None) 
         f"The '{group}' carousel — {len(urls)} "
         f"{'matches' if len(urls) != 1 else 'match'}", ig_id)
     return ig_id
+
+
+def _ask_for_order(group: str, entries: list[dict],
+                   ordered: list[dict]) -> list[dict]:
+    """
+    Let a person reorder the slides over Telegram before the group posts.
+
+    Blocks until the order is settled — at least a minute when nobody answers,
+    since that minute is the chance to answer. Any failure keeps the default
+    order: choosing an order is a nicety, and it must never cost the post.
+    """
+    ids = [str(m['match_id']) for m in ordered]
+    labels = [f"{m.get('home_team', '?')} vs {m.get('away_team', '?')}"
+              for m in ordered]
+    try:
+        order = carousel_order.choose_order(
+            group, _group_root(group, entries), ids, labels,
+            send_choice=send_choice, edit_message=edit_message,
+            sleep=time.sleep)
+    except Exception as e:
+        print(f'[carousel] {group}: could not ask for the order ({e}) — '
+              f'keeping it as listed.')
+        return ordered
+    by_id = {str(m['match_id']): m for m in ordered}
+    return [by_id[i] for i in order if i in by_id]
 
 
 def nudge_dispatcher() -> bool:

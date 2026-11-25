@@ -1693,6 +1693,40 @@ async def staged_drop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 # compute from the picture itself: a digest of its public_id, and the id of
 # the player being offered. See event_photos.digest and main._ask_who_it_is.
 
+async def carousel_order_tap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """A tap on the dispatcher's "which order?" buttons for a carousel group.
+
+    The dispatcher is waiting on the answer in another process; the tap is
+    recorded on Cloudinary, where it reads it — see carousel_order.py.
+    """
+    query = update.callback_query
+    if not _allowed(update):
+        await query.answer("Not authorized.", show_alert=True)
+        return
+    await query.answer()
+
+    import carousel_order
+    try:
+        text, options = await asyncio.to_thread(carousel_order.record_tap,
+                                                query.data)
+    except Exception as e:
+        log.warning("Could not record a carousel order tap: %s", e)
+        await query.message.reply_text(
+            f"I couldn't save that: {e}\n\nTap it again in a moment — the "
+            f"carousel waits a minute after your last tap."
+        )
+        return
+
+    markup = (InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=data)]
+                                    for label, data in options])
+              if options else None)
+    try:
+        await query.edit_message_text(text, reply_markup=markup)
+    except Exception as e:
+        # "Message is not modified" when the same button is tapped twice.
+        log.info("Carousel order message not edited: %s", e)
+
+
 async def staged_clarify(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """A tap on one of the worker's "who is this?" buttons."""
     query = update.callback_query
@@ -3165,6 +3199,7 @@ def main() -> None:
     app.add_handler(CommandHandler('staged', staged_cmd))
     app.add_handler(CallbackQueryHandler(staged_drop, pattern=r'^sd:'))
     app.add_handler(CallbackQueryHandler(staged_clarify, pattern=r'^ec:'))
+    app.add_handler(CallbackQueryHandler(carousel_order_tap, pattern=r'^co:'))
     # Group -1 runs first and consumes nothing — see keep_alive.
     app.add_handler(MessageHandler(filters.ALL, keep_alive), group=-1)
     app.add_handler(CallbackQueryHandler(keep_alive), group=-1)

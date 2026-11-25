@@ -37,7 +37,7 @@ def send_alert(text: str, key: str | None = None, cooldown: int = 0) -> None:
 
 
 def send_choice(text: str, options: list[tuple[str, str]],
-                key: str | None = None, cooldown: int = 0) -> None:
+                key: str | None = None, cooldown: int = 0) -> int | None:
     """
     An alert with tappable answers: [(button label, callback_data), ...].
 
@@ -51,16 +51,47 @@ def send_choice(text: str, options: list[tuple[str, str]],
 
     A question nobody can answer is still worth asking, so a failure to attach
     the keyboard is never fatal — the text goes either way.
+
+    Returns the sent message's id, so the sender can edit it later (see
+    edit_message), or None if nothing went out.
     """
     keyboard = {'inline_keyboard': [[{'text': label, 'callback_data': data}]
                                     for label, data in options]}
-    _send(text, key=key, cooldown=cooldown,
-          reply_markup=json.dumps(keyboard))
+    return _send(text, key=key, cooldown=cooldown,
+                 reply_markup=json.dumps(keyboard))
+
+
+def edit_message(message_id: int, text: str) -> bool:
+    """
+    Replace the text of a message this bot sent, removing its buttons.
+
+    For a question the sender has stopped waiting on — the buttons must not
+    stay tappable once the answer can no longer change anything. Never raises.
+    """
+    token   = os.getenv('TELEGRAM_BOT_TOKEN')
+    chat_id = _chat_id()
+    if not token or not chat_id or not message_id:
+        return False
+    try:
+        res = requests.post(
+            f'https://api.telegram.org/bot{token}/editMessageText',
+            data={'chat_id': chat_id, 'message_id': message_id, 'text': text,
+                  'reply_markup': json.dumps({'inline_keyboard': []})},
+            timeout=10,
+        )
+        if not res.ok:
+            print(f'[telegram_notify] editMessageText failed '
+                  f'(HTTP {res.status_code}): {res.text[:200]}')
+        return res.ok
+    except Exception as e:
+        print(f'[telegram_notify] editMessageText error: {e}')
+        return False
 
 
 def _send(text: str, key: str | None = None, cooldown: int = 0,
-          reply_markup: str | None = None) -> None:
-    """The one place anything is actually sent. Never raises."""
+          reply_markup: str | None = None) -> int | None:
+    """The one place anything is actually sent. Never raises. Returns the
+    message id when Telegram accepted it."""
     if cooldown:
         k = key or text
         now = time.time()
@@ -88,8 +119,11 @@ def _send(text: str, key: str | None = None, cooldown: int = 0,
         if not res.ok:
             print(f'[telegram_notify] sendMessage failed '
                   f'(HTTP {res.status_code}): {res.text[:200]}')
+            return None
+        return (res.json().get('result') or {}).get('message_id')
     except Exception as e:
         print(f'[telegram_notify] sendMessage error: {e}')
+        return None
 
 
 def send_music_reminder(description: str, media_id: str | None = None) -> None:

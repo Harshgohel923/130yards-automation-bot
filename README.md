@@ -232,6 +232,19 @@ carry on after that. If a member's card is still missing (that match is still
 being played), the watch is left to that match's worker, which takes it over
 when it hands its own card in.
 
+**Choosing the slide order.** Before a group posts, the dispatcher sends you
+the matches in their default order (kickoff time) with a button each
+(`carousel_order.py`). Tap the match you want as slide 1, then slide 2, and so
+on — or **Post in this order** to keep it. The order is complete when one
+match is left, or when you tap **Rest as listed**; it posts straight away.
+If nobody taps for **a minute** (`IDLE_SECS`), it posts with whatever was
+picked first and the rest as listed — each tap restarts that minute, capped at
+10 minutes in all. The bot records each tap on Cloudinary
+(`carousel/order/<id>.json`), which is where the waiting dispatcher reads it;
+the decision is kept there too, so a retry after a failed post reuses it
+instead of asking again. A one-match group isn't asked about, and if the
+question can't be sent at all the group posts in the default order.
+
 **If a member never arrives**, the group still posts. Four hours after the last
 kickoff in the group (`GROUP_TIMEOUT_HOURS`), the dispatcher posts what it has
 and Telegram-alerts which matches were left out.
