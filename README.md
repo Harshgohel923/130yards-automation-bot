@@ -774,6 +774,15 @@ rendered. The Markdown in git is the permanent copy.
 
 ## The Telegram bot, step by step
 
+**`/help` and `/info`** are the bot's manual for the people using it
+(`help_text.py`): a short intro and cheat sheet, with a button per topic —
+scorecard photo, FT extra photos, event photo, making a card, during a match,
+carousels, news, Weekly Recap, what the messages mean, all commands. Tapping a
+topic swaps the message for its full step-by-step explanation, with a button
+back, so reading it doesn't fill the chat. **When a feature changes, update
+its topic** — `tests/test_help_text.py` checks every topic fits one Telegram
+message, uses valid HTML and still mentions the features it should.
+
 `telegram_bot.py` runs four flows in three conversations, plus two commands
 that belong to no conversation at all — `/batch` and `/staged`, each a list
 with buttons on it. Two of the flows attach a photo to a fixture the scraper is

@@ -211,7 +211,8 @@ BOT_COMMANDS = [
     BotCommand('batch', 'Cards waiting to be posted together'),
     BotCommand('list', 'Every fixture in the registry, with what will post'),
     BotCommand('cancel', 'Abandon whatever is in progress'),
-    BotCommand('help', 'What this bot accepts'),
+    BotCommand('help', 'How everything works — tap a topic'),
+    BotCommand('info', 'Same as /help'),
 ]
 KNOWN_COMMANDS = tuple(c.command for c in BOT_COMMANDS)
 
@@ -254,81 +255,9 @@ UNKNOWN_COMMAND_FILTER = filters.COMMAND & ~filters.Regex(
 # exists to help with: two of the three flows take a photo, and which one you
 # want depends entirely on what the photo is meant to *do* — sit under a
 # scorecard, or be the post. That question is answered before anything else.
-HELP_TEXT = (
-    "*What I do*\n"
-    "Three jobs. Two of them take a photo — which one you want depends on "
-    "what the photo is meant to do.\n"
-    "\n"
-    "*📸 Scorecard photo*  —  /start\n"
-    "The background the half-time or full-time card is drawn on. I put the "
-    "score, the crests and the scorers over the top of it. One per match per "
-    "moment; sending another replaces it. Send nothing and the card still "
-    "posts — on the standard template instead.\n"
-    "\n"
-    "*🎯 Event photo*  —  /event\n"
-    "A photo held for one player's moment: Messi scoring, Ronaldo completing "
-    "a hat-trick, Neymar sent off. "
-    "Nothing is drawn on it. If that moment happens during the match, the "
-    "photo posts on its own with its own caption, exactly as you sent it. If "
-    "it never happens, nothing is posted and the photo is deleted at full "
-    "time.\n"
-    "\n"
-    "*🆕 Manual card*  —  /card\n"
-    "A whole match card typed in from scratch, for a fixture the scraper "
-    "doesn't cover. I render it and send it to you; posting is a separate tap "
-    "that never happens on its own. /batch is the pile waiting to go out "
-    "together.\n"
-    "\n"
-    "*Which photo is which*\n"
-    "The photo goes _under_ a scorecard  →  /start\n"
-    "The photo _is_ the post  →  /event\n"
-    "\n"
-    "*Staging an event photo*\n"
-    "/event → the match → what has to happen → the team → the player → the "
-    "photo.\n"
-    "After each one you can add another player, switch to the other team or "
-    "change the event without picking the match again.\n"
-    "Stage them as early as you like, as long as the fixture is in the list. "
-    "The squad only appears about an hour before kickoff; before that you type "
-    "the name instead, which works just as well — accents and capitals are "
-    "folded away, so `messi` finds Messi.\n"
-    "One photo per player per event. ⚽ Goal fires on their first goal; for a "
-    "second or a third there are ⚽⚽ Brace and ⚽⚽⚽ Hat-trick, which fire the "
-    "moment that goal goes in. Stage all three for one player if you want and "
-    "all three post — but each is a separate Instagram post, so stage what's "
-    "worth posting.\n"
-    "🅰️ Assist fires on the goal the player set up — so the scorer's photo and "
-    "the assister's photo both go out for the same goal, as two posts. Own "
-    "goals never count as assisted.\n"
-    "\n"
-    "*What's armed*  —  /staged\n"
-    "The photos waiting on a moment, fixture by fixture, with a ❌ on each. "
-    "Tapping it is the only safe way to take one back down — deleting the "
-    "file in Cloudinary by hand is the same thing with nothing checking which "
-    "match you're deleting from. Everything still armed at full time is "
-    "cleared automatically.\n"
-    "\n"
-    "*Sending a photo with no command*\n"
-    "It becomes a scorecard background — I'll ask which match and whether it's "
-    "half time or full time. Use /event if you meant a player's moment.\n"
-    "\n"
-    "*The fixture list*  —  /list\n"
-    "Every fixture in the registry, earliest first: kick-off in German and "
-    "Indian time, whether lineups and the half-time card will post, and which "
-    "matches share a carousel. Reading only — fixtures are added in "
-    "matches.json, not here.\n"
-    "\n"
-    "*Anything else*\n"
-    "/cancel drops whatever is in progress.\n"
-    "/help is this message.\n"
-    "\n"
-    "Everything I do is a command — ☰ next to the message box lists them, and "
-    "typing / offers the same list. Anything I ask mid-flow comes as buttons "
-    "on the question itself.\n"
-    "Typed text only means something where a step asks for it — a player's "
-    "name, or anything /card wants. Everywhere else it does nothing, and I'll "
-    "say so rather than act on it."
-)
+# The manual lives in help_text.py: a short intro with a button per topic,
+# and each topic in full. HELP_TEXT is the whole thing joined, for reference.
+from help_text import HELP_INTRO, HELP_TEXT, HELP_TOPICS, TOPIC_TEXT  # noqa: E402
 
 # What the catch-all below answers: everything the conversation never looks at.
 # Handlers in different groups all get a turn at the same update, so this has
@@ -1030,13 +959,42 @@ async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(chunk)
 
 
+def _help_keyboard() -> InlineKeyboardMarkup:
+    """A button per topic, two to a row."""
+    buttons = [InlineKeyboardButton(label, callback_data=f"help:{key}")
+               for key, label, _text in HELP_TOPICS]
+    return InlineKeyboardMarkup([buttons[i:i + 2] for i in range(0, len(buttons), 2)])
+
+
+BACK_TO_TOPICS = InlineKeyboardMarkup([[InlineKeyboardButton(
+    "⬅️ All topics", callback_data="help:menu")]])
+
+
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/help — also the answer to anything the bot doesn't understand."""
+    """/help and /info — the intro, with a button per topic."""
     if not _allowed(update):
         await update.message.reply_text("Not authorized.")
         return
     await _clear_keyboard(update.message, context)
-    await update.message.reply_text(HELP_TEXT, parse_mode='Markdown')
+    await update.message.reply_text(HELP_INTRO, parse_mode='HTML',
+                                    reply_markup=_help_keyboard())
+
+
+async def help_topic(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """A topic button: swap the message for that topic (or back to the intro),
+    so reading the manual doesn't fill the chat."""
+    query = update.callback_query
+    await query.answer()
+    key = query.data.split(':', 1)[1]
+    if key == 'menu' or key not in TOPIC_TEXT:
+        text, markup = HELP_INTRO, _help_keyboard()
+    else:
+        text, markup = TOPIC_TEXT[key], BACK_TO_TOPICS
+    try:
+        await query.edit_message_text(text, parse_mode='HTML', reply_markup=markup,
+                                      disable_web_page_preview=True)
+    except Exception as e:
+        log.info("Help message not edited: %s", e)
 
 
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1045,8 +1003,8 @@ async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     await _clear_keyboard(update.message, context)
     await update.message.reply_text(
-        f"I don't have that command.\n\n{HELP_TEXT}",
-        parse_mode='Markdown',
+        f"I don't have that command.\n\n{HELP_INTRO}",
+        parse_mode='HTML', reply_markup=_help_keyboard(),
     )
 
 
@@ -3639,6 +3597,7 @@ def main() -> None:
     common_fallbacks = [
         CommandHandler('cancel', cancel),
         CommandHandler('help', help_cmd),
+        CommandHandler('info', help_cmd),
         CommandHandler('batch', batch_cmd),
     ]
 
@@ -3800,6 +3759,9 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(ht_bg_template, pattern=r'^htbg:'))
     # Outside any conversation these still have to answer.
     app.add_handler(CommandHandler('help', help_cmd))
+    app.add_handler(CommandHandler('info', help_cmd))
+    # Topic buttons work anywhere — mid-flow too, since they only show text.
+    app.add_handler(CallbackQueryHandler(help_topic, pattern=r'^help:'))
     app.add_handler(CommandHandler('cancel', cancel))
     app.add_handler(CommandHandler('batch', batch_cmd))
     app.add_handler(CommandHandler('list', list_cmd))
