@@ -2071,7 +2071,10 @@ Thanks all 👏
 ```
 
 People appear as **Name (@username)** — the @username makes Telegram notify
-them.
+them. **Everyone** in the group appears in both sections — the roster is the
+bot's allowed users (`TELEGRAM_ALLOWED_USER_IDS`), looked up on Telegram for
+their current name and @username when the recap is sent. Anyone on zero is
+listed last as **🫵 LOSER: Name (@username) — 0 photos** (or 0 posts).
 
 **Credit for bot posts** (`post_credit.py`): when the bot publishes, it files
 who contributed — one JSON per post at `stats/posts/<week>/<media id>.json`:

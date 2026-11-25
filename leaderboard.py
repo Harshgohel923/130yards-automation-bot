@@ -152,19 +152,55 @@ def who(person: dict) -> str:
     return f"{name} (@{person['username']})" if person.get('username') else name
 
 
+LOSER = '🫵 <b>LOSER</b>'
+
+
+def roster(lookup=None) -> list[dict]:
+    """Everyone who should appear in the recap: the bot's allowed users, with
+    their current name and @username from Telegram. A lookup that fails keeps
+    the person in, under their id, rather than quietly dropping them."""
+    if lookup is None:
+        from telegram_notify import chat_member as lookup
+    people = []
+    for uid in [x.strip() for x in os.getenv('TELEGRAM_ALLOWED_USER_IDS', '').split(',')
+                if x.strip()]:
+        people.append(lookup(uid) or {'id': uid, 'name': f'user {uid}', 'username': ''})
+    return people
+
+
+def _with_everyone(rows: dict, people: list[dict], zero: dict) -> dict:
+    """rows keyed by person, plus a zero row for everyone in the roster who has
+    none. Rows that came from the roster pick up its current @username."""
+    rows = {k: dict(v) for k, v in rows.items()}
+    for person in people:
+        key = str(person['id'])
+        if key in rows:
+            if person.get('username'):
+                rows[key]['username'] = person['username']
+            continue
+        rows[key] = dict(zero, name=person.get('name', 'someone'),
+                         username=person.get('username', ''))
+    return rows
+
+
 def _count(n: int, word: str) -> str:
     return f"{n:,} {word}{'s' if n != 1 else ''}"
 
 
-def credit_lines(credit: dict) -> list[str]:
-    """The "how did the posts do" section, from post_credit.weekly_credit."""
-    people = sorted(credit.values(),
-                    key=lambda p: (p.get('reach', 0), p.get('likes', 0), p['posts']),
-                    reverse=True)
+def credit_lines(credit: dict, people_list: list[dict] | None = None) -> list[str]:
+    """The "how did the posts do" section, from post_credit.weekly_credit.
+    Everyone in the roster appears; anyone with no posts is the LOSER."""
+    rows = _with_everyone(credit, people_list or [], {'posts': 0})
+    people = sorted(rows.values(),
+                    key=lambda p: (p['posts'] > 0, p.get('reach', 0), p.get('likes', 0),
+                                   p['posts']), reverse=True)
     if not people:
         return []
     lines = ['', '📈 <b>Posts your photos went into</b>', '']
     for n, p in enumerate(people):
+        if not p['posts']:
+            lines.append(f"{LOSER}: {who(p)} — 0 posts")
+            continue
         medal = MEDALS[n] if n < len(MEDALS) else f'{n + 1}.'
         bits = [_count(p['posts'], 'post'), _count(p.get('likes', 0), 'like'),
                 _count(p.get('comments', 0), 'comment')]
@@ -176,16 +212,22 @@ def credit_lines(credit: dict) -> list[str]:
     return lines
 
 
-def recap_text(week: dict, key: str, credit: dict | None = None) -> str:
-    """HTML for Telegram."""
+def recap_text(week: dict, key: str, credit: dict | None = None,
+               people_list: list[dict] | None = None) -> str:
+    """HTML for Telegram. Everyone in people_list appears in both sections,
+    whatever they did — and anyone on zero is the LOSER."""
     title = f"🏆 <b>Weekly Recap</b> — {week_range(key)}"
-    people = sorted(week.values(), key=lambda p: (p.get('total', 0), p.get('reuploads', 0)),
+    rows = _with_everyone(week, people_list or [], {'total': 0})
+    people = sorted(rows.values(), key=lambda p: (p.get('total', 0), p.get('reuploads', 0)),
                     reverse=True)
-    extra = credit_lines(credit or {})
+    extra = credit_lines(credit or {}, people_list)
     if not people:
         return '\n'.join([title, '', 'No photos were sent through the bot last week.'] + extra)
     lines = [title, '', '📸 <b>Photos sent through the bot</b>', '']
     for n, p in enumerate(people):
+        if not p.get('total'):
+            lines.append(f"{LOSER}: {who(p)} — 0 photos")
+            continue
         medal = MEDALS[n] if n < len(MEDALS) else f'{n + 1}.'
         parts = ' · '.join(f"{KIND_LABEL[k]} {p[k]}" for k in KINDS if p.get(k))
         redo = (f" — incl. {p['reuploads']} re-upload{'s' if p['reuploads'] != 1 else ''}"
@@ -194,8 +236,9 @@ def recap_text(week: dict, key: str, credit: dict | None = None) -> str:
         lines.append(f"{medal} {who(p)} — "
                      f"{total} photo{'s' if total != 1 else ''} ({parts}){redo}")
     grand = sum(p.get('total', 0) for p in people)
+    senders = sum(1 for p in people if p.get('total'))
     lines += ['', f"Total: {grand} photo{'s' if grand != 1 else ''} from "
-                  f"{len(people)} {'people' if len(people) != 1 else 'person'}."]
+                  f"{senders} {'people' if senders != 1 else 'person'}."]
     lines += extra
     lines += ['', 'Thanks all 👏']
     return '\n'.join(lines)
@@ -231,7 +274,12 @@ def maybe_send_weekly_recap(now: float | None = None, send=None) -> bool:
     except Exception as e:
         print(f'[leaderboard] Post credit unavailable ({e}) — recap without it.')
         credit = {}
-    if not send(recap_text(stats.get('weeks', {}).get(week, {}), week, credit)):
+    try:
+        everyone = roster()
+    except Exception as e:
+        print(f'[leaderboard] Could not look up the group ({e}) — recap of senders only.')
+        everyone = []
+    if not send(recap_text(stats.get('weeks', {}).get(week, {}), week, credit, everyone)):
         return False                     # try again on the next tick
     stats['last_recap'] = week
     save(stats)

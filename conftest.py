@@ -63,3 +63,11 @@ def _offline_post_credit(monkeypatch):
     def offline():
         raise RuntimeError('no Cloudinary in tests')
     monkeypatch.setattr(post_credit, '_cloudinary', offline)
+
+
+@pytest.fixture(autouse=True)
+def _no_telegram_member_lookups(monkeypatch):
+    """The Monday recap looks every allowed user up on Telegram (roster). No
+    network in tests: lookups find nobody, and tests that care set a roster."""
+    import telegram_notify
+    monkeypatch.setattr(telegram_notify, 'chat_member', lambda *a, **k: None)

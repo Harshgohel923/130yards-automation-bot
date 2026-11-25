@@ -173,3 +173,55 @@ def test_the_dispatcher_sends_the_recap(monkeypatch):
     monkeypatch.setattr(lb, 'maybe_send_weekly_recap', lambda: calls.append(1) or False)
     dispatcher.publish_weekly_recap()
     assert calls == [1]
+
+
+# ── Everyone appears — and zero means LOSER ──────────────────────────────────
+
+GROUP = [{'id': '1329280363', 'name': 'Harsh Gohel', 'username': 'Gohellllll'},
+         {'id': '1244357046', 'name': 'Kishan Jaiswal', 'username': 'Jswlkishann'},
+         {'id': '1271500818', 'name': 'Yash', 'username': 'Yashulllaaa'}]
+
+
+def test_everyone_appears_and_zero_is_a_loser():
+    week = {'1329280363': {'name': 'Harsh', 'FT': 2, 'total': 2}}
+    credit = {'1271500818': {'name': 'Yash', 'username': 'Yashulllaaa', 'posts': 1,
+                             'likes': 9, 'comments': 0}}
+    lines = lb.recap_text(week, '2026-W48', credit, GROUP).splitlines()
+    photos = lines[lines.index('📸 <b>Photos sent through the bot</b>'):]
+    assert '🥇 <b>Harsh</b> (@Gohellllll) — 2 photos (FT 2)' in photos
+    assert '🫵 <b>LOSER</b>: <b>Kishan Jaiswal</b> (@Jswlkishann) — 0 photos' in photos
+    assert '🫵 <b>LOSER</b>: <b>Yash</b> (@Yashulllaaa) — 0 photos' in photos
+    assert 'Total: 2 photos from 1 person.' in photos          # losers don't count
+    posts = lines[lines.index('📈 <b>Posts your photos went into</b>'):]
+    assert '🥇 <b>Yash</b> (@Yashulllaaa) — 1 post · 9 likes · 0 comments' in posts
+    assert '🫵 <b>LOSER</b>: <b>Harsh Gohel</b> (@Gohellllll) — 0 posts' in posts
+    assert '🫵 <b>LOSER</b>: <b>Kishan Jaiswal</b> (@Jswlkishann) — 0 posts' in posts
+
+
+def test_losers_come_after_everyone_with_a_score():
+    week = {'1244357046': {'name': 'Kishan', 'HT': 1, 'total': 1}}
+    lines = lb.recap_text(week, '2026-W48', {}, GROUP).splitlines()
+    first_loser = next(i for i, l in enumerate(lines) if 'LOSER' in l)
+    medal = next(i for i, l in enumerate(lines) if l.startswith('🥇'))
+    assert medal < first_loser
+
+
+def test_a_whole_week_of_losers():
+    text = lb.recap_text({}, '2026-W48', {}, GROUP)
+    assert text.count('LOSER') == 6                  # three people, both sections
+    assert 'Total: 0 photos from 0 people.' in text
+
+
+def test_the_roster_keeps_someone_telegram_could_not_find(monkeypatch):
+    monkeypatch.setenv('TELEGRAM_ALLOWED_USER_IDS', '1, 2')
+    people = lb.roster(lookup=lambda uid: GROUP[0] if uid == '1' else None)
+    assert people == [GROUP[0], {'id': '2', 'name': 'user 2', 'username': ''}]
+
+
+def test_the_monday_recap_includes_the_whole_group(_in_memory_leaderboard, monkeypatch):
+    monkeypatch.setattr(lb, 'roster', lambda: GROUP)
+    sent = []
+    lb.maybe_send_weekly_recap(now=at('2026-11-30T09:05:00'),
+                               send=lambda text: sent.append(text) or True)
+    assert sent[0].count('LOSER') == 6
+    assert '@Jswlkishann' in sent[0]

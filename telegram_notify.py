@@ -118,6 +118,24 @@ def send_news(text: str, preview: bool = False) -> bool:
                       preview)
 
 
+def chat_member(user_id) -> dict | None:
+    """{id, name, username} for a member of the alerts chat, or None. Never raises."""
+    token, chat_id = os.getenv('TELEGRAM_BOT_TOKEN'), _chat_id()
+    if not token or not chat_id:
+        return None
+    try:
+        res = requests.get(f'https://api.telegram.org/bot{token}/getChatMember',
+                           params={'chat_id': chat_id, 'user_id': user_id}, timeout=10)
+        user = (res.json().get('result') or {}).get('user') if res.ok else None
+    except Exception:
+        return None
+    if not user:
+        return None
+    name = ' '.join(x for x in (user.get('first_name'), user.get('last_name')) if x)
+    return {'id': str(user['id']), 'name': name or user.get('username') or 'someone',
+            'username': user.get('username', '')}
+
+
 def send_html(text: str, preview: bool = False) -> bool:
     """An HTML message to the alerts chat — the Weekly Recap. Never raises."""
     return _send_html(text, _chat_id(), preview)
