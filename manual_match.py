@@ -54,6 +54,8 @@ EVENT_ALIASES = {
     'og': 'own_goal', 'own': 'own_goal', 'own goal': 'own_goal',
     'red': 'red_card', 'r': 'red_card', 'rc': 'red_card',
     'red card': 'red_card', 'sent off': 'red_card',
+    'second yellow': 'red_card', '2y': 'red_card', 'yr': 'red_card',
+    'double yellow': 'red_card', 'two yellows': 'red_card',
     'miss': 'penalty_missed', 'missed': 'penalty_missed',
     'pm': 'penalty_missed', 'penalty missed': 'penalty_missed',
     'missed penalty': 'penalty_missed',
