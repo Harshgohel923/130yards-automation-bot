@@ -594,7 +594,8 @@ def _watch_group_publish(entry: dict, until: datetime) -> None:
 def _ht_wanted_on_request(entry: dict, current_score) -> bool:
     """
     For a fixture with post_ht off: ask at the whistle whether to post an HT
-    card anyway, and report whether the answer so far is yes.
+    card anyway, and report whether the answer so far is yes. Never called for
+    a carousel-group match — the caller leaves those out.
 
     Asks once. Each later poll during the interval reads the answer the bot
     recorded (see ht_optin.py) until there is one. Only ever called while the
@@ -2168,8 +2169,10 @@ def match_worker(entry: dict):
                     with STATE_LOCK:
                         MATCH_STATE[match_id]['ht_posted'] = True
                         _save_state()
+            # A carousel-group match isn't asked: its posts belong to the group.
             elif (entry.get('post_ht', True)
-                    or _ht_wanted_on_request(entry, current_score)):
+                    or (group is None
+                        and _ht_wanted_on_request(entry, current_score))):
                 print(f"[{match_id}] HT confirmed — running fallback HT pipeline…")
                 if _wait_for_scorers(match_id, lagging):
                     print(f"[{match_id}] HT confirmed but scorer list lagging — retrying next poll.")

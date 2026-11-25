@@ -110,7 +110,8 @@ Each worker thread handles one match end-to-end:
   changes before the whistle (stoppage-time goal), it deletes the outdated
   post and puts up a corrected card. If the delete fails you get a 🙋 alert
   with the permalink instead — see *Deleting a superseded post*.
-- **HT card on request**: a fixture with `"post_ht": false` still gets a 🙋
+- **HT card on request**: a fixture with `"post_ht": false` (and no
+  `carousel_group` — grouped matches are never asked) still gets a 🙋
   Telegram question at the half-time whistle — *Post the HT card* / *No
   thanks* — because sometimes the first half is the story. Post leads on to
   the background: send a photo (saved as the match's HT photo, as /start

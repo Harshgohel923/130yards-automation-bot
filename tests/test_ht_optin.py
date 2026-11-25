@@ -34,7 +34,7 @@ class FeedExhausted(Exception):
 
 @pytest.fixture
 def run(monkeypatch):
-    def go(scrapes, post_ht=False, answers=None):
+    def go(scrapes, post_ht=False, answers=None, group=None):
         """answers: poll number (1-based reads) → what the bot has recorded."""
         rec = {'asked': [], 'edits': [], 'posts': [], 'reads': 0, 'posted': set()}
         answers = answers or {}
@@ -80,6 +80,7 @@ def run(monkeypatch):
         main.MATCH_STATE.clear()
         entry = {'match_id': MATCH_ID, 'scraper_url': 'x', 'home_team': 'Home',
                  'away_team': 'Away', 'post_ht': post_ht,
+                 **({'carousel_group': group} if group else {}),
                  'kickoff_utc': (datetime.now(timezone.utc) - timedelta(minutes=50))
                                 .isoformat()}
         try:
@@ -127,6 +128,12 @@ def test_an_answered_question_is_left_alone_after_ht(run):
 def test_a_post_ht_fixture_is_never_asked(run):
     rec = run([_ht()] * 2, post_ht=True)
     assert rec['asked'] == [] and rec['posts'] == ['HT']
+
+
+def test_a_carousel_group_match_is_never_asked(run):
+    rec = run([_ht()] * 3 + [_2h()], group='sat')
+    assert rec['asked'] == [] and rec['posts'] == [] and rec['edits'] == []
+    assert rec['reads'] == 0                       # Cloudinary never consulted
 
 
 def test_no_question_outside_half_time(run):
